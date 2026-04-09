@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  lint:
+    runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint --workspaces
+
+  test:
+    runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm test --workspaces
+
+  build:
+    needs: [lint, test]
+    runs-on: arc-ayuvlasenko-smart-assistant-dind-a9f0f8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BRANCH="${{ github.head_ref }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+          BRANCH=$(echo "${BRANCH//\//-}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "short-sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "tag=${SHORT_SHA}-${BRANCH}" >> $GITHUB_OUTPUT
+
+      - name: Check if images exist
+        id: check
+        run: |
+          REGISTRY="${{ vars.DOCKER_REGISTRY }}"
+          SHORT_SHA="${{ steps.meta.outputs.short-sha }}"
+          if docker manifest inspect $REGISTRY/smart-assistant-server:$SHORT_SHA &>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Images for $SHORT_SHA already exist, skipping build"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        if: steps.check.outputs.exists != 'true'
+        uses: docker/bake-action@v6
+        with:
+          source: .
+          push: true
+          files: docker-bake.hcl
+        env:
+          REGISTRY: ${{ vars.DOCKER_REGISTRY }}
+          SHORT_SHA: ${{ steps.meta.outputs.short-sha }}
+
+      - name: Add branch tags
+        run: |
+          REGISTRY="${{ vars.DOCKER_REGISTRY }}"
+          SHORT_SHA="${{ steps.meta.outputs.short-sha }}"
+          BRANCH="${{ steps.meta.outputs.branch }}"
+          docker buildx imagetools create \
+            --tag $REGISTRY/smart-assistant-server:${SHORT_SHA}-${BRANCH} \
+            $REGISTRY/smart-assistant-server:$SHORT_SHA
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+      short-sha: ${{ steps.meta.outputs.short-sha }}
+      branch: ${{ steps.meta.outputs.branch }}
+
+  deploy:
+    needs: build
+    runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.head_ref != 'main')
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          mkdir -p $HOME/.local/bin
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            ARGOCD_ARCH="arm64"
+          else
+            ARGOCD_ARCH="amd64"
+          fi
+          curl -sSL -o $HOME/.local/bin/argocd https://s3.bambom.org/tools/argocd-linux-${ARGOCD_ARCH}
+          chmod +x $HOME/.local/bin/argocd
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Deploy
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          BRANCH="${{ needs.build.outputs.branch }}"
+          SHORT_SHA="${{ needs.build.outputs.short-sha }}"
+          IMAGE_TAG="${{ needs.build.outputs.image-tag }}"
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # PR: ApplicationSet provides image tag, just wait for deployment
+            RESOURCE_NAME="pr-${{ github.event.pull_request.number }}"
+            APP_NAME="smart-assistant-$RESOURCE_NAME"
+
+            # Wait for app to be created by ApplicationSet
+            echo "Waiting for ArgoCD app '$APP_NAME'..."
+            for i in {1..6}; do
+              if argocd app get $APP_NAME --grpc-web 2>/dev/null; then
+                echo "App found!"
+                break
+              fi
+              echo "Attempt $i/6 - waiting 10s..."
+              sleep 10
+            done
+            # Wait for deployment and health
+            argocd app wait $APP_NAME --timeout 300 --health --grpc-web
+          else
+            # Static branch: create app if needed, then set values and sync
+            RESOURCE_NAME="$BRANCH"
+            APP_NAME="smart-assistant-$RESOURCE_NAME"
+
+            # Create app if it doesn't exist (idempotent)
+            if ! argocd app get $APP_NAME --grpc-web 2>/dev/null; then
+              echo "Creating ArgoCD app '$APP_NAME'..."
+              argocd app create $APP_NAME \
+                --project default \
+                --repo https://github.com/ayuvlasenko/smart-assistant.git \
+                --path deploy \
+                --dest-server https://kubernetes.default.svc \
+                --dest-namespace smart-assistant \
+                --grpc-web
+            fi
+
+            # Set values and sync
+            argocd app set $APP_NAME \
+              --helm-set server.image.tag="$IMAGE_TAG" \
+              --helm-set resourceName="$RESOURCE_NAME" \
+              --helm-set branch="$BRANCH" \
+              --grpc-web
+
+            argocd app sync $APP_NAME --grpc-web
+            argocd app wait $APP_NAME --timeout 300 --health --grpc-web
+          fi
+
+          # Job summary
+          if [ "$RESOURCE_NAME" == "main" ]; then
+            URL="https://smart-assistant.bambom.org"
+          else
+            URL="https://${RESOURCE_NAME}.smart-assistant.bambom.org"
+          fi
+
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| App | $APP_NAME |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | $BRANCH |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | $URL |" >> $GITHUB_STEP_SUMMARY

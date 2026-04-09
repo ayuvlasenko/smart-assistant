@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone/service-v1.json
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3-external
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.s3.port }}
+      targetPort: {{ .Values.s3.port }}
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone/endpoints-v1.json
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: s3-external
+subsets:
+  - addresses:
+      - ip: {{ .Values.s3.ip }}
+    ports:
+      - port: {{ .Values.s3.port }}
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/traefik.io/middleware_v1alpha1.json
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: files-path-rewrite
+spec:
+  replacePathRegex:
+    regex: "^/files/(.*)"
+    replacement: "/{{ .Values.s3.bucket }}/$1"
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/traefik.io/ingressroute_v1alpha1.json
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: server-{{ .Values.resourceName }}
+spec:
+  entryPoints:
+    - {{ .Values.ingress.entryPoint }}
+  routes:
+    # Files proxy to S3 (only match /files/{uuid} or /files/{uuid}.{ext})
+    - kind: Rule
+      {{- if eq .Values.resourceName "main" }}
+      match: Host(`{{ .Values.ingress.domain }}`) && Method(`GET`) && PathRegexp(`^/files/[a-f0-9-]+(\.[a-zA-Z0-9]+)?$`)
+      {{- else }}
+      match: Host(`{{ .Values.resourceName }}.{{ .Values.ingress.domain }}`) && Method(`GET`) && PathRegexp(`^/files/[a-f0-9-]+(\.[a-zA-Z0-9]+)?$`)
+      {{- end }}
+      middlewares:
+        - name: files-path-rewrite
+      services:
+        - name: s3-external
+          port: {{ .Values.s3.port }}
+          nativeLB: true
+    # API routes to server
+    - kind: Rule
+      {{- if eq .Values.resourceName "main" }}
+      match: Host(`{{ .Values.ingress.domain }}`) && PathPrefix(`/api`)
+      {{- else }}
+      match: Host(`{{ .Values.resourceName }}.{{ .Values.ingress.domain }}`) && PathPrefix(`/api`)
+      {{- end }}
+      services:
+        - name: server-{{ .Values.resourceName }}
+          port: {{ .Values.service.port }}
+    # # Everything else to client
+    # - kind: Rule
+    #   {{- if eq .Values.resourceName "main" }}
+    #   match: Host(`{{ .Values.ingress.domain }}`)
+    #   {{- else }}
+    #   match: Host(`{{ .Values.resourceName }}.{{ .Values.ingress.domain }}`)
+    #   {{- end }}
+    #   services:
+    #     - name: client-{{ .Values.resourceName }}
+    #       port: 80
+  tls:
+    certResolver: {{ .Values.ingress.certResolver }}

@@ -1,0 +1,32 @@
+{
+  "name": "smart-assistant",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "type": "module",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayuvlasenko/smart-assistant.git"
+  },
+  "author": "ayuvlasenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ayuvlasenko/smart-assistant/issues"
+  },
+  "homepage": "https://github.com/ayuvlasenko/smart-assistant#readme",
+  "workspaces": [
+    "apps/server"
+  ],
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "4.4.0",
+    "@typescript-eslint/eslint-plugin": "8.33.0",
+    "eslint": "9.27.0",
+    "eslint-config-prettier": "10.1.5",
+    "eslint-plugin-prettier": "5.4.0",
+    "eslint-plugin-sonarjs": "3.0.2",
+    "prettier": "3.5.3"
+  }
+}

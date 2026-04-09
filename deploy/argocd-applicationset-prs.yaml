@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/argoproj.io/applicationset_v1alpha1.json
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: smart-assistant-prs
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - pullRequest:
+        github:
+          owner: ayuvlasenko
+          repo: smart-assistant
+          tokenRef:
+            secretName: github-scm-token
+            key: token
+        requeueAfterSeconds: 30
+        filters:
+          - branchMatch: "^(feature|fix|hotfix|bugfix|chore|release|refactor|test|docs)/.*"
+  template:
+    metadata:
+      name: 'smart-assistant-pr-{{ .number }}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ayuvlasenko/smart-assistant.git
+        targetRevision: '{{ .branch }}'
+        path: deploy
+        helm:
+          valuesObject:
+            resourceName: 'pr-{{ .number }}'
+            branch: '{{ .branch_slug }}'
+            server:
+              image:
+                tag: '{{ .head_short_sha_7 }}-{{ .branch_slug }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: smart-assistant
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

@@ -1,0 +1,31 @@
+server:
+  image:
+    repository: docker.bambom.org/smart-assistant-server
+    tag: ""
+    pullPolicy: IfNotPresent
+  port: 3020
+  replicas: 1
+  revisionHistoryLimit: 1
+  progressDeadlineSeconds: 120
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  secrets:
+    base: server-secrets-base
+
+ingress:
+  domain: smart-assistant.bambom.org
+  entryPoint: websecure
+  certResolver: letsencrypt
+
+service:
+  port: 80
+
+s3:
+  ip: 192.168.0.182
+  port: 9000
+  bucket: smart-assistant
