@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone/deployment-apps-v1.json
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey-{{ .Values.resourceName }}
+  labels:
+    app: valkey
+    resourceName: {{ .Values.resourceName }}
+spec:
+  replicas: {{ .Values.valkey.replicas }}
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: valkey
+      resourceName: {{ .Values.resourceName }}
+  template:
+    metadata:
+      labels:
+        app: valkey
+        resourceName: {{ .Values.resourceName }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: valkey
+          image: "{{ .Values.valkey.image.repository }}:{{ .Values.valkey.image.tag }}"
+          imagePullPolicy: {{ .Values.valkey.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.valkey.port }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              if [ -z "${VALKEY_PASSWORD:-}" ]; then
+                echo "VALKEY_PASSWORD is required" >&2
+                exit 1
+              fi
+
+              exec valkey-server \
+                --bind 0.0.0.0 \
+                --port {{ .Values.valkey.port | quote }} \
+                --save "" \
+                --appendonly no \
+                --requirepass "$VALKEY_PASSWORD" \
+                --maxmemory {{ .Values.valkey.maxmemory | quote }} \
+                --maxmemory-policy {{ .Values.valkey.maxmemoryPolicy | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.server.secrets.base }}
+            - secretRef:
+                name: server-secrets-{{ .Values.branch }}
+                optional: true
+            {{- if ne .Values.resourceName .Values.branch }}
+            - secretRef:
+                name: server-secrets-{{ .Values.resourceName }}
+                optional: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.valkey.resources | nindent 12 }}

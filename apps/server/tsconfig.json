@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "sourceMap": true,
+    "allowJs": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "removeComments": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "moduleResolution": "nodenext",
+    "resolveJsonModule": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  }
+}

@@ -1,0 +1,21 @@
+resourceName: main
+branch: main
+
+server:
+  image:
+    repository: docker.bambom.org/smart-assistant-server
+    tag: ""
+    pullPolicy: IfNotPresent
+  secrets:
+    base: server-secrets-base
+
+migration:
+  activeDeadlineSeconds: 300
+  backoffLimit: 2
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"

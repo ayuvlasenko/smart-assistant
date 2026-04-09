@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone/job-batch-v1.json
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migration-{{ .Values.resourceName }}
+  labels:
+    app: migration
+    resourceName: {{ .Values.resourceName }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+spec:
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        app: migration
+        resourceName: {{ .Values.resourceName }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migration
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command: ["npm"]
+          args: ["run", "migrate:up", "-w", "server"]
+          env:
+            - name: RESOURCE_NAME
+              value: {{ .Values.resourceName | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.server.secrets.base }}
+            - secretRef:
+                name: server-secrets-{{ .Values.branch }}
+                optional: true
+            {{- if ne .Values.resourceName .Values.branch }}
+            - secretRef:
+                name: server-secrets-{{ .Values.resourceName }}
+                optional: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
