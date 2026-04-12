@@ -4,12 +4,26 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Commands
 
+All commands should be run from the project root using npm workspaces:
+
+### Backend Server
 ```bash
-npm run dev -w server          # Build + watch + hot-reload server
-npm run build -w server        # Clean build
-npm run lint -w server         # ESLint
-npm run format -w server       # ESLint fix + Prettier
-npm test -w server             # Tests (node native test runner)
+npm run dev -w server        # Build TypeScript and start server with hot reload
+npm run build -w server      # Compile TypeScript only
+npm run watch -w server      # TypeScript watch mode
+npm run dev:start -w server  # Start Fastify server with file watching
+```
+
+### Linting & Formatting
+```bash
+npm run lint -w server          # Run ESLint for backend
+npm run format -w server        # Run ESLint fix + Prettier for backend
+npm run format --workspaces     # Format all workspaces
+```
+
+### Package Management
+```bash
+npm install -w <workspace> <package>     # Install package in specific workspace
 ```
 
 ## Architecture
@@ -35,6 +49,21 @@ Services are classes registered as Fastify decorators via `fastify-plugin` with 
 ### Route File Naming
 
 Route files must match their parent directory name for correct autoload prefix mapping (e.g., `telegram/telegram.ts` gets prefix `/api/telegram`).
+
+## Rules
+
+- use `jq` for JSON formatting, not `python3 -m json.tool`
+- don't write comments that are redundant with code
+- comments should be only written if you asked for them or for not obvious logic
+- use kebab case for file and directory names
+- avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
+- run `npm run format -w <workspace>` after implementing features
+- prefer `mv` over rewriting a file when relocating content — avoids unnecessary context consumption and risk of LLM-introduced changes
+- focus on fixing TypeScript errors and actual code issues
+- Skip formatting issues like missing newlines, fix them only when requested
+- Use the lint command above to check for linting errors
+- commit messages, comments and other text should be in English
+
 
 ## Infrastructure
 
