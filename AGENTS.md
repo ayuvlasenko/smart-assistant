@@ -7,6 +7,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 All commands should be run from the project root using npm workspaces:
 
 ### Backend Server
+
 ```bash
 npm run dev -w server        # Build TypeScript and start server with hot reload
 npm run build -w server      # Compile TypeScript only
@@ -15,6 +16,7 @@ npm run dev:start -w server  # Start Fastify server with file watching
 ```
 
 ### Linting & Formatting
+
 ```bash
 npm run lint -w server          # Run ESLint for backend
 npm run format -w server        # Run ESLint fix + Prettier for backend
@@ -22,6 +24,7 @@ npm run format --workspaces     # Format all workspaces
 ```
 
 ### Package Management
+
 ```bash
 npm install -w <workspace> <package>     # Install package in specific workspace
 ```
@@ -63,7 +66,6 @@ Route files must match their parent directory name for correct autoload prefix m
 - Skip formatting issues like missing newlines, fix them only when requested
 - Use the lint command above to check for linting errors
 - commit messages, comments and other text should be in English
-
 
 ## Infrastructure
 

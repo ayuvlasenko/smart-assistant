@@ -9,7 +9,6 @@ package-lock.json
 .helm
 *.json
 .*
-*.md
 migration
 *.yaml
 *.env
