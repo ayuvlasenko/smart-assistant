@@ -1,6 +1,13 @@
-import { ApiResponse, Opts } from "@grammyjs/types";
-import { FastifyInstance } from "fastify";
-import fp from "fastify-plugin";
+import { ApiMethods, ApiResponse } from "@grammyjs/types";
+
+type TelegramMethod = keyof ApiMethods<never>;
+type TelegramMethodArgs<
+    TMethod extends TelegramMethod,
+    TUpload = never,
+> = Parameters<ApiMethods<TUpload>[TMethod]>;
+type TelegramMethodResult<TMethod extends TelegramMethod> = ReturnType<
+    ApiMethods<never>[TMethod]
+>;
 
 export class TelegramApiService {
     private readonly baseUrl: string;
@@ -9,39 +16,34 @@ export class TelegramApiService {
         this.baseUrl = `https://api.telegram.org/bot${botToken}`;
     }
 
-    setWebhook(params: Opts<never>["setWebhook"]): Promise<ApiResponse<true>> {
-        return this.call("setWebhook", params);
+    getMe() {
+        return this.call("getMe");
     }
 
-    sendMessage(
-        params: Opts<never>["sendMessage"],
-    ): Promise<ApiResponse<unknown>> {
-        return this.call("sendMessage", params);
+    setWebhook(...args: TelegramMethodArgs<"setWebhook">) {
+        return this.call("setWebhook", ...args);
     }
 
-    private async call<T>(
-        method: string,
-        params: object,
-    ): Promise<ApiResponse<T>> {
+    sendMessage(...args: TelegramMethodArgs<"sendMessage">) {
+        return this.call("sendMessage", ...args);
+    }
+
+    private async call<
+        TFile = never,
+        TMethod extends TelegramMethod = TelegramMethod,
+    >(
+        method: TMethod,
+        ...args: TelegramMethodArgs<TMethod, TFile>
+    ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
+        const [params] = args;
         const response = await fetch(`${this.baseUrl}/${method}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(params),
+            body: params === undefined ? undefined : JSON.stringify(params),
         });
 
-        return response.json() as Promise<ApiResponse<T>>;
+        return response.json() as Promise<
+            ApiResponse<TelegramMethodResult<TMethod>>
+        >;
     }
 }
-
-export default fp(
-    async function (fastify: FastifyInstance) {
-        fastify.decorate(
-            "telegramApiService",
-            new TelegramApiService(fastify.config.TELEGRAM_BOT_TOKEN),
-        );
-    },
-    {
-        name: "telegram-api-service",
-        dependencies: ["@fastify/env"],
-    },
-);
