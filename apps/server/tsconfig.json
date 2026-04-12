@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "ES2024",
     "module": "NodeNext",
+    "rootDir": "./src",
     "outDir": "./dist",
-    "baseUrl": "./src",
     "sourceMap": true,
     "allowJs": false,
     "emitDecoratorMetadata": true,

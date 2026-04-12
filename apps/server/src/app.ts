@@ -1,6 +1,7 @@
 import fastifyAutoload from "@fastify/autoload";
 import { Ajv } from "ajv";
 import {
+    FastifyError,
     FastifyInstance,
     FastifyPluginOptions,
     FastifyServerOptions,
@@ -51,7 +52,7 @@ export default async function serviceApp(
         fastify.log.info(`Registered routes:\n${fastify.printRoutes()}`);
     });
 
-    fastify.setErrorHandler((err, request, reply) => {
+    fastify.setErrorHandler((err: FastifyError, request, reply) => {
         fastify.log.error(
             {
                 err,
@@ -69,7 +70,7 @@ export default async function serviceApp(
 
         let message = "Internal Server Error";
         if (err.statusCode && err.statusCode < 500) {
-            message = err.message;
+            message = err instanceof Error ? err.message : message;
         }
 
         return { message };

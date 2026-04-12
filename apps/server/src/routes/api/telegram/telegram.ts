@@ -1,15 +1,16 @@
+import { Update } from "@grammyjs/types";
 import {
     FastifyPluginAsyncTypebox,
     Type,
 } from "@fastify/type-provider-typebox";
-import { TELEGRAM_SECRET_HEADER } from "constants/headers.js";
 import { FastifyRequest } from "fastify";
-import { TelegramBotService } from "plugins/app/telegram/telegram-bot-service.js";
-import { unauthorizedErrorSchema } from "schemas/common.js";
+import { TELEGRAM_SECRET_HEADER } from "../../../constants/headers.js";
+import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { unauthorizedErrorSchema } from "../../../schemas/common.js";
 import {
     telegramUpdateSchema,
     telegramWebhookHeadersSchema,
-} from "schemas/telegram.js";
+} from "../../../schemas/telegram.js";
 
 const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     const telegramBotService =
@@ -43,7 +44,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
-            await telegramBotService.handleUpdate(request.body);
+            await telegramBotService.handleUpdate(request.body as Update);
         },
     );
 };
