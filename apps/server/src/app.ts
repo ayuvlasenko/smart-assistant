@@ -1,13 +1,9 @@
 import fastifyAutoload from "@fastify/autoload";
 import { Ajv } from "ajv";
-import {
-    FastifyError,
-    FastifyInstance,
-    FastifyPluginOptions,
-    FastifyServerOptions,
-} from "fastify";
+import { FastifyError, FastifyInstance, FastifyPluginOptions } from "fastify";
 import { ObjectId } from "mongodb";
 import path from "node:path";
+import { TelegramApiClient } from "./plugins/app/telegram/telegram-api-service.js";
 
 export const options = {
     ajv: {
@@ -19,14 +15,18 @@ export const options = {
             ajv.addFormat("objectid", (data: string) => ObjectId.isValid(data));
         },
     },
-} as FastifyServerOptions;
+} as FastifyPluginOptions;
 
 export default async function serviceApp(
     fastify: FastifyInstance,
-    opts: FastifyPluginOptions,
+    opts: FastifyPluginOptions & {
+        telegramApiService?: TelegramApiClient;
+    },
 ) {
+    const { telegramApiService } = opts;
     delete opts.skipOverride;
     delete opts.ajv;
+    delete opts.telegramApiService;
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/external"),
@@ -36,7 +36,7 @@ export default async function serviceApp(
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/app"),
-        options: { ...opts },
+        options: { telegramApiService, ...opts },
     });
 
     await fastify.register(fastifyAutoload, {
@@ -44,7 +44,7 @@ export default async function serviceApp(
         autoHooks: true,
         cascadeHooks: true,
         routeParams: true,
-        options: { ...opts },
+        options: { opts },
     });
 
     fastify.addHook("onReady", () => {

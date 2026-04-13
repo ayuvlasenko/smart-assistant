@@ -58,6 +58,8 @@ Route files must match their parent directory name for correct autoload prefix m
 - use `jq` for JSON formatting, not `python3 -m json.tool`
 - don't write comments that are redundant with code
 - comments should be only written if you asked for them or for not obvious logic
+- prefer `interface` over `type` for object shapes; use `type` for unions, intersections, mapped types, and other cases where `interface` is not a good fit
+- order functions top-down so callers appear above the helpers they use
 - use kebab case for file and directory names
 - avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
 - run `npm run format -w <workspace>` after implementing features

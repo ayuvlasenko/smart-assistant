@@ -1,8 +1,8 @@
 import { Update } from "@grammyjs/types";
-import { TelegramApiService } from "./telegram-api-service.js";
+import { TelegramApiClient } from "./telegram-api-service.js";
 
 export class TelegramBotService {
-    constructor(private readonly telegramApiService: TelegramApiService) {}
+    constructor(private readonly telegramApiService: TelegramApiClient) {}
 
     async handleUpdate(update: Update): Promise<void> {
         if (update.message?.text === "ping") {

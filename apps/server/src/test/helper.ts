@@ -1,33 +1,32 @@
-import serviceApp, { options } from "../app.js";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
 import { TestContext } from "node:test";
+import serviceApp, { options } from "../app.js";
+import {
+    buildTelegramApiServiceMock,
+    TelegramApiServiceMock,
+} from "./telegram-api-service-mock.js";
 
-// automatically build and tear down our instance
-export async function build(t?: TestContext) {
+type BuildOptions = {
+    t: TestContext;
+    telegramApiService?: TelegramApiServiceMock;
+};
+
+export async function buildTestApp({ t, ...opts }: BuildOptions) {
     const app = Fastify({
-        logger: {
-            level: "info",
-            transport: {
-                target: "pino-pretty",
-                options: {
-                    translateTime: "HH:MM:ss Z",
-                    ignore: "pid,hostname",
-                },
-            },
-        },
+        logger: false,
         trustProxy: true,
         ...options,
     });
 
-    app.register(fp(serviceApp));
+    const telegramApiService =
+        opts.telegramApiService ?? buildTelegramApiServiceMock({ t });
+
+    app.register(fp(serviceApp), { telegramApiService });
 
     await app.ready();
 
-    // If we pass the test contest, it will close the app after we are done
-    if (t) {
-        t.after(() => app.close());
-    }
+    t.after(() => app.close());
 
-    return app;
+    return { app, telegramApiService };
 }

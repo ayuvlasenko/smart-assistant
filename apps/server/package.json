@@ -15,7 +15,7 @@
     "dev:start": "npm run build && fastify start -o --ignore-watch=.ts$ -w -d -l info -P dist/app.js",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
-    "test": "echo \"No tests yet\""
+    "test": "node --env-file=.env.test --import tsx --test \"src/**/*.test.ts\""
   },
   "author": "ayuvlasenko",
   "license": "MIT",

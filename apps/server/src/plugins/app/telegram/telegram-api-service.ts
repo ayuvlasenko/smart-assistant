@@ -1,12 +1,16 @@
 import { ApiMethods, ApiResponse } from "@grammyjs/types";
 
-type TelegramMethod = keyof ApiMethods<never>;
-type TelegramMethodArgs<
+export type TelegramMethod = keyof ApiMethods<never>;
+export type TelegramMethodArgs<
     TMethod extends TelegramMethod,
     TUpload = never,
 > = Parameters<ApiMethods<TUpload>[TMethod]>;
-type TelegramMethodResult<TMethod extends TelegramMethod> = ReturnType<
+export type TelegramMethodResult<TMethod extends TelegramMethod> = ReturnType<
     ApiMethods<never>[TMethod]
+>;
+export type TelegramApiClient = Pick<
+    TelegramApiService,
+    "getMe" | "setWebhook" | "sendMessage"
 >;
 
 export class TelegramApiService {
