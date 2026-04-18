@@ -62,6 +62,7 @@ Route files must match their parent directory name for correct autoload prefix m
 - order functions top-down so callers appear above the helpers they use
 - use kebab case for file and directory names
 - keep tests near the related files by default; exception: migration tests must live in `apps/server/src/test/migrations/` because files in `apps/server/migrations/` are executable migrations
+- if a design spec or implementation plan under `docs/superpowers/` is created or updated during the task, commit that document before starting or resuming implementation changes
 - avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
 - run `npm run format -w <workspace>` after implementing features
 - prefer `mv` over rewriting a file when relocating content — avoids unnecessary context consumption and risk of LLM-introduced changes
