@@ -11,6 +11,7 @@ function getDatabaseName(url) {
 }
 
 export default {
+    moduleSystem: "esm",
     mongodb: {
         url: databaseUrl,
         databaseName: getDatabaseName(databaseUrl),
