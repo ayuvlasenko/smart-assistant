@@ -15,7 +15,11 @@
     "dev:start": "npm run build && fastify start -o --ignore-watch=.ts$ -w -d -l info -P dist/app.js",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "eslint --fix \"src/**/*.ts\" && prettier --write \"src/**/*.ts\"",
-    "test": "node --env-file=.env.test --import tsx --test \"src/**/*.test.ts\""
+    "migrate:create": "migrate-mongo create -f ./migrate-mongo-config.js",
+    "migrate:up": "migrate-mongo up -f ./migrate-mongo-config.js",
+    "migrate:down": "migrate-mongo down -f ./migrate-mongo-config.js",
+    "migrate:status": "migrate-mongo status -f ./migrate-mongo-config.js",
+    "test": "node --env-file=.env.test --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.js\""
   },
   "author": "ayuvlasenko",
   "license": "MIT",
@@ -43,6 +47,7 @@
     "fastify": "5.8.4",
     "fastify-plugin": "5.1.0",
     "jsonwebtoken": "9.0.3",
+    "migrate-mongo": "14.0.7",
     "mongodb": "7.1.1",
     "pino-pretty": "13.1.3"
   },
