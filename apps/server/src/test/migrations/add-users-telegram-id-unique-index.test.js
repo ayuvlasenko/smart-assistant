@@ -45,7 +45,10 @@ void describe("add users telegramId unique index migration", () => {
             ["collection", ["users"]],
             [
                 "createIndex",
-                [{ telegramId: 1 }, { unique: true, name: "telegramId_unique" }],
+                [
+                    { telegramId: 1 },
+                    { unique: true, name: "telegramId_unique" },
+                ],
             ],
         ]);
     });

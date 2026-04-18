@@ -61,6 +61,7 @@ Route files must match their parent directory name for correct autoload prefix m
 - prefer `interface` over `type` for object shapes; use `type` for unions, intersections, mapped types, and other cases where `interface` is not a good fit
 - order functions top-down so callers appear above the helpers they use
 - use kebab case for file and directory names
+- keep tests near the related files by default; exception: migration tests must live in `apps/server/src/test/migrations/` because files in `apps/server/migrations/` are executable migrations
 - avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
 - run `npm run format -w <workspace>` after implementing features
 - prefer `mv` over rewriting a file when relocating content — avoids unnecessary context consumption and risk of LLM-introduced changes

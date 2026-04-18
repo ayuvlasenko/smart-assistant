@@ -5,7 +5,7 @@ import baseConfig from "../../eslint.config.js";
 export default defineConfig([
     ...baseConfig,
     {
-        files: ["**/*.js", "**/*.ts"],
+        files: ["**/*.ts"],
         languageOptions: {
             parser: typescriptParser,
             parserOptions: {

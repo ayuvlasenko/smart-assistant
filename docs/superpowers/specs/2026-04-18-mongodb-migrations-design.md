@@ -10,7 +10,7 @@ Add MongoDB migrations to the `server` workspace using `migrate-mongo` with nati
 - Provide local commands to create, apply, revert, and inspect migrations.
 - Keep migration files close to the backend code in `apps/server`.
 - Create an initial migration that enforces unique `telegramId` values in the `users` collection.
-- Fail fast with a clear error if duplicate `telegramId` values already exist.
+- Rely on MongoDB's native unique-index failure when existing data violates the constraint.
 
 ## Non-Goals
 
@@ -92,11 +92,10 @@ Migration behavior:
 
 ### Up
 
-1. Read from the `users` collection.
-2. Detect duplicate non-null `telegramId` values.
-3. If duplicates exist, throw an error before attempting index creation.
-4. Include a small sample of duplicate `telegramId` values in the error message for debugging.
-5. Create a unique index on `telegramId` named `telegramId_unique`.
+1. Call `createIndex()` on the `users` collection with key `{ telegramId: 1 }`.
+2. Set `unique: true` and `name: "telegramId_unique"`.
+3. Rely on MongoDB to create the `users` collection implicitly if it does not already exist.
+4. Rely on MongoDB's native duplicate key failure if existing data violates the unique constraint.
 
 ### Down
 
@@ -104,7 +103,9 @@ Migration behavior:
 
 ## Duplicate Handling Policy
 
-The migration must fail fast when duplicate `telegramId` values exist.
+The migration will not run a manual duplicate precheck.
+
+Instead, it will rely on MongoDB's native unique-index build behavior. If duplicate `telegramId` values exist, or if multiple documents have missing or `null` `telegramId` values, the index build will fail with MongoDB's duplicate key error.
 
 Automatic deduplication is intentionally excluded because it can silently corrupt user data by deleting or merging the wrong records. Cleanup remains a manual operational decision outside this migration.
 
@@ -114,8 +115,9 @@ Add focused tests for the migration module rather than spawning the `migrate-mon
 
 Required coverage:
 
-- `up` throws when duplicate `telegramId` values exist
+- `up` surfaces MongoDB's native duplicate key failure when existing data violates uniqueness
 - `up` creates the unique `telegramId_unique` index when data is valid
+- `up` succeeds when the `users` collection does not exist yet and leaves the index in place
 - `down` drops the `telegramId_unique` index
 
 This keeps tests fast and focused on the migration logic that matters most.
