@@ -1,14 +1,15 @@
 #!/usr/bin/env node
+/* eslint-disable sonarjs/no-os-command-from-path */
+/* eslint-disable sonarjs/os-command */
 
 import { execSync } from "node:child_process";
 import readline from "node:readline";
+import { pathToFileURL } from "node:url";
 
 const NAMESPACE = "smart-assistant";
 
 const REQUIRED_ENV_VARS = [
     "DATABASE_URL",
-    "JWT_ACCESS_SECRET",
-    "JWT_REFRESH_SECRET",
     "DOMAIN",
     "LOG_LEVEL",
     "S3_ACCESS_KEY_ID",
@@ -16,7 +17,11 @@ const REQUIRED_ENV_VARS = [
     "S3_REGION",
     "S3_BUCKET",
     "S3_ENDPOINT",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_WEBHOOK_SECRET_TOKEN",
 ];
+
+const OPTIONAL_ENV_VARS = ["TELEGRAM_WEBHOOK_URL"];
 
 function validateEnvVars() {
     const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
@@ -36,16 +41,81 @@ function validateEnvVars() {
     }
 }
 
-function buildCommand(secretName, dryRun) {
-    const literals = REQUIRED_ENV_VARS.map(
-        (v) => `--from-literal=${v}="${process.env[v]}"`,
-    ).join(" \\\n          ");
+export function buildCommand(secretName, dryRun) {
+    const envVars = [
+        ...REQUIRED_ENV_VARS,
+        ...OPTIONAL_ENV_VARS.filter((v) => process.env[v]),
+    ];
+    const literals = envVars
+        .map((v) => `--from-literal=${v}="${process.env[v]}"`)
+        .join(" \\\n          ");
 
     if (dryRun) {
         return `kubectl create secret generic ${secretName} -n ${NAMESPACE} \\\n          ${literals} --dry-run=client -o yaml`;
     }
 
     return `kubectl create secret generic ${secretName} -n ${NAMESPACE} \\\n          ${literals} --dry-run=client -o yaml | kubectl apply -f -`;
+}
+
+export function buildNamespaceCommand() {
+    return `kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -`;
+}
+
+export function ensureNamespaceExists({
+    dryRun,
+    exec = execSync,
+    log = console.log,
+} = {}) {
+    if (dryRun) {
+        return;
+    }
+
+    log(`\nEnsuring namespace "${NAMESPACE}" exists...\n`);
+    exec(buildNamespaceCommand(), {
+        encoding: "utf-8",
+        shell: "/bin/bash",
+    });
+}
+
+export function validateSecretName(secretName) {
+    if (!secretName) {
+        throw new Error("Secret name is required");
+    }
+
+    if (!secretName.startsWith("server-secrets-")) {
+        throw new Error('Secret name must start with "server-secrets-"');
+    }
+}
+
+export function applySecret({
+    secretName,
+    dryRun,
+    exec = execSync,
+    log = console.log,
+}) {
+    ensureNamespaceExists({ dryRun, exec, log });
+
+    const command = buildCommand(secretName, dryRun);
+
+    if (dryRun) {
+        log("\nDry run - would execute:\n");
+        log(command);
+        log("\n--- Generated YAML ---\n");
+    } else {
+        log(
+            `\nApplying secret "${secretName}" in namespace "${NAMESPACE}"...\n`,
+        );
+    }
+
+    const output = exec(command, {
+        encoding: "utf-8",
+        shell: "/bin/bash",
+    });
+    log(output);
+
+    if (!dryRun) {
+        log("Secret created/updated successfully!");
+    }
 }
 
 function prompt(question) {
@@ -136,41 +206,29 @@ async function main() {
 
     const secretName = await prompt("Secret name: ");
 
-    if (!secretName) {
-        console.error("Secret name is required");
+    try {
+        validateSecretName(secretName);
+    } catch (error) {
+        console.error(error.message);
         process.exit(1);
-    }
-
-    if (!secretName.startsWith("server-secrets-")) {
-        console.error('Secret name must start with "server-secrets-"');
-        process.exit(1);
-    }
-
-    const command = buildCommand(secretName, dryRun);
-
-    if (dryRun) {
-        console.log("\nDry run - would execute:\n");
-        console.log(command);
-        console.log("\n--- Generated YAML ---\n");
-    } else {
-        console.log(
-            `\nApplying secret "${secretName}" in namespace "${NAMESPACE}"...\n`,
-        );
     }
 
     try {
-        const output = execSync(command, {
-            encoding: "utf-8",
-            shell: "/bin/bash",
+        applySecret({
+            secretName,
+            dryRun,
         });
-        console.log(output);
-        if (!dryRun) {
-            console.log("Secret created/updated successfully!");
-        }
     } catch (error) {
         console.error("Failed to apply secret:", error.message);
         process.exit(1);
     }
 }
 
-main();
+if (process.argv[1]) {
+    const isMainModule =
+        import.meta.url === pathToFileURL(process.argv[1]).href;
+
+    if (isMainModule) {
+        main();
+    }
+}

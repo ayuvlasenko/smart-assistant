@@ -30,6 +30,15 @@ spec:
     regex: "^/files/(.*)"
     replacement: "/{{ .Values.s3.bucket }}/$1"
 ---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: telegram-webhook-path-rewrite-{{ .Values.resourceName }}
+spec:
+  replacePathRegex:
+    regex: "^/api/telegram/webhook/{{ .Values.resourceName }}$"
+    replacement: "/api/telegram/webhook"
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/traefik.io/ingressroute_v1alpha1.json
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -39,6 +48,14 @@ spec:
   entryPoints:
     - {{ .Values.ingress.entryPoint }}
   routes:
+    - kind: Rule
+      match: Host(`{{ .Values.ingress.domain }}`) && Method(`POST`) && Path(`/api/telegram/webhook/{{ .Values.resourceName }}`)
+      priority: 100
+      middlewares:
+        - name: telegram-webhook-path-rewrite-{{ .Values.resourceName }}
+      services:
+        - name: server-{{ .Values.resourceName }}
+          port: {{ .Values.service.port }}
     # Files proxy to S3 (only match /files/{uuid} or /files/{uuid}.{ext})
     - kind: Rule
       {{- if eq .Values.resourceName "main" }}

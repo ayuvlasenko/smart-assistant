@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import fp from "fastify-plugin";
+import { Env } from "../../../schemas/env.js";
 import {
     TelegramApiClient,
     TelegramApiService,
@@ -8,6 +9,19 @@ import { TelegramBotService } from "./telegram-bot-service.js";
 
 export interface TelegramPluginOptions extends FastifyPluginOptions {
     telegramApiService?: TelegramApiClient;
+}
+
+export function resolveTelegramWebhookUrl(
+    config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
+) {
+    if (config.TELEGRAM_WEBHOOK_URL) {
+        return config.TELEGRAM_WEBHOOK_URL;
+    }
+
+    return new URL(
+        `/api/telegram/webhook/${config.RESOURCE_NAME}`,
+        config.DOMAIN,
+    ).toString();
 }
 
 export default fp(
@@ -21,7 +35,7 @@ export default fp(
 
         fastify.addHook("onListen", async () => {
             const result = await telegramApiService.setWebhook({
-                url: `${fastify.config.TELEGRAM_WEBHOOK_URL}/api/telegram/webhook`,
+                url: resolveTelegramWebhookUrl(fastify.config),
                 secret_token: fastify.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
             });
 

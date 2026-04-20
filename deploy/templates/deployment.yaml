@@ -25,6 +25,9 @@ spec:
           imagePullPolicy: {{ .Values.server.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.server.port }}
+          env:
+            - name: RESOURCE_NAME
+              value: {{ .Values.resourceName | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.server.secrets.base }}

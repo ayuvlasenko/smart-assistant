@@ -21,6 +21,8 @@ jobs:
 
   test:
     runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    env:
+      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
