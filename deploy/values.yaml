@@ -6,7 +6,7 @@ server:
   port: 3020
   replicas: 1
   revisionHistoryLimit: 1
-  progressDeadlineSeconds: 120
+  progressDeadlineSeconds: 300
   resources:
     requests:
       memory: "256Mi"
