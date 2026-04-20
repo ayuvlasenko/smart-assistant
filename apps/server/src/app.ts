@@ -5,6 +5,8 @@ import { ObjectId } from "mongodb";
 import path from "node:path";
 import { TelegramApiClient } from "./plugins/app/telegram/telegram-api-service.js";
 
+const testFilePattern = /\.(?:test|spec)\.(?:js|ts)$/;
+
 export const options = {
     ajv: {
         customOptions: {
@@ -30,17 +32,19 @@ export default async function serviceApp(
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/external"),
-        ignorePattern: /swagger/,
+        ignorePattern: /(?:swagger|\.(?:test|spec)\.(?:js|ts)$)/,
         options: { ...opts },
     });
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/app"),
+        ignorePattern: testFilePattern,
         options: { telegramApiService, ...opts },
     });
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "routes"),
+        ignorePattern: testFilePattern,
         autoHooks: true,
         cascadeHooks: true,
         routeParams: true,

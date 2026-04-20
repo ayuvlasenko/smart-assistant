@@ -9,8 +9,8 @@
   "description": "",
   "scripts": {
     "start": "npm run build && fastify start -o -l info dist/app.js",
-    "build": "npx rimraf dist && tsc",
-    "watch": "tsc -w",
+    "build": "npx rimraf dist && tsc -p tsconfig.build.json",
+    "watch": "tsc -w -p tsconfig.build.json",
     "dev": "npm run build && concurrently -k -p \"[{name}]\" -n \"TypeScript,App\" -c \"yellow.bold,cyan.bold\" \"npm:watch\" \"npm:dev:start\"",
     "dev:start": "npm run build && fastify start -o --ignore-watch=.ts$ -w -d -l info -P dist/app.js",
     "lint": "eslint \"src/**/*.{js,ts}\" \"migrations/**/*.js\" \"migrate-mongo-config.js\"",
