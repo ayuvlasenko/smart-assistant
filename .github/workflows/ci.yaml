@@ -36,7 +36,12 @@ jobs:
     needs: [lint, test]
     runs-on: arc-ayuvlasenko-smart-assistant-dind-a9f0f8
     steps:
-      - uses: actions/checkout@v4
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -46,11 +51,13 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             BRANCH="${{ github.head_ref }}"
+            SOURCE_SHA="${{ github.event.pull_request.head.sha }}"
           else
             BRANCH="${{ github.ref_name }}"
+            SOURCE_SHA="${GITHUB_SHA}"
           fi
           BRANCH=$(echo "${BRANCH//\//-}" | tr '[:upper:]' '[:lower:]')
-          SHORT_SHA=${GITHUB_SHA::7}
+          SHORT_SHA=${SOURCE_SHA::7}
           echo "short-sha=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "tag=${SHORT_SHA}-${BRANCH}" >> $GITHUB_OUTPUT
