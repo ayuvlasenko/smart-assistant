@@ -1,0 +1,14 @@
+dist
+.next
+coverage
+node_modules
+package-lock.json
+.vscode
+.gitlab
+.gitlab-ci.yml
+.helm
+*.json
+.*
+docs/superpowers
+*.yaml
+*.env

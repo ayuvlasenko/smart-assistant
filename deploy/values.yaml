@@ -1,0 +1,62 @@
+server:
+  image:
+    repository: docker.bambom.org/smart-assistant-server
+    tag: ""
+    pullPolicy: IfNotPresent
+  port: 3020
+  replicas: 1
+  revisionHistoryLimit: 1
+  progressDeadlineSeconds: 300
+  probes:
+    startup:
+      initialDelaySeconds: 0
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 24
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 30
+      timeoutSeconds: 2
+      failureThreshold: 5
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  secrets:
+    base: server-secrets-base
+
+ingress:
+  domain: smart-assistant.bambom.org
+  entryPoint: websecure
+  certResolver: letsencrypt
+
+service:
+  port: 80
+
+s3:
+  ip: 192.168.0.182
+  port: 9000
+  bucket: smart-assistant
+
+valkey:
+  image:
+    repository: valkey/valkey
+    tag: "8-alpine"
+    pullPolicy: IfNotPresent
+  port: 6379
+  replicas: 1
+  maxmemory: "128mb"
+  maxmemoryPolicy: allkeys-lru
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"

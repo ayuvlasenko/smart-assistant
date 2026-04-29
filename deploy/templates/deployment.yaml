@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.31.0-standalone/deployment-apps-v1.json
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-{{ .Values.resourceName }}
+  labels:
+    app: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  revisionHistoryLimit: {{ .Values.server.revisionHistoryLimit }}
+  progressDeadlineSeconds: {{ .Values.server.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      app: server
+      resourceName: {{ .Values.resourceName }}
+  template:
+    metadata:
+      labels:
+        app: server
+        resourceName: {{ .Values.resourceName }}
+    spec:
+      containers:
+        - name: server
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.server.port }}
+          startupProbe:
+            httpGet:
+              path: /status
+              port: {{ .Values.server.port }}
+            {{- toYaml .Values.server.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: {{ .Values.server.port }}
+            {{- toYaml .Values.server.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: {{ .Values.server.port }}
+            {{- toYaml .Values.server.probes.liveness | nindent 12 }}
+          env:
+            - name: RESOURCE_NAME
+              value: {{ .Values.resourceName | quote }}
+            # Kubernetes expands $(VALKEY_PASSWORD) from envFrom; keep it URL-safe because it is embedded in this Redis URL.
+            - name: VALKEY_URL
+              value: {{ printf "redis://default:$(VALKEY_PASSWORD)@valkey-%s:%v" .Values.resourceName .Values.valkey.port | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.server.secrets.base }}
+            - secretRef:
+                name: server-secrets-{{ .Values.branch }}
+                optional: true
+            {{- if ne .Values.resourceName .Values.branch }}
+            - secretRef:
+                name: server-secrets-{{ .Values.resourceName }}
+                optional: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}

@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: PR Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    concurrency:
+      group: deploy-${{ github.event.pull_request.number || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          mkdir -p $HOME/.local/bin
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            ARGOCD_ARCH="arm64"
+          else
+            ARGOCD_ARCH="amd64"
+          fi
+          curl -sSL -o $HOME/.local/bin/argocd https://s3.bambom.org/tools/argocd-linux-${ARGOCD_ARCH}
+          chmod +x $HOME/.local/bin/argocd
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Delete PR app
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: argocd app delete "smart-assistant-pr-${{ github.event.pull_request.number }}" --yes --wait --grpc-web
+
+      - name: Delete PR migration app
+        env:
+          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: argocd app delete "smart-assistant-pr-${{ github.event.pull_request.number }}-migration" --yes --wait --grpc-web

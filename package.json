@@ -1,0 +1,40 @@
+{
+  "name": "smart-assistant",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "type": "module",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayuvlasenko/smart-assistant.git"
+  },
+  "author": "ayuvlasenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ayuvlasenko/smart-assistant/issues"
+  },
+  "homepage": "https://github.com/ayuvlasenko/smart-assistant#readme",
+  "scripts": {
+    "lint": "prettier --check \"scripts/**/*.js\" && eslint \"scripts/**/*.js\" && npm run lint --workspaces",
+    "format": "prettier --write \"scripts/**/*.js\" && eslint --fix \"scripts/**/*.js\" && npm run format --workspaces",
+    "lint:md": "prettier --check \"**/*.md\"",
+    "format:md": "prettier --write \"**/*.md\""
+  },
+  "workspaces": [
+    "apps/server"
+  ],
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@typescript-eslint/eslint-plugin": "8.58.1",
+    "@typescript-eslint/parser": "8.58.1",
+    "eslint": "10.2.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-prettier": "5.5.5",
+    "eslint-plugin-sonarjs": "4.0.2",
+    "npm-check-updates": "20.0.0",
+    "prettier": "3.5.3"
+  }
+}
