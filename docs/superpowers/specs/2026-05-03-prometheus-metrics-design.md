@@ -37,7 +37,8 @@ registry content type and an async method that returns `await registry.metrics()
 
 Add a top-level route at `GET /metrics`. The route will get the metrics service
 through `fastify.getDecorator<T>()`, set the response `Content-Type` from the
-service, and return the metrics string directly.
+service, and return the metrics string directly. The route will set
+`logLevel: "silent"` so routine scrape requests do not appear in request logs.
 
 The Helm ingress will remain unchanged. The existing public Traefik rules do
 not match `/metrics`, so public traffic through the configured domain will not
@@ -53,7 +54,7 @@ scrape the Kubernetes service directly.
    inside the cluster.
 4. The route awaits `registry.metrics()`.
 5. The route responds with the registry content type and Prometheus exposition
-   text.
+   text without emitting normal request logs for the scrape.
 
 ## Error Handling
 
@@ -71,6 +72,7 @@ Add focused tests near the route and plugin:
 - Assert that registering the app in tests does not throw duplicate metric
   registration errors when multiple Fastify instances are created in one Node
   process.
+- Assert that the metrics route is configured with silent route logging.
 - Assert that no application-level public-IP guard exists for `/metrics`; public
   exposure is intentionally left to ingress.
 
