@@ -29,10 +29,22 @@ jobs:
         env:
           ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
-        run: argocd app delete "smart-assistant-pr-${{ github.event.pull_request.number }}" --yes --wait --grpc-web
+        run: |
+          APP="smart-assistant-pr-${{ github.event.pull_request.number }}"
+          if argocd app get "$APP" --grpc-web >/dev/null 2>&1; then
+            argocd app delete "$APP" --yes --wait --grpc-web
+          else
+            echo "$APP already gone, skipping."
+          fi
 
       - name: Delete PR migration app
         env:
           ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
-        run: argocd app delete "smart-assistant-pr-${{ github.event.pull_request.number }}-migration" --yes --wait --grpc-web
+        run: |
+          APP="smart-assistant-pr-${{ github.event.pull_request.number }}-migration"
+          if argocd app get "$APP" --grpc-web >/dev/null 2>&1; then
+            argocd app delete "$APP" --yes --wait --grpc-web
+          else
+            echo "$APP already gone, skipping."
+          fi
