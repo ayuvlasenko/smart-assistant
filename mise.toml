@@ -3,3 +3,4 @@ node = "24"
 
 [env]
 _.file = '.env'
+_.path = ['./scripts']
