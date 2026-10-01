@@ -87,6 +87,18 @@ export class TelegramBotService {
         return url;
     }
 
+    async resolveBotUrl(): Promise<string> {
+        const result = await this.telegramApiService.getMe();
+
+        if (!result.ok) {
+            throw new Error(
+                `Failed to get telegram bot: ${result.description}`,
+            );
+        }
+
+        return `https://t.me/${result.result.username}`;
+    }
+
     async handleUpdate(update: Update): Promise<void> {
         this.log.info(update, "Received update");
 

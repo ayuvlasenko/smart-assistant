@@ -63,11 +63,19 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                     summary:
                         "Point the preview bot webhook at this environment",
                     response: {
-                        200: Type.Object({ url: Type.String() }),
+                        200: Type.Object({
+                            webhookUrl: Type.String(),
+                            botUrl: Type.String(),
+                        }),
                     },
                 },
             },
-            async () => ({ url: await telegramBotService.setWebhook() }),
+            async () => {
+                const botUrl = await telegramBotService.resolveBotUrl();
+                const webhookUrl = await telegramBotService.setWebhook();
+
+                return { webhookUrl, botUrl };
+            },
         );
     }
 };

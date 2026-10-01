@@ -160,7 +160,8 @@ void describe("POST /api/telegram/webhook/refresh", () => {
 
         assert.equal(response.statusCode, 200);
         assert.deepEqual(response.json(), {
-            url: resolveTelegramWebhookUrl(app.config),
+            webhookUrl: resolveTelegramWebhookUrl(app.config),
+            botUrl: "https://t.me/bipbopbot",
         });
         assert.deepEqual(
             telegramApiService.setWebhook.mock.calls.map(
@@ -215,6 +216,29 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         });
 
         assert.equal(response.statusCode, 500);
+    });
+
+    void it("keeps the webhook when the bot lookup fails", async (t) => {
+        const { app, telegramApiService } = await buildTestApp({
+            t,
+            environment: "preview",
+            telegramApiService: buildTelegramApiServiceMock({
+                t,
+                getMeResponse: {
+                    ok: false,
+                    error_code: 401,
+                    description: "Unauthorized",
+                },
+            }),
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+
+        assert.equal(response.statusCode, 500);
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
 
     void it("is not registered on production", async (t) => {
