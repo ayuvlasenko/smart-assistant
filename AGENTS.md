@@ -71,9 +71,6 @@ Route files must match their parent directory name for correct autoload prefix m
 - keep test setup direct; if a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, stop and look for a simpler behavior boundary or a small explicit test helper
 - do not remove meaningful behavior coverage while simplifying tests; preserve behavior assertions such as nested logger child bindings even when dropping implementation-specific assertions
 - shared test helpers should collect or expose real observable output, not duplicate framework behavior with hidden one-off mocks
-- if a design spec or implementation plan under `docs/superpowers/` is created or updated during the task, commit that document before starting or resuming implementation changes
-- if you are explicitly asked to use Superpowers or a Superpowers skill/plugin, do not skip its required workflow steps; follow the requested process end-to-end before claiming completion
-- when executing Superpowers implementation plans, prefer subagent-driven development
 - avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
 - run `npm run format -w <workspace>` after implementing features
 - prefer `mv` over rewriting a file when relocating content — avoids unnecessary context consumption and risk of LLM-introduced changes
