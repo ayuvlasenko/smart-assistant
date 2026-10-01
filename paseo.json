@@ -4,7 +4,7 @@
   },
   "metadataGeneration": {
     "branchName": {
-      "instructions": "Use <type>/<kebab-case-summary>, where type is feature, fix, or chore. Keep the summary to 2-5 words in English."
+      "instructions": "Use feature/<kebab-case-summary> for every change, including fixes and chores. Keep the summary to 2-5 words in English."
     }
   }
 }
