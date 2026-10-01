@@ -16,6 +16,7 @@ jobs:
     runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
     steps:
       - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libatomic1
       - uses: jdx/mise-action@v4
       - id: pnpm-store
         run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
@@ -35,6 +36,7 @@ jobs:
       VALKEY_URL: ${{ secrets.TEST_VALKEY_URL }}
     steps:
       - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libatomic1
       - uses: jdx/mise-action@v4
       - id: pnpm-store
         run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
