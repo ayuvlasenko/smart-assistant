@@ -1,6 +1,6 @@
 #syntax:docker/dockerfile:1
 
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 
 RUN apk add --no-cache bash
 
@@ -25,7 +25,7 @@ FROM base AS build
 RUN pnpm --filter server build \
     && pnpm --filter server deploy --prod /base/deploy
 
-FROM node:24-alpine AS app
+FROM node:26-alpine AS app
 
 RUN apk add --no-cache bash
 

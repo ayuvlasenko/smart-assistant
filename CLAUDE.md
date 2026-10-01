@@ -84,7 +84,7 @@ Route files must match their parent directory name for correct autoload prefix m
 
 ## Infrastructure
 
-- Node 24, pnpm workspaces, custom registry (npm.bambom.org). The pnpm version is pinned in `mise.toml` and in `packageManager`; keep both in sync. pnpm settings live in `pnpm-workspace.yaml`, and `.npmrc` keeps only the registry.
+- Node 26, pnpm workspaces, custom registry (npm.bambom.org). The pnpm version is pinned in `mise.toml` and in `packageManager`; keep both in sync. pnpm settings live in `pnpm-workspace.yaml`, and `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are available there for local integration tests and feature work; use them when needed, but do not print secret values.
 - `ENVIRONMENT` (`production` | `preview`) is required. The Helm chart sets `production` for `resourceName: main` and `preview` for every other resource. Preview pods share one bot token, so they skip `setWebhook` on start and expose `POST /api/telegram/webhook/refresh` plus Swagger UI at `/api/docs`. Use `ENVIRONMENT=preview` in the root `.env` for local development.
 - `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6` (`tsc6`), because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1.
