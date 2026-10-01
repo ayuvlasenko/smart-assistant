@@ -6,12 +6,17 @@ worktree="${2:?Usage: worktree-setup.sh <source-tree> <worktree>}"
 
 cd "$worktree"
 
-if [[ -f "$source_tree/.env" ]]; then
-  echo "==> symlinking .env"
-  ln -sf "$source_tree/.env" "$worktree/.env"
-else
-  echo "==> skipping .env (not present in source tree)"
-fi
+shopt -s nullglob
+local_files=("$source_tree"/.env* "$source_tree"/mise.local.toml)
+shopt -u nullglob
+
+for file in "${local_files[@]}"; do
+  if [[ -f "$file" ]]; then
+    name="$(basename "$file")"
+    echo "==> symlinking $name"
+    ln -sf "$file" "$worktree/$name"
+  fi
+done
 
 mise trust
 mise install
