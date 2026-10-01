@@ -2,7 +2,6 @@ packages:
   - apps/*
 
 minimumReleaseAge: 2880
-registrySupportsTimeField: true
 saveExact: true
 injectWorkspacePackages: true
 
