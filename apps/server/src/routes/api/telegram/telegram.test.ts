@@ -9,8 +9,8 @@ import {
     TelegramBotService,
 } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { buildTestApp } from "../../../test/helper.js";
-import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import { createLogCollector } from "../../../test/log-collector.js";
+import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,

@@ -194,6 +194,9 @@ importers:
       prettier:
         specifier: 3.9.9
         version: 3.9.9
+      prettier-plugin-organize-imports:
+        specifier: 4.3.0
+        version: 4.3.0(@typescript/typescript6@6.0.2)(prettier@3.9.9)
       typescript:
         specifier: npm:@typescript/typescript6@6.0.2
         version: '@typescript/typescript6@6.0.2'
@@ -1602,6 +1605,16 @@ packages:
   prettier-linter-helpers@1.0.1:
     resolution: {integrity: sha512-SxToR7P8Y2lWmv/kTzVLC1t/GDI2WGjMwNhLLE9qtH8Q13C+aEmuRlzDst4Up4s0Wc8sF2M+J57iB3cMLqftfg==}
     engines: {node: '>=6.0.0'}
+
+  prettier-plugin-organize-imports@4.3.0:
+    resolution: {integrity: sha512-FxFz0qFhyBsGdIsb697f/EkvHzi5SZOhWAjxcx2dLt+Q532bAlhswcXGYB1yzjZ69kW8UoadFBw7TyNwlq96Iw==}
+    peerDependencies:
+      prettier: '>=2.0'
+      typescript: '>=2.9'
+      vue-tsc: ^2.1.0 || 3
+    peerDependenciesMeta:
+      vue-tsc:
+        optional: true
 
   prettier@3.9.9:
     resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
@@ -3272,6 +3285,11 @@ snapshots:
   prettier-linter-helpers@1.0.1:
     dependencies:
       fast-diff: 1.3.0
+
+  prettier-plugin-organize-imports@4.3.0(@typescript/typescript6@6.0.2)(prettier@3.9.9):
+    dependencies:
+      prettier: 3.9.9
+      typescript: '@typescript/typescript6@6.0.2'
 
   prettier@3.9.9: {}
 
