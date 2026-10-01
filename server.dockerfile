@@ -29,9 +29,10 @@ FROM node:26-alpine AS app
 
 RUN apk add --no-cache bash
 
+USER node
+
 WORKDIR /app
 
 COPY --chown=node:node --from=build /base/deploy ./
-COPY --chown=node:node --from=build /base/apps/server/dist ./dist
 
 CMD ["node", "/app/dist/server.js"]

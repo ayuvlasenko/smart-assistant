@@ -7,6 +7,12 @@
   },
   "type": "module",
   "description": "",
+  "files": [
+    "dist",
+    "migrations",
+    "migrate-mongo-config.js",
+    "static"
+  ],
   "scripts": {
     "start": "pnpm run build && fastify start -o -l info dist/app.js",
     "build": "rimraf dist && tsc -p tsconfig.build.json",
