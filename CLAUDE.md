@@ -85,5 +85,6 @@ Route files must match their parent directory name for correct autoload prefix m
 
 - Node 24, npm workspaces, custom registry (npm.bambom.org)
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are available there for local integration tests and feature work; use them when needed, but do not print secret values.
+- `ENVIRONMENT` (`production` | `preview`) is required. The Helm chart sets `production` for `resourceName: main` and `preview` for every other resource. Preview pods share one bot token, so they skip `setWebhook` on start and expose `POST /api/telegram/webhook/refresh` plus Swagger UI at `/api/docs`. Use `ENVIRONMENT=preview` in the root `.env` for local development.
 - Docker multi-stage builds via docker-bake.hcl
 - Helm + ArgoCD for Kubernetes deployment

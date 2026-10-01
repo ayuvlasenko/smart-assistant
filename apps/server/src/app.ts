@@ -45,7 +45,7 @@ export default async function serviceApp(
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/external"),
-        ignorePattern: /(?:swagger|\.(?:test|spec)\.(?:js|ts)$)/,
+        ignorePattern: testFilePattern,
         options: { ...autoloadOptions },
     });
 

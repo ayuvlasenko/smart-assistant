@@ -33,7 +33,7 @@ export default fp(
         fastify.decorate("telegramBotService", telegramBotService);
 
         fastify.addHook("onListen", async () => {
-            await telegramBotService.setWebhook();
+            await telegramBotService.setWebhookOnStart();
         });
     },
     {

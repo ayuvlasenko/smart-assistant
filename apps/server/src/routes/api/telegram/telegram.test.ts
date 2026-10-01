@@ -4,8 +4,12 @@ import {
     REQUEST_ID_HEADER,
     TELEGRAM_SECRET_HEADER,
 } from "../../../constants/headers.js";
-import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import {
+    resolveTelegramWebhookUrl,
+    TelegramBotService,
+} from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { buildTestApp } from "../../../test/helper.js";
+import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import {
     buildTelegramPrivateChat,
@@ -139,5 +143,92 @@ void describe("POST /api/telegram/webhook", () => {
         assert.ok(typeof responseRequestId === "string");
         assert.ok(receivedUpdateLog);
         assert.equal(receivedUpdateLog.reqId, responseRequestId);
+    });
+});
+
+void describe("POST /api/telegram/webhook/refresh", () => {
+    void it("points the webhook at this environment on preview", async (t) => {
+        const { app, telegramApiService } = await buildTestApp({
+            t,
+            environment: "preview",
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.json(), {
+            url: resolveTelegramWebhookUrl(app.config),
+        });
+        assert.deepEqual(
+            telegramApiService.setWebhook.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [
+                [
+                    {
+                        url: resolveTelegramWebhookUrl(app.config),
+                        secret_token: app.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    },
+                ],
+            ],
+        );
+    });
+
+    void it("calls Telegram on every refresh", async (t) => {
+        const { app, telegramApiService } = await buildTestApp({
+            t,
+            environment: "preview",
+        });
+
+        await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+        await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
+    });
+
+    void it("returns 500 when Telegram rejects the webhook", async (t) => {
+        const { app } = await buildTestApp({
+            t,
+            environment: "preview",
+            telegramApiService: buildTelegramApiServiceMock({
+                t,
+                setWebhookResponse: {
+                    ok: false,
+                    error_code: 400,
+                    description: "bad webhook",
+                },
+            }),
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+
+        assert.equal(response.statusCode, 500);
+    });
+
+    void it("is not registered on production", async (t) => {
+        const { app, telegramApiService } = await buildTestApp({
+            t,
+            environment: "production",
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/refresh",
+        });
+
+        assert.equal(response.statusCode, 404);
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
 });
