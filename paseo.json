@@ -1,5 +1,10 @@
 {
-    "worktree": {
-        "setup": "bash scripts/worktree-setup.sh \"$PASEO_SOURCE_CHECKOUT_PATH\" \"$PASEO_WORKTREE_PATH\""
+  "worktree": {
+    "setup": "bash scripts/worktree-setup.sh \"$PASEO_SOURCE_CHECKOUT_PATH\" \"$PASEO_WORKTREE_PATH\""
+  },
+  "metadataGeneration": {
+    "branchName": {
+      "instructions": "Use <type>/<kebab-case-summary>, where type is feature, fix, or chore. Keep the summary to 2-5 words in English."
     }
+  }
 }
