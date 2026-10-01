@@ -16,7 +16,7 @@ Steps:
   1. git fetch origin
   2. git worktree add -b <branch-name> .worktrees/<branch-name> <base>
   3. Copies .env from the repo root
-  4. mise trust && mise install && mise exec -- npm install
+  4. mise trust && mise install && mise exec -- pnpm install
 EOF
 }
 
@@ -72,8 +72,8 @@ mise trust
 echo "==> mise install"
 mise install
 
-echo "==> mise exec -- npm install"
-mise exec -- npm install
+echo "==> mise exec -- pnpm install"
+mise exec -- pnpm install
 
 echo
 echo "Done. Worktree: $new_dir"

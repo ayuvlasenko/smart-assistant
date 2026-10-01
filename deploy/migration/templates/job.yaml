@@ -23,8 +23,8 @@ spec:
         - name: migration
           image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
           imagePullPolicy: {{ .Values.server.image.pullPolicy }}
-          command: ["npm"]
-          args: ["run", "migrate:up", "-w", "server"]
+          command: ["node_modules/.bin/migrate-mongo"]
+          args: ["up", "-f", "migrate-mongo-config.js"]
           env:
             - name: RESOURCE_NAME
               value: {{ .Values.resourceName | quote }}

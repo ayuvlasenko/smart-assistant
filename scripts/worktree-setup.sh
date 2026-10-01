@@ -20,4 +20,4 @@ done
 
 mise trust
 mise install
-mise exec -- npm ci
+mise exec -- pnpm install --frozen-lockfile

@@ -16,5 +16,5 @@ fi
 
 mise trust
 mise install
-mise exec -- npm install
+mise exec -- pnpm install
 '''

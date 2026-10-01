@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+
+minimumReleaseAge: 2880
+saveExact: true
+injectWorkspacePackages: true
+
+allowBuilds:
+  bcrypt: false
+  esbuild: true

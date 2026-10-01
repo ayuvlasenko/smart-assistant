@@ -16,13 +16,17 @@ jobs:
     runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: jdx/mise-action@v4
+      - id: pnpm-store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
         with:
-          node-version: "24"
-          cache: "npm"
-      - run: npm ci
-      - run: npm run typecheck -w server
-      - run: npm run lint
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter server typecheck
+      - run: pnpm lint
 
   test:
     runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
@@ -31,12 +35,16 @@ jobs:
       VALKEY_URL: ${{ secrets.TEST_VALKEY_URL }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: jdx/mise-action@v4
+      - id: pnpm-store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
         with:
-          node-version: "24"
-          cache: "npm"
-      - run: npm ci
-      - run: npm test --workspaces
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r test
 
   build:
     needs: [lint, test]
