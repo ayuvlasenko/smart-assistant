@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 /* eslint-disable sonarjs/no-os-command-from-path */
-/* eslint-disable sonarjs/os-command */
 
 import { execSync } from "node:child_process";
 import readline from "node:readline";

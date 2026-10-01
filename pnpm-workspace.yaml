@@ -6,5 +6,4 @@ saveExact: true
 injectWorkspacePackages: true
 
 allowBuilds:
-  bcrypt: false
   esbuild: true

@@ -29,10 +29,12 @@ void describe("telegram plugin on listen", () => {
         });
 
         await app.listen({ port: 0, host: "127.0.0.1" });
-        await logs.waitForEntry(
+        const skipEntry = await logs.waitForEntry(
             (entry) =>
                 entry.msg ===
                 "Telegram webhook is not set on preview start, claim it with POST /api/telegram/webhook/refresh",
         );
+
+        assert.equal(skipEntry.module, "telegram");
     });
 });

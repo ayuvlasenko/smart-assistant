@@ -6,7 +6,9 @@ interface LoggerBindings {
     [key: string]: unknown;
 }
 
-type LoggerChildOptions = Parameters<FastifyBaseLogger["child"]>[1];
+type LoggerChildOptions = NonNullable<
+    Parameters<FastifyBaseLogger["child"]>[1]
+>;
 
 interface ChildConfig {
     bindings: LoggerBindings;

@@ -83,8 +83,7 @@ export function callbackQuery(
     return (
         update,
     ): update is
-        | TelegramCallbackDataQueryUpdate
-        | TelegramCallbackQueryUpdate => {
+        TelegramCallbackDataQueryUpdate | TelegramCallbackQueryUpdate => {
         if (!update.callback_query) {
             return false;
         }

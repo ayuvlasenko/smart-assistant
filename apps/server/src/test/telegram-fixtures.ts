@@ -511,6 +511,7 @@ export function buildTelegramBotUserFromGetMe(
         can_join_groups: true,
         can_read_all_group_messages: true,
         can_manage_bots: true,
+        supports_join_request_queries: false,
         supports_inline_queries: true,
         can_connect_to_business: true,
         has_main_web_app: true,
@@ -571,6 +572,7 @@ export function buildTelegramPoll(overrides: Partial<Poll> = {}): Poll {
         type: "regular",
         allows_multiple_answers: false,
         allows_revoting: false,
+        members_only: false,
         ...overrides,
     };
 }

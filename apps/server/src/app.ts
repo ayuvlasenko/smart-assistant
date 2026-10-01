@@ -41,7 +41,6 @@ export default async function serviceApp(
     delete autoloadOptions.telegramApiService;
     delete autoloadOptions.genReqId;
     delete autoloadOptions.requestIdHeader;
-    delete autoloadOptions.requestIdLogLabel;
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/external"),
