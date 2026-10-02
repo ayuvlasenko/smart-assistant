@@ -22,9 +22,9 @@ export interface TelegramContext<TUpdate extends Update = Update> {
     ): this is TelegramContext<TUpdate & GuardedTelegramUpdates<TFilters>>;
 }
 
-class DefaultTelegramContext<TUpdate extends Update>
-    implements TelegramContext<TUpdate>
-{
+class DefaultTelegramContext<
+    TUpdate extends Update,
+> implements TelegramContext<TUpdate> {
     constructor(readonly update: TUpdate) {}
 
     has<TFilter extends TelegramUpdateFilter<Update>>(

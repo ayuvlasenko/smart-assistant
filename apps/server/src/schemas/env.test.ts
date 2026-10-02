@@ -1,6 +1,6 @@
+import { Value } from "@sinclair/typebox/value";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Value } from "@sinclair/typebox/value";
 import { envSchema } from "./env.js";
 
 const valkeyUrlSchema = envSchema.properties.VALKEY_URL;

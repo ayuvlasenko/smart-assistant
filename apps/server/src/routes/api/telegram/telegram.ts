@@ -47,6 +47,37 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
             await telegramBotService.handleUpdate(request.body as Update);
         },
     );
+
+    if (fastify.config.ENVIRONMENT === "preview") {
+        fastify.post(
+            "/webhook/refresh",
+            {
+                config: {
+                    rateLimit: {
+                        max: 3,
+                        timeWindow: "1 minute",
+                    },
+                },
+                schema: {
+                    tags: ["telegram"],
+                    summary:
+                        "Point the preview bot webhook at this environment",
+                    response: {
+                        200: Type.Object({
+                            webhookUrl: Type.String(),
+                            botUrl: Type.String(),
+                        }),
+                    },
+                },
+            },
+            async () => {
+                const botUrl = await telegramBotService.resolveBotUrl();
+                const webhookUrl = await telegramBotService.setWebhook();
+
+                return { webhookUrl, botUrl };
+            },
+        );
+    }
 };
 
 export default plugin;

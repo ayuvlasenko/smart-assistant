@@ -43,6 +43,8 @@ spec:
           env:
             - name: RESOURCE_NAME
               value: {{ .Values.resourceName | quote }}
+            - name: ENVIRONMENT
+              value: {{ ternary "production" "preview" (eq .Values.resourceName "main") | quote }}
             # Kubernetes expands $(VALKEY_PASSWORD) from envFrom; keep it URL-safe because it is embedded in this Redis URL.
             - name: VALKEY_URL
               value: {{ printf "redis://default:$(VALKEY_PASSWORD)@valkey-%s:%v" .Values.resourceName .Values.valkey.port | quote }}

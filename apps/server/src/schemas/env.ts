@@ -2,6 +2,10 @@ import { Static, Type } from "@sinclair/typebox";
 
 export const envSchema = Type.Object({
     DATABASE_URL: Type.String(),
+    ENVIRONMENT: Type.Union([
+        Type.Literal("production"),
+        Type.Literal("preview"),
+    ]),
     RATE_LIMIT_MAX: Type.Number({ default: 100 }),
     STATIC_DIRNAME: Type.String({ default: "static" }),
     ENABLE_SECURITY_HEADERS: Type.Boolean({ default: true }),

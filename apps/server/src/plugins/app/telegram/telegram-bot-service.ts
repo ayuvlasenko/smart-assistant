@@ -11,6 +11,7 @@ import { message } from "./telegram-filters.js";
 type TelegramWebhookConfig = Pick<
     Env,
     | "DOMAIN"
+    | "ENVIRONMENT"
     | "RESOURCE_NAME"
     | "TELEGRAM_WEBHOOK_SECRET_TOKEN"
     | "TELEGRAM_WEBHOOK_URL"
@@ -41,7 +42,14 @@ export class TelegramBotService {
         private readonly config: TelegramWebhookConfig,
     ) {}
 
-    async setWebhook(): Promise<void> {
+    async setWebhookOnStart(): Promise<void> {
+        if (this.config.ENVIRONMENT === "preview") {
+            this.log.info(
+                "Telegram webhook is not set on preview start, claim it with POST /api/telegram/webhook/refresh",
+            );
+            return;
+        }
+
         const shouldSetWebhook = await this.cache.setJsonIfMissing(
             telegramWebhookCacheKey,
             true,
@@ -54,22 +62,41 @@ export class TelegramBotService {
         }
 
         try {
-            const result = await this.telegramApiService.setWebhook({
-                url: resolveTelegramWebhookUrl(this.config),
-                secret_token: this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-            });
-
-            if (!result.ok) {
-                throw new Error(
-                    `Failed to set telegram webhook: ${result.description}`,
-                );
-            }
-
-            this.log.info("Telegram webhook set successfully");
+            await this.setWebhook();
         } catch (err) {
             await this.cache.delete(telegramWebhookCacheKey);
             throw err;
         }
+    }
+
+    async setWebhook(): Promise<string> {
+        const url = resolveTelegramWebhookUrl(this.config);
+        const result = await this.telegramApiService.setWebhook({
+            url,
+            secret_token: this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+        });
+
+        if (!result.ok) {
+            throw new Error(
+                `Failed to set telegram webhook: ${result.description}`,
+            );
+        }
+
+        this.log.info({ url }, "Telegram webhook set successfully");
+
+        return url;
+    }
+
+    async resolveBotUrl(): Promise<string> {
+        const result = await this.telegramApiService.getMe();
+
+        if (!result.ok) {
+            throw new Error(
+                `Failed to get telegram bot: ${result.description}`,
+            );
+        }
+
+        return `https://t.me/${result.result.username}`;
     }
 
     async handleUpdate(update: Update): Promise<void> {

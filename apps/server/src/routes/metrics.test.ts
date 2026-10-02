@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
 import fastifyAutoload from "@fastify/autoload";
 import Fastify, { FastifyServerOptions } from "fastify";
+import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
 import { requestIdOptions } from "../constants/options.js";
 import { createLogCollector } from "../test/log-collector.js";

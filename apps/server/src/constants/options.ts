@@ -11,11 +11,10 @@ import {
 
 export const requestIdOptions: Pick<
     FastifyServerOptions,
-    "genReqId" | "requestIdHeader" | "requestIdLogLabel"
+    "genReqId" | "requestIdHeader"
 > = {
     genReqId: () => randomUUID(),
     requestIdHeader: false,
-    requestIdLogLabel: "reqId",
 };
 
 export const requestLogSerializers: FastifyLoggerOptions["serializers"] = {

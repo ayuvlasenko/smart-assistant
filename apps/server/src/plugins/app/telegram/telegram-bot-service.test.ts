@@ -70,7 +70,7 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await telegramBotService.setWebhook();
+        await telegramBotService.setWebhookOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
         assert.deepEqual(
@@ -98,7 +98,7 @@ void describe("TelegramBotService", () => {
 
         await cache.setJson("telegram:webhook:set", true, 3600);
 
-        await telegramBotService.setWebhook();
+        await telegramBotService.setWebhookOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
@@ -120,7 +120,7 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhook(), {
+        await assert.rejects(() => telegramBotService.setWebhookOnStart(), {
             message: "Failed to set telegram webhook: bad webhook",
         });
         assert.equal(
@@ -142,12 +142,52 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhook(), {
+        await assert.rejects(() => telegramBotService.setWebhookOnStart(), {
             message: "network failure",
         });
         assert.equal(
             await cache.getJson("telegram:webhook:set", webhookGuardSchema),
             undefined,
+        );
+    });
+
+    void it("doesn't set the webhook on start in preview", async (t) => {
+        const { cache, telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                environment: "preview",
+            });
+
+        await telegramBotService.setWebhookOnStart();
+
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
+        assert.equal(
+            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
+            undefined,
+        );
+    });
+
+    void it("sets the webhook on every direct call without touching the guard", async (t) => {
+        const { app, cache, telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+            });
+
+        await cache.setJson("telegram:webhook:set", true, 3600);
+
+        const firstUrl = await telegramBotService.setWebhook();
+        const secondUrl = await telegramBotService.setWebhook();
+
+        assert.equal(firstUrl, resolveTelegramWebhookUrl(app.config));
+        assert.equal(secondUrl, firstUrl);
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
+        assert.equal(
+            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
+            true,
         );
     });
 

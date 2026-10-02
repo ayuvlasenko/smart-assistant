@@ -6,35 +6,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands should be run from the project root using npm workspaces:
+All commands should be run from the project root using pnpm workspaces:
 
 ### Backend Server
 
 ```bash
-npm run dev -w server        # Build TypeScript and start server with hot reload
-npm run build -w server      # Compile TypeScript only
-npm run typecheck -w server  # Run full TypeScript checks, including tests and fixtures
-npm run watch -w server      # TypeScript watch mode
-npm run dev:start -w server  # Start Fastify server with file watching
+pnpm --filter server dev        # Build TypeScript and start server with hot reload
+pnpm --filter server build      # Compile TypeScript only
+pnpm --filter server typecheck  # Run full TypeScript checks, including tests and fixtures
+pnpm --filter server test       # Run tests
+pnpm --filter server watch      # TypeScript watch mode
+pnpm --filter server dev:start  # Start Fastify server with file watching
 ```
 
 ### Linting & Formatting
 
 ```bash
-npm run lint -w server          # Run ESLint for backend
-npm run format -w server        # Run ESLint fix + Prettier for backend
-npm run format --workspaces     # Format all workspaces
+pnpm --filter server lint       # Run ESLint for backend
+pnpm --filter server format     # Run ESLint fix + Prettier for backend
+pnpm format                     # Format root scripts and all workspaces
 ```
 
 ### Package Management
 
 ```bash
-npm install -w <workspace> <package>     # Install package in specific workspace
+pnpm --filter <workspace> add <package>     # Install package in specific workspace
 ```
 
 ## Architecture
 
-Monorepo using npm workspaces. Main app: `apps/server/` — Fastify 5, MongoDB (plain driver), TypeBox for validation/schemas.
+Monorepo using pnpm workspaces. Main app: `apps/server/` — Fastify 5, MongoDB (plain driver), TypeBox for validation/schemas.
 
 Telegram bot uses `@grammyjs/types` for type safety and plain `fetch` for Bot API calls (no bot framework).
 
@@ -71,22 +72,21 @@ Route files must match their parent directory name for correct autoload prefix m
 - keep test setup direct; if a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, stop and look for a simpler behavior boundary or a small explicit test helper
 - do not remove meaningful behavior coverage while simplifying tests; preserve behavior assertions such as nested logger child bindings even when dropping implementation-specific assertions
 - shared test helpers should collect or expose real observable output, not duplicate framework behavior with hidden one-off mocks
-- if a design spec or implementation plan under `docs/superpowers/` is created or updated during the task, commit that document before starting or resuming implementation changes
-- if you are explicitly asked to use Superpowers or a Superpowers skill/plugin, do not skip its required workflow steps; follow the requested process end-to-end before claiming completion
-- when executing Superpowers implementation plans, prefer subagent-driven development
 - avoid redundancy in method names (e.g., `HotelsService.find()` not `HotelsService.getHotels()`)
-- run `npm run format -w <workspace>` after implementing features
+- run `pnpm --filter <workspace> format` after implementing features
 - prefer `mv` over rewriting a file when relocating content — avoids unnecessary context consumption and risk of LLM-introduced changes
 - focus on fixing TypeScript errors and actual code issues
 - skip formatting issues like missing newlines, fix them only when requested
 - use the lint command above to check for linting errors
-- lint does not replace TypeScript checking; run `npm run typecheck -w server` when you need compiler diagnostics, especially for tests and files under `src/test/` that are excluded from `build`
+- lint does not replace TypeScript checking; run `pnpm --filter server typecheck` when you need compiler diagnostics, especially for tests and files under `src/test/` that are excluded from `build`
 - commit messages, comments and other text should be in English
 - `CLAUDE.md` and `AGENTS.md` must stay in sync — any edit to one must be applied to the other in the same change (content is identical except for the top heading/intro)
 
 ## Infrastructure
 
-- Node 24, npm workspaces, custom registry (npm.bambom.org)
+- Node 26, pnpm workspaces, custom registry (npm.bambom.org). The pnpm version is pinned in `mise.toml` and in `packageManager`; keep both in sync. pnpm settings live in `pnpm-workspace.yaml`, and `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are available there for local integration tests and feature work; use them when needed, but do not print secret values.
+- `ENVIRONMENT` (`production` | `preview`) is required. The Helm chart sets `production` for `resourceName: main` and `preview` for every other resource. Preview pods share one bot token, so they skip `setWebhook` on start and expose `POST /api/telegram/webhook/refresh` plus Swagger UI at `/api/docs`. Use `ENVIRONMENT=preview` in the root `.env` for local development.
+- `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6` (`tsc6`), because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1.
 - Docker multi-stage builds via docker-bake.hcl
 - Helm + ArgoCD for Kubernetes deployment

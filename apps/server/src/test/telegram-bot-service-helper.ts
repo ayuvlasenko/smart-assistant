@@ -18,6 +18,7 @@ import mongoPlugin from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
+import { Env } from "../schemas/env.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
@@ -29,6 +30,7 @@ export interface BuildTelegramBotServiceTestAppOptions {
     mongoClient: MongoClient;
     t: TestContext;
     telegramApiService?: TelegramApiServiceMock;
+    environment?: Env["ENVIRONMENT"];
 }
 
 export interface TelegramBotServiceTestApp {
@@ -45,6 +47,7 @@ export async function buildTelegramBotServiceTestApp({
     mongoClient,
     t,
     telegramApiService = buildTelegramApiServiceMock({ t }),
+    environment = "production",
 }: BuildTelegramBotServiceTestAppOptions): Promise<TelegramBotServiceTestApp> {
     const keyPrefix = createTestKeyPrefix();
     const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
@@ -56,7 +59,11 @@ export async function buildTelegramBotServiceTestApp({
 
     app.register(envPlugin, {
         ...envAutoConfig,
-        data: { ...process.env, RESOURCE_NAME: resourceName },
+        data: {
+            ...process.env,
+            ENVIRONMENT: environment,
+            RESOURCE_NAME: resourceName,
+        },
     });
     app.register(mongoPlugin, {
         client: mongoClient,
