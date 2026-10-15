@@ -5,6 +5,7 @@ import {
     FastifyPluginOptions,
 } from "fastify";
 import fp from "fastify-plugin";
+import { Env } from "../../../schemas/env.js";
 import { AppLogger } from "../app-logger.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 
@@ -178,7 +179,7 @@ export default fp(
             "telegramApiService",
             opts.telegramApiService ??
                 new TelegramApiService(
-                    fastify.config.TELEGRAM_BOT_TOKEN,
+                    fastify.getDecorator<Env>("config").TELEGRAM_BOT_TOKEN,
                     appLogger.child({ module: "telegram-api" }),
                     fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
                 ),

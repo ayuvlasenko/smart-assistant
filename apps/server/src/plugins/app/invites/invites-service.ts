@@ -4,6 +4,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
+import { Env } from "../../../schemas/env.js";
 import {
     AccessControl,
     AccessService,
@@ -325,7 +326,7 @@ export default fp(
         const log = fastify
             .getDecorator<AppLogger>("appLogger")
             .child({ module: "invites" });
-        const inviteToken = fastify.config.INVITE_TOKEN;
+        const inviteToken = fastify.getDecorator<Env>("config").INVITE_TOKEN;
 
         fastify.decorate("invitesService", invitesService);
 

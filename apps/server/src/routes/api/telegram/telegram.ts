@@ -7,6 +7,7 @@ import { FastifyRequest } from "fastify";
 import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { unauthorizedErrorSchema } from "../../../schemas/common.js";
+import { Env } from "../../../schemas/env.js";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
@@ -23,9 +24,10 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         "telegramUpdateHandler",
     );
 
+    const config = fastify.getDecorator<Env>("config");
     const isValidSecret = (request: FastifyRequest) =>
         request.headers[TELEGRAM_SECRET_HEADER] ===
-        fastify.config.TELEGRAM_WEBHOOK_SECRET_TOKEN;
+        config.TELEGRAM_WEBHOOK_SECRET_TOKEN;
 
     fastify.post(
         "/webhook",
@@ -59,7 +61,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
         },
     );
 
-    if (fastify.config.ENVIRONMENT === "preview") {
+    if (config.ENVIRONMENT === "preview") {
         fastify.post(
             "/webhook/refresh",
             {

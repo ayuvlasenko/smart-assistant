@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { REQUEST_ID_HEADER } from "../../../request-logging.js";
+import { Env } from "../../../schemas/env.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -185,7 +186,9 @@ void describe("POST /api/telegram/webhook/refresh", () => {
 
         assert.equal(response.statusCode, 200);
         assert.deepEqual(response.json(), {
-            webhookUrl: resolveTelegramWebhookUrl(app.config),
+            webhookUrl: resolveTelegramWebhookUrl(
+                app.getDecorator<Env>("config"),
+            ),
             botUrl: "https://t.me/bipbopbot",
         });
         assert.deepEqual(
@@ -195,8 +198,12 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             [
                 [
                     {
-                        url: resolveTelegramWebhookUrl(app.config),
-                        secret_token: app.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                        url: resolveTelegramWebhookUrl(
+                            app.getDecorator<Env>("config"),
+                        ),
+                        secret_token:
+                            app.getDecorator<Env>("config")
+                                .TELEGRAM_WEBHOOK_SECRET_TOKEN,
                     },
                 ],
             ],

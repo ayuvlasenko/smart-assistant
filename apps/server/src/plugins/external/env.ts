@@ -1,11 +1,5 @@
 import env, { FastifyEnvOptions } from "@fastify/env";
-import { Env, envSchema } from "../../schemas/env.js";
-
-declare module "fastify" {
-    interface FastifyInstance {
-        config: Env;
-    }
-}
+import { envSchema } from "../../schemas/env.js";
 
 export const autoConfig: FastifyEnvOptions = {
     confKey: "config",

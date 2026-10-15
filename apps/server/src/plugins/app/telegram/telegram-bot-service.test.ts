@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
+import { Env } from "../../../schemas/env.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
@@ -80,8 +81,12 @@ void describe("TelegramBotService", () => {
             telegramApiService.setWebhook.mock.calls[0]?.arguments,
             [
                 {
-                    url: resolveTelegramWebhookUrl(app.config),
-                    secret_token: app.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    url: resolveTelegramWebhookUrl(
+                        app.getDecorator<Env>("config"),
+                    ),
+                    secret_token:
+                        app.getDecorator<Env>("config")
+                            .TELEGRAM_WEBHOOK_SECRET_TOKEN,
                 },
             ],
         );
@@ -192,7 +197,10 @@ void describe("TelegramBotService", () => {
         const firstUrl = await telegramBotService.setWebhook();
         const secondUrl = await telegramBotService.setWebhook();
 
-        assert.equal(firstUrl, resolveTelegramWebhookUrl(app.config));
+        assert.equal(
+            firstUrl,
+            resolveTelegramWebhookUrl(app.getDecorator<Env>("config")),
+        );
         assert.equal(secondUrl, firstUrl);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
         assert.equal(

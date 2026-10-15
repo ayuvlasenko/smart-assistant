@@ -282,7 +282,7 @@ export default fp(
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<LockService>("lockService"),
             i18nService,
-            fastify.config,
+            fastify.getDecorator<Env>("config"),
         );
 
         i18nService.addLocales("telegram", telegramLocales);

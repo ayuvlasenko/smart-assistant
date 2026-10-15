@@ -1,10 +1,11 @@
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import fp from "fastify-plugin";
+import { Env } from "../../schemas/env.js";
 
 export default fp(
     async function (fastify) {
-        if (fastify.config.ENVIRONMENT !== "preview") {
+        if (fastify.getDecorator<Env>("config").ENVIRONMENT !== "preview") {
             return;
         }
 

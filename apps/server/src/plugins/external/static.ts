@@ -3,12 +3,14 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import fs from "node:fs";
 import path from "node:path";
+import { Env } from "../../schemas/env.js";
 
 export const autoConfig = (fastify: FastifyInstance): FastifyStaticOptions => {
+    const config = fastify.getDecorator<Env>("config");
     const dirPath = path.join(
         import.meta.dirname,
         "../../..",
-        fastify.config.STATIC_DIRNAME,
+        config.STATIC_DIRNAME,
     );
     if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath);
@@ -16,7 +18,7 @@ export const autoConfig = (fastify: FastifyInstance): FastifyStaticOptions => {
 
     return {
         root: dirPath,
-        prefix: `/api/${fastify.config.STATIC_DIRNAME}`,
+        prefix: `/api/${config.STATIC_DIRNAME}`,
     };
 };
 
