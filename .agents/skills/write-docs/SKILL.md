@@ -1,0 +1,71 @@
+---
+name: write-docs
+description: Write, update or restructure the developer documentation of this repository - a domain README under apps/server/src/plugins/app/<domain>/ or the root AGENTS.md. Use it whenever a change adds or alters a mechanism, a public API of a domain, a Valkey key, a limit or a project rule and the docs must follow; whenever the user asks to document how something works, write or fix a README, or clean up, shorten or restructure AGENTS.md, even when the user writes in Russian or only says "дока" or "readme". Not for code comments, commit messages, PR text or docs/backlog items.
+---
+
+# Write docs
+
+The repository has two kinds of developer documentation, and they have different readers.
+
+| File                                             | Reader                                                             | Holds                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------- |
+| `AGENTS.md`                                      | An agent. It loads into every session, so every line costs context | Commands, rules and gotchas                              |
+| `apps/server/src/plugins/app/<domain>/README.md` | A developer or an agent who works in the domain                    | How to use the domain, how its mechanisms work, and why. |
+
+Links go one way: `AGENTS.md` points to a README section, and a README never points to `AGENTS.md`. A developer reads the README to learn the code; sending the developer to an agent instruction file mixes the two readers and splits one topic over two files that drift apart.
+
+Write all documentation in English, also when the conversation is in another language. `docs/backlog/` items belong to the `workflow:backlog` skill.
+
+## AGENTS.md
+
+A long `AGENTS.md` makes agents skip rules, because the important lines drown in explanation. So test every line: "Would an agent make a mistake without it?" Keep the line only when the answer is yes.
+
+- Keep: commands, the check before a commit, the commit convention, project rules that differ from common defaults, architecture decisions, environment gotchas, and short "must" and "never" rules whose violation passes the tests but breaks behavior. Tests do not catch these, so the text is the only guard.
+- Move to a README: how a mechanism works, API walk-throughs, examples, and the reasons behind a rule. Leave a one-line pointer to the README section in their place.
+- Shorten to one line: a rule that a tool enforces. Name the tool, such as `erasableSyntaxOnly` or `local/file-layout`, so the agent can connect the error to the rule.
+- Drop: what the code or the types already say, and file-by-file descriptions. An agent reads the code anyway.
+
+## A domain README
+
+A reader comes to a README with one of two questions: "How do I use this?" or "Why does it work this way?". Order the sections from the first question to the second:
+
+1. **Intro.** One paragraph: what the directory owns and what it does not import.
+2. **Constraints.** The limits of the external system that shape the design, such as the Bot API limits in `telegram/README.md`. Most of the code exists because of them, and a reader who knows them understands the rest faster.
+3. **How to use it.** The public API for another domain, with one complete example taken from real code. Rules of use go here, not in `AGENTS.md`.
+4. **Mechanisms.** One section per mechanism, in the shape below.
+5. **Files.** A table: file, what it owns, and a link to the section that explains it.
+
+Write each mechanism in this shape:
+
+- **Problem.** What breaks without the mechanism. Name the concrete limit or race. A reader who changes the code must know what to keep safe.
+- **Idea.** The solution in one or two sentences.
+- **Data.** What it stores and where, with a real example: a Valkey key, a record, a document. Data is the fastest way to understand a mechanism.
+- **Walk-through.** Numbered steps of one concrete case, in the order they happen.
+- **Edge cases.** Failures, expiry, deploys, concurrency, and what the user sees.
+
+Skip a part that has nothing to say. Use a Mermaid diagram for a flow with branches or several participants, not for a list.
+
+`telegram/README.md` is the reference for every part above.
+
+A domain without a README gets one when it has a mechanism that the code does not explain by itself: state across requests, a race, an external limit, an event other domains rely on. A domain with only a repository and plain calls does not need one.
+
+Code outside a domain, such as `apps/server/migrations/` or `deploy/`, keeps its README in its own directory, next to the code it explains. Use the same section order, and add the README to the documentation list in `AGENTS.md`.
+
+## Verify before you commit
+
+Wrong documentation is worse than none: an agent trusts it and writes code against it. So check every claim against the code.
+
+1. Read the code of every mechanism you describe. Do not describe behavior from names or from an older README.
+2. For every number, key, limit or error text, find the line that sets it.
+3. Compile every TypeScript example. Put it in a temporary file under `apps/server/src/`, add stub interfaces for the services it uses, run `pnpm --filter server typecheck`, and delete the file.
+4. Check the anchors. Two headings with the same text get `#name` and `#name-1`, so give each heading unique text and check every `(#...)` link.
+5. When you move text out of `AGENTS.md`, check that each removed rule is now in a README or in the remaining rules.
+6. Run `pnpm format:md` and `pnpm lint:md`.
+7. Commit a README change together with the code change it describes. Commit a documentation-only change as `docs: ...`.
+
+## Style
+
+- Write short sentences in the present tense and the active voice.
+- Use one term for one thing in the whole file.
+- Write identifiers, keys, commands and error texts exactly as they are in the code, in backticks.
+- No marketing words and no filler.
