@@ -25,7 +25,7 @@ Run a single test file:
 pnpm --filter server exec node --env-file=.env.test --import tsx --test src/path/to/file.test.ts
 ```
 
-Manage MongoDB migrations with `pnpm --filter server migrate:create|migrate:up|migrate:down|migrate:status`.
+Manage MongoDB migrations with `pnpm --filter server migrate:create|migrate:up|migrate:down|migrate:status`. `lockTtl` in `apps/server/migrate-mongo-config.js` equals `migration.activeDeadlineSeconds` in `deploy/migration/values.yaml`, 300 s: change both together, or a slow migration loses its lock while it still runs.
 
 Before a commit, run `pnpm format`, then `pnpm --filter server typecheck`, `pnpm lint` and `pnpm test`; CI runs the same three checks. Lint does not replace typecheck: `build` excludes tests and `src/test/`.
 
