@@ -5,7 +5,10 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { requestLogSerializers } from "../../../request-logging.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { TelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
+import {
+    buildTelegramApiServiceMock,
+    TelegramApiServiceMock,
+} from "../../../test/telegram-api-service-mock.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramCallbackQueryUpdate,
@@ -137,6 +140,50 @@ void describe("TelegramUpdateHandler", () => {
                 },
             ],
         );
+    });
+
+    void it("skips the error reply when the user blocked the bot or Telegram limits the rate", async (t) => {
+        for (const [errorCode, result] of [
+            [403, "blocked"],
+            [429, "rate_limited"],
+        ] as const) {
+            const telegramApiService = buildTelegramApiServiceMock({
+                t,
+                sendMessageResponse: {
+                    ok: false,
+                    error_code: errorCode,
+                    description: "Telegram refused",
+                    parameters: { retry_after: 3 },
+                },
+            });
+            const { metrics, telegramUpdateHandler, usersRepository } =
+                await buildTelegramBotServiceTestApp({
+                    databaseName,
+                    mongoClient,
+                    t,
+                    telegramApiService,
+                    registerRoutes: registerPing,
+                });
+
+            await createUser(usersRepository, "987654324");
+            await telegramUpdateHandler.handle(
+                buildTelegramTextMessageUpdate({
+                    message: {
+                        chat: buildTelegramPrivateChat({ id: 987654324 }),
+                        text: "ping",
+                    },
+                }),
+            );
+
+            assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
+            assert.match(
+                await metrics.metrics(),
+                new RegExp(
+                    `^telegram_updates_total\\{type="message",result="${result}"\\} 1$`,
+                    "m",
+                ),
+            );
+        }
     });
 
     void it("handles a repeated update only once", async (t) => {

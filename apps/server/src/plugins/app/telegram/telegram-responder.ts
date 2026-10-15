@@ -16,6 +16,7 @@ import {
     TelegramApiClient,
     TelegramMethodArgs,
 } from "./telegram-api-service.js";
+import { TelegramApiError } from "./telegram-errors.js";
 
 export type TelegramReplyOptions = Omit<
     TelegramMethodArgs<"sendMessage">[0],
@@ -81,9 +82,7 @@ export class TelegramResponder {
         });
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to send telegram message: ${result.description}`,
-            );
+            throw new TelegramApiError("sendMessage", result);
         }
 
         return result.result;
@@ -93,9 +92,7 @@ export class TelegramResponder {
         const result = await this.sendContent(this.requireChatId(), content);
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to send telegram message: ${result.description}`,
-            );
+            throw new TelegramApiError(`send ${content.kind} message`, result);
         }
 
         return result.result;
@@ -198,9 +195,7 @@ export class TelegramResponder {
         });
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to answer telegram callback query: ${result.description}`,
-            );
+            throw new TelegramApiError("answerCallbackQuery", result);
         }
 
         this.isCallbackAnswered = true;
@@ -229,9 +224,7 @@ export class TelegramResponder {
         });
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to edit telegram reply markup: ${result.description}`,
-            );
+            throw new TelegramApiError("editMessageReplyMarkup", result);
         }
     }
 
