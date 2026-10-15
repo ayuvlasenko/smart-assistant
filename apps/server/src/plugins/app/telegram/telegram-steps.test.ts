@@ -16,9 +16,9 @@ import {
     buildTelegramSceneBot,
     TelegramSceneBot,
 } from "../../../test/telegram-scene-bot.js";
-import { formatDate } from "../../../utils/parsers.js";
 import { message, TelegramTextMessageUpdate } from "./telegram-filters.js";
 import { telegramLocales } from "./telegram-locales.js";
+import { formatDate } from "./telegram-parsers.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import { defineScene } from "./telegram-scene.js";

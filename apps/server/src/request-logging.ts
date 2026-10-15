@@ -4,10 +4,9 @@ import {
     FastifyServerOptions,
 } from "fastify";
 import { randomUUID } from "node:crypto";
-import {
-    resolveClientAddress,
-    resolveClientPort,
-} from "../utils/client-address.js";
+import { resolveClientAddress, resolveClientPort } from "./client-address.js";
+
+export const REQUEST_ID_HEADER = "x-request-id";
 
 export const requestIdOptions: Pick<
     FastifyServerOptions,

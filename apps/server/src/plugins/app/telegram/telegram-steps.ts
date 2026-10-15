@@ -1,17 +1,17 @@
 import { InlineKeyboardButton, Update } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import {
-    addDays,
-    formatDate,
-    parseDate,
-    parseNumber,
-} from "../../../utils/parsers.js";
 import { Translate } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { anyOf, callbackQuery, command, message } from "./telegram-filters.js";
 import { pageButtons, TelegramPage } from "./telegram-pagination.js";
+import {
+    addDays,
+    formatDate,
+    parseDate,
+    parseNumber,
+} from "./telegram-parsers.js";
 import {
     cancel,
     next,
