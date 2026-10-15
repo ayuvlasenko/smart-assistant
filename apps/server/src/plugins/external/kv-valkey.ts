@@ -3,12 +3,6 @@ import fp from "fastify-plugin";
 import { Redis, RedisOptions } from "ioredis";
 import { Env } from "../../schemas/env.js";
 
-export function buildValkeyKeyPrefix(
-    config: Pick<Env, "RESOURCE_NAME">,
-): string {
-    return `smart-assistant:${config.RESOURCE_NAME}`;
-}
-
 export default fp(
     async function valkeyPlugin(fastify: FastifyInstance) {
         const client = buildValkeyClient(fastify.config);
@@ -36,6 +30,7 @@ function buildValkeyClient(config: Env): Redis {
     const options: RedisOptions = {
         connectTimeout: config.VALKEY_CONNECT_TIMEOUT_MS,
         enableOfflineQueue: false,
+        keyPrefix: `smart-assistant:${config.RESOURCE_NAME}:`,
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         retryStrategy: () => null,

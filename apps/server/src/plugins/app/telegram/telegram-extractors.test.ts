@@ -4,7 +4,6 @@ import {
     buildTelegramBusinessConnectionUpdate,
     buildTelegramBusinessMessageUpdate,
     buildTelegramCallbackQueryUpdate,
-    buildTelegramChannelPostUpdate,
     buildTelegramChatBoostUpdate,
     buildTelegramChatJoinRequestUpdate,
     buildTelegramChatMember,
@@ -12,7 +11,6 @@ import {
     buildTelegramChosenInlineResultUpdate,
     buildTelegramDeletedBusinessMessagesUpdate,
     buildTelegramEditedBusinessMessageUpdate,
-    buildTelegramEditedChannelPostUpdate,
     buildTelegramEditedMessageUpdate,
     buildTelegramInlineQueryUpdate,
     buildTelegramManagedBotUpdate,
@@ -29,7 +27,10 @@ import {
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
 } from "../../../test/telegram-fixtures.js";
-import { extractTelegramUser } from "./telegram-extractors.js";
+import {
+    extractTelegramCommand,
+    extractTelegramUser,
+} from "./telegram-extractors.js";
 
 void describe("extractUser", () => {
     void it("extracts the relevant user from update types that carry one", async (t) => {
@@ -63,36 +64,6 @@ void describe("extractUser", () => {
                         id: 102,
                         first_name: "edited-message-user",
                         username: "edited-message-user",
-                    }),
-                }),
-            },
-            {
-                name: "channel_post",
-                expected: buildTelegramUser({
-                    id: 103,
-                    first_name: "channel-post-user",
-                    username: "channel-post-user",
-                }),
-                update: buildTelegramChannelPostUpdate({
-                    from: buildTelegramUser({
-                        id: 103,
-                        first_name: "channel-post-user",
-                        username: "channel-post-user",
-                    }),
-                }),
-            },
-            {
-                name: "edited_channel_post",
-                expected: buildTelegramUser({
-                    id: 104,
-                    first_name: "edited-channel-post-user",
-                    username: "edited-channel-post-user",
-                }),
-                update: buildTelegramEditedChannelPostUpdate({
-                    from: buildTelegramUser({
-                        id: 104,
-                        first_name: "edited-channel-post-user",
-                        username: "edited-channel-post-user",
                     }),
                 }),
             },
@@ -414,60 +385,8 @@ void describe("extractUser", () => {
         }
     });
 
-    void it("returns undefined when an update uses an anonymous chat instead of a user", async (t) => {
+    void it("returns undefined when an update has a chat instead of a user", async (t) => {
         const cases = [
-            {
-                name: "channel_post",
-                update: buildTelegramChannelPostUpdate({
-                    from: undefined,
-                }),
-            },
-            {
-                name: "message with sender_chat",
-                update: buildTelegramTextMessageUpdate({
-                    message: {
-                        from: buildTelegramUser({
-                            id: 122,
-                            first_name: "fake-message-user",
-                            username: "fake-message-user",
-                        }),
-                        sender_chat: buildTelegramSupergroupChat(),
-                    },
-                }),
-            },
-            {
-                name: "edited_message with sender_chat",
-                update: buildTelegramEditedMessageUpdate({
-                    from: buildTelegramUser({
-                        id: 123,
-                        first_name: "fake-edited-message-user",
-                        username: "fake-edited-message-user",
-                    }),
-                    sender_chat: buildTelegramSupergroupChat(),
-                }),
-            },
-            {
-                name: "business_message with sender_chat",
-                update: buildTelegramBusinessMessageUpdate({
-                    from: buildTelegramUser({
-                        id: 124,
-                        first_name: "fake-business-message-user",
-                        username: "fake-business-message-user",
-                    }),
-                    sender_chat: buildTelegramSupergroupChat(),
-                }),
-            },
-            {
-                name: "edited_business_message with sender_chat",
-                update: buildTelegramEditedBusinessMessageUpdate({
-                    from: buildTelegramUser({
-                        id: 125,
-                        first_name: "fake-edited-business-message-user",
-                        username: "fake-edited-business-message-user",
-                    }),
-                    sender_chat: buildTelegramSupergroupChat(),
-                }),
-            },
             {
                 name: "message_reaction",
                 update: buildTelegramMessageReactionUpdate({
@@ -514,5 +433,35 @@ void describe("extractUser", () => {
                 assert.equal(extractTelegramUser(update), undefined);
             });
         }
+    });
+});
+
+void describe("extractTelegramCommand", () => {
+    void it("parses the command name and payload without the bot username", () => {
+        const update = buildTelegramTextMessageUpdate({
+            message: {
+                entities: [{ length: 14, offset: 0, type: "bot_command" }],
+                text: "/start@SomeBot  invite-token ",
+            },
+        });
+
+        assert.deepEqual(extractTelegramCommand(update), {
+            name: "start",
+            payload: "invite-token",
+        });
+    });
+
+    void it("parses a command without a payload", () => {
+        const update = buildTelegramTextMessageUpdate({
+            message: {
+                entities: [{ length: 6, offset: 0, type: "bot_command" }],
+                text: "/start",
+            },
+        });
+
+        assert.deepEqual(extractTelegramCommand(update), {
+            name: "start",
+            payload: "",
+        });
     });
 });

@@ -6,15 +6,21 @@ import { Update } from "@grammyjs/types";
 import { FastifyRequest } from "fastify";
 import { TELEGRAM_SECRET_HEADER } from "../../../constants/headers.js";
 import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { unauthorizedErrorSchema } from "../../../schemas/common.js";
-import {
-    telegramUpdateSchema,
-    telegramWebhookHeadersSchema,
-} from "../../../schemas/telegram.js";
+
+const telegramWebhookHeadersSchema = Type.Object({
+    [TELEGRAM_SECRET_HEADER]: Type.String(),
+});
+
+const telegramUpdateSchema = Type.Unsafe<Update>({ type: "object" });
 
 const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     const telegramBotService =
         fastify.getDecorator<TelegramBotService>("telegramBotService");
+    const telegramUpdateHandler = fastify.getDecorator<TelegramUpdateHandler>(
+        "telegramUpdateHandler",
+    );
 
     const isValidSecret = (request: FastifyRequest) =>
         request.headers[TELEGRAM_SECRET_HEADER] ===
@@ -44,7 +50,11 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
-            await telegramBotService.handleUpdate(request.body as Update);
+            try {
+                await telegramUpdateHandler.handle(request.body);
+            } catch (err) {
+                request.log.error({ err }, "Failed to handle Telegram update");
+            }
         },
     );
 

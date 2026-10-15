@@ -77,19 +77,6 @@ export function buildTelegramChannelPostUpdate(
     );
 }
 
-export function buildTelegramEditedChannelPostUpdate(
-    overrides: Partial<TelegramChannelTextMessage & Update.Edited> = {},
-): Update & {
-    edited_channel_post: TelegramChannelTextMessage & Update.Edited;
-} {
-    const { edit_date, ...messageOverrides } = overrides;
-
-    return buildTelegramUpdate("edited_channel_post", {
-        ...buildTelegramChannelTextMessage(messageOverrides),
-        edit_date: edit_date ?? 1776076900,
-    });
-}
-
 export function buildTelegramBusinessConnectionUpdate(
     overrides: Partial<BusinessConnection> = {},
 ): Update & {
@@ -391,6 +378,48 @@ export function buildTelegramSendMessageResponse(
     };
 }
 
+export function buildTelegramSentMessageResponse<
+    TMethod extends
+        | "sendRichMessage"
+        | "sendPhoto"
+        | "sendVideo"
+        | "sendDocument"
+        | "sendAnimation"
+        | "sendAudio",
+>(
+    method: TMethod,
+    messageId: number,
+): ApiResponse<TelegramMethodResult<TMethod>> {
+    const message = Object.fromEntries(
+        Object.entries(
+            buildTelegramTextMessage({
+                message_id: messageId,
+                date: 1776077500,
+            }),
+        ).filter(([key]) => key !== "text"),
+    );
+    const file = { file_id: "file", file_unique_id: "file" };
+    const contents = {
+        sendRichMessage: { rich_message: { blocks: [] } },
+        sendPhoto: { photo: [{ ...file, width: 1, height: 1 }] },
+        sendVideo: { video: { ...file, width: 1, height: 1, duration: 1 } },
+        sendDocument: { document: file },
+        sendAnimation: {
+            animation: { ...file, width: 1, height: 1, duration: 1 },
+            document: file,
+        },
+        sendAudio: { audio: { ...file, duration: 1 } },
+    };
+
+    return {
+        ok: true,
+        result: {
+            ...message,
+            ...contents[method],
+        } as TelegramMethodResult<TMethod>,
+    };
+}
+
 export function buildTelegramTextMessage(
     overrides: BuildTelegramTextMessageOptions = {},
 ): TelegramTextMessage {
@@ -480,6 +509,13 @@ export function buildTelegramSetWebhookResponse(
     return {
         ok: true,
         result,
+    };
+}
+
+export function buildTelegramTrueResponse(): ApiResponse<true> {
+    return {
+        ok: true,
+        result: true,
     };
 }
 

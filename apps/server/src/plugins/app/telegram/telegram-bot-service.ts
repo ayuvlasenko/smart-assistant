@@ -1,14 +1,21 @@
-import { Update } from "@grammyjs/types";
-import { FastifyBaseLogger } from "fastify";
+import { Type } from "@sinclair/typebox";
+import { FastifyBaseLogger, FastifyInstance } from "fastify";
+import fp from "fastify-plugin";
 import { Env } from "../../../schemas/env.js";
-import { CacheService } from "../cache.js";
-import { UsersRepository } from "../users-repository.js";
+import { AppLogger } from "../app-logger.js";
+import { CacheService } from "../cache-service.js";
+import {
+    defaultLanguage,
+    I18nService,
+    Language,
+    languages,
+} from "../i18n-service.js";
+import { LockService } from "../lock-service.js";
 import { TelegramApiClient } from "./telegram-api-service.js";
-import { createTelegramContext } from "./telegram-context.js";
-import { extractTelegramUser } from "./telegram-extractors.js";
-import { message } from "./telegram-filters.js";
+import { telegramLocales } from "./telegram-locales.js";
+import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
 
-type TelegramWebhookConfig = Pick<
+type TelegramBotConfig = Pick<
     Env,
     | "DOMAIN"
     | "ENVIRONMENT"
@@ -17,8 +24,10 @@ type TelegramWebhookConfig = Pick<
     | "TELEGRAM_WEBHOOK_URL"
 >;
 
-const telegramWebhookCacheKey = "telegram:webhook:set";
-const telegramWebhookCacheTtlSeconds = 60 * 60;
+const telegramWebhookClaimKey = "telegram:webhook:set";
+const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
+const telegramBotUsernameCacheKey = "telegram:bot:username";
+const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
@@ -34,13 +43,31 @@ export function resolveTelegramWebhookUrl(
 }
 
 export class TelegramBotService {
+    private readonly log: FastifyBaseLogger;
+    private readonly telegramApiService: TelegramApiClient;
+    private readonly telegramRouter: TelegramRouter;
+    private readonly cache: CacheService;
+    private readonly lockService: LockService;
+    private readonly i18nService: I18nService;
+    private readonly config: TelegramBotConfig;
+
     constructor(
-        private readonly log: FastifyBaseLogger,
-        private readonly telegramApiService: TelegramApiClient,
-        private readonly usersRepository: UsersRepository,
-        private readonly cache: CacheService,
-        private readonly config: TelegramWebhookConfig,
-    ) {}
+        log: FastifyBaseLogger,
+        telegramApiService: TelegramApiClient,
+        telegramRouter: TelegramRouter,
+        cache: CacheService,
+        lockService: LockService,
+        i18nService: I18nService,
+        config: TelegramBotConfig,
+    ) {
+        this.log = log;
+        this.telegramApiService = telegramApiService;
+        this.telegramRouter = telegramRouter;
+        this.cache = cache;
+        this.lockService = lockService;
+        this.i18nService = i18nService;
+        this.config = config;
+    }
 
     async setWebhookOnStart(): Promise<void> {
         if (this.config.ENVIRONMENT === "preview") {
@@ -50,13 +77,12 @@ export class TelegramBotService {
             return;
         }
 
-        const shouldSetWebhook = await this.cache.setJsonIfMissing(
-            telegramWebhookCacheKey,
-            true,
-            telegramWebhookCacheTtlSeconds,
+        const claim = await this.lockService.tryAcquire(
+            telegramWebhookClaimKey,
+            telegramWebhookClaimTtlMilliseconds,
         );
 
-        if (!shouldSetWebhook) {
+        if (!claim) {
             this.log.info("Telegram webhook setup skipped");
             return;
         }
@@ -64,7 +90,7 @@ export class TelegramBotService {
         try {
             await this.setWebhook();
         } catch (err) {
-            await this.cache.delete(telegramWebhookCacheKey);
+            await this.lockService.release(claim);
             throw err;
         }
     }
@@ -88,6 +114,36 @@ export class TelegramBotService {
     }
 
     async resolveBotUrl(): Promise<string> {
+        return `https://t.me/${await this.resolveUsername()}`;
+    }
+
+    async setCommandsOnStart(): Promise<void> {
+        if (this.config.ENVIRONMENT === "preview") {
+            return;
+        }
+
+        const commands = this.telegramRouter.listCommands();
+
+        for (const languageCode of [undefined, ...languages]) {
+            await this.applyCommands(commands, languageCode);
+        }
+
+        this.log.info(
+            { commands: commands.map(({ name }) => name) },
+            "Telegram commands set successfully",
+        );
+    }
+
+    private resolveUsername(): Promise<string> {
+        return this.cache.remember(
+            telegramBotUsernameCacheKey,
+            Type.String(),
+            telegramBotUsernameCacheTtlMilliseconds,
+            () => this.fetchUsername(),
+        );
+    }
+
+    private async fetchUsername(): Promise<string> {
         const result = await this.telegramApiService.getMe();
 
         if (!result.ok) {
@@ -96,40 +152,63 @@ export class TelegramBotService {
             );
         }
 
-        return `https://t.me/${result.result.username}`;
+        return result.result.username;
     }
 
-    async handleUpdate(update: Update): Promise<void> {
-        this.log.info(update, "Received update");
-
-        const context = createTelegramContext(update);
-        const telegramUser = extractTelegramUser(update);
-
-        if (!telegramUser) {
-            this.log.warn("No user in update, skipping");
-            return;
-        }
-
-        const user = await this.usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: String(telegramUser.id),
-            isBanned: true,
+    private async applyCommands(
+        commands: TelegramCommandInfo[],
+        languageCode: Language | undefined,
+    ): Promise<void> {
+        const t = this.i18nService.getT(languageCode ?? defaultLanguage);
+        const result = await this.telegramApiService.setMyCommands({
+            commands: commands.map(({ name, description }) => ({
+                command: name,
+                description: description(t),
+            })),
+            ...(languageCode ? { language_code: languageCode } : {}),
         });
 
-        this.log.info({ user }, "User for update");
-
-        if (user.isBanned) {
-            this.log.info("User is banned, skipping update");
-            return;
-        }
-
-        if (
-            context.has(message("text")) &&
-            context.update.message.text === "ping"
-        ) {
-            await this.telegramApiService.sendMessage({
-                chat_id: context.update.message.chat.id,
-                text: "pong",
-            });
+        if (!result.ok) {
+            throw new Error(
+                `Failed to set telegram commands: ${result.description}`,
+            );
         }
     }
 }
+
+export default fp(
+    async function (fastify: FastifyInstance) {
+        const appLogger = fastify.getDecorator<AppLogger>("appLogger");
+        const i18nService = fastify.getDecorator<I18nService>("i18nService");
+        const telegramBotService = new TelegramBotService(
+            appLogger.child({ module: "telegram" }),
+            fastify.getDecorator<TelegramApiClient>("telegramApiService"),
+            fastify.getDecorator<TelegramRouter>("telegramRouter"),
+            fastify.getDecorator<CacheService>("cache"),
+            fastify.getDecorator<LockService>("lockService"),
+            i18nService,
+            fastify.config,
+        );
+
+        i18nService.addLocales("telegram", telegramLocales);
+
+        fastify.decorate("telegramBotService", telegramBotService);
+
+        fastify.addHook("onListen", async () => {
+            await telegramBotService.setWebhookOnStart();
+            await telegramBotService.setCommandsOnStart();
+        });
+    },
+    {
+        name: "telegram-bot-service",
+        dependencies: [
+            "@fastify/env",
+            "app-logger",
+            "cache",
+            "i18n-service",
+            "lock-service",
+            "telegram-api-service",
+            "telegram-router",
+        ],
+    },
+);

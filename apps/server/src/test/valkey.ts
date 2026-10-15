@@ -45,6 +45,7 @@ export async function deleteKeysByPrefix(
     client: Redis,
     keyPrefix: string,
 ): Promise<void> {
+    const clientPrefix = client.options.keyPrefix ?? "";
     let cursor = "0";
 
     do {
@@ -58,7 +59,9 @@ export async function deleteKeysByPrefix(
         cursor = nextCursor;
 
         if (keys.length > 0) {
-            await client.del(...keys);
+            await client.del(
+                ...keys.map((key) => key.slice(clientPrefix.length)),
+            );
         }
     } while (cursor !== "0");
 }

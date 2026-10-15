@@ -2,21 +2,20 @@ import { Type } from "@sinclair/typebox";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
+import { buildTestApp } from "../../../test/helper.js";
+import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
-import {
-    buildTelegramChannelPostUpdate,
-    buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-} from "../../../test/telegram-fixtures.js";
+import { Language } from "../i18n-service.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
+import { telegramLocales } from "./telegram-locales.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
 let mongo!: Db;
 
-const webhookGuardSchema = Type.Boolean();
+const webhookClaimSchema = Type.String();
 
 before(async () => {
     const testMongo = await buildTestMongo();
@@ -83,8 +82,11 @@ void describe("TelegramBotService", () => {
             ],
         );
         assert.equal(
-            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
-            true,
+            typeof (await cache.get(
+                "telegram:webhook:set",
+                webhookClaimSchema,
+            )),
+            "string",
         );
     });
 
@@ -96,7 +98,9 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await cache.setJson("telegram:webhook:set", true, 3600);
+        await cache.set("telegram:webhook:set", "other-pod", {
+            ttlMilliseconds: 3_600_000,
+        });
 
         await telegramBotService.setWebhookOnStart();
 
@@ -124,7 +128,7 @@ void describe("TelegramBotService", () => {
             message: "Failed to set telegram webhook: bad webhook",
         });
         assert.equal(
-            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
+            await cache.get("telegram:webhook:set", webhookClaimSchema),
             undefined,
         );
     });
@@ -146,7 +150,7 @@ void describe("TelegramBotService", () => {
             message: "network failure",
         });
         assert.equal(
-            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
+            await cache.get("telegram:webhook:set", webhookClaimSchema),
             undefined,
         );
     });
@@ -164,7 +168,7 @@ void describe("TelegramBotService", () => {
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
         assert.equal(
-            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
+            await cache.get("telegram:webhook:set", webhookClaimSchema),
             undefined,
         );
     });
@@ -177,7 +181,9 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await cache.setJson("telegram:webhook:set", true, 3600);
+        await cache.set("telegram:webhook:set", "other-pod", {
+            ttlMilliseconds: 3_600_000,
+        });
 
         const firstUrl = await telegramBotService.setWebhook();
         const secondUrl = await telegramBotService.setWebhook();
@@ -186,199 +192,107 @@ void describe("TelegramBotService", () => {
         assert.equal(secondUrl, firstUrl);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
         assert.equal(
-            await cache.getJson("telegram:webhook:set", webhookGuardSchema),
-            true,
+            await cache.get("telegram:webhook:set", webhookClaimSchema),
+            "other-pod",
         );
     });
+});
 
-    void it("creates a banned user from a new Telegram user update", async (t) => {
-        const { telegramBotService, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
-
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654321,
-                    }),
-                    text: "hello",
-                },
-            }),
-        );
-
-        const user = await usersRepository.findOneByTelegramId("987654321");
-
-        assert.ok(user);
-        assert.equal(user.telegramId, "987654321");
-        assert.equal(user.isBanned, true);
-    });
-
-    void it("doesn't send pong for a newly created banned user", async (t) => {
+void describe("TelegramBotService commands on start", () => {
+    void it("sets localized commands for every language on production", async (t) => {
         const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: (router) => {
+                    router.command("help", async () => undefined, {
+                        description: (translate) =>
+                            translate("telegram:unknown"),
+                    });
+                },
             });
 
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654322,
-                    }),
-                    text: "ping",
-                },
-            }),
-        );
+        await telegramBotService.setCommandsOnStart();
 
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-    });
-
-    void it("sends pong for an existing unbanned Telegram user", async (t) => {
-        const { telegramApiService, telegramBotService, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
-
-        await usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: "987654323",
-            isBanned: false,
-        });
-
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654323,
-                    }),
-                    text: "ping",
-                },
-            }),
-        );
-
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
         assert.deepEqual(
-            telegramApiService.sendMessage.mock.calls[0]?.arguments,
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
             [
-                {
-                    chat_id: 987654323,
-                    text: "pong",
-                },
+                [{ commands: buildExpectedCommands("en") }],
+                ...(["en", "uk", "ru"] as const).map((language) => [
+                    {
+                        commands: buildExpectedCommands(language),
+                        language_code: language,
+                    },
+                ]),
             ],
         );
     });
 
-    void it("doesn't send pong for an existing banned Telegram user", async (t) => {
-        const { telegramApiService, telegramBotService, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
-
-        await usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: "987654324",
-            isBanned: true,
-        });
-
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654324,
-                    }),
-                    text: "ping",
-                },
-            }),
-        );
-
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-    });
-
-    void it("doesn't send pong on other text messages for an existing unbanned user", async (t) => {
-        const { telegramApiService, telegramBotService, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
-
-        await usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: "987654325",
-            isBanned: false,
-        });
-
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654325,
-                    }),
-                    text: "hello",
-                },
-            }),
-        );
-
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-    });
-
-    void it("doesn't send pong when ping is marked as a command for an existing unbanned user", async (t) => {
-        const { telegramApiService, telegramBotService, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
-
-        await usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: "987654326",
-            isBanned: false,
-        });
-
-        await telegramBotService.handleUpdate(
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654326,
-                    }),
-                    entities: [
-                        {
-                            length: 4,
-                            offset: 0,
-                            type: "bot_command",
-                        },
-                    ],
-                    text: "ping",
-                },
-            }),
-        );
-
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-    });
-
-    void it("skips updates without a Telegram user", async (t) => {
+    void it("doesn't touch commands on preview", async (t) => {
         const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
                 t,
+                environment: "preview",
             });
 
-        await telegramBotService.handleUpdate(
-            buildTelegramChannelPostUpdate({
-                from: undefined,
-                text: "ping",
-            }),
-        );
+        await telegramBotService.setCommandsOnStart();
 
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-        assert.equal(await mongo.collection("users").countDocuments(), 0);
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
     });
 });
+
+void describe("telegram plugin on listen", () => {
+    void it("sets the webhook once on production", async (t) => {
+        const logs = createLogCollector();
+        const { app, telegramApiService } = await buildTestApp({
+            t,
+            environment: "production",
+            logger: logs.logger,
+        });
+
+        await app.listen({ port: 0, host: "127.0.0.1" });
+        await logs.waitForEntry(
+            (entry) => entry.msg === "Telegram commands set successfully",
+        );
+
+        assert.equal(telegramApiService.getMe.mock.callCount(), 0);
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
+    });
+
+    void it("reports the skipped webhook on preview", async (t) => {
+        const logs = createLogCollector();
+        const { app } = await buildTestApp({
+            t,
+            environment: "preview",
+            logger: logs.logger,
+        });
+
+        await app.listen({ port: 0, host: "127.0.0.1" });
+        const skipEntry = await logs.waitForEntry(
+            (entry) =>
+                entry.msg ===
+                "Telegram webhook is not set on preview start, claim it with POST /api/telegram/webhook/refresh",
+        );
+
+        assert.equal(skipEntry.module, "telegram");
+    });
+});
+
+function buildExpectedCommands(language: Language) {
+    return [
+        {
+            command: "cancel",
+            description: telegramLocales[language].cancelCommand,
+        },
+        {
+            command: "help",
+            description: telegramLocales[language].unknown,
+        },
+    ];
+}
