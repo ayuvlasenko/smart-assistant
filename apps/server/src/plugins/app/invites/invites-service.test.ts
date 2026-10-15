@@ -14,7 +14,7 @@ import { buildTestMongo } from "../../../test/mongo.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
 import { UserEntity } from "../users/user-entity.js";
-import { InviteEntity } from "./invite-entity.js";
+import { InviteEntity, InvitesSubjects } from "./invite-entity.js";
 import {
     InviteGrantNotAllowedError,
     InviteWithoutGrantsError,
@@ -90,7 +90,7 @@ void describe("InvitesService create", () => {
     void it("lets an inviter give only the grants the inviter holds", async (t) => {
         const bot = await buildBot(t);
 
-        bot.accessService.register({
+        bot.accessService.subjects<InvitesSubjects>().register({
             name: "test",
             title: () => "Test",
             grants: [
@@ -278,7 +278,7 @@ void describe("InvitesService access to single invites", () => {
     void it("lets a user with a conditional grant see and revoke only own invites", async (t) => {
         const bot = await buildBot(t);
 
-        bot.accessService.register({
+        bot.accessService.subjects<InvitesSubjects>().register({
             name: "test",
             title: () => "Test",
             grants: [

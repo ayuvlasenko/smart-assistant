@@ -1,5 +1,5 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
-import { AccessService } from "../access/access-service.js";
+import { AccessControl } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import {
     escapeTelegramHtml,
@@ -7,7 +7,11 @@ import {
 } from "../telegram/telegram-html.js";
 import { TelegramPageButton } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { InviteEntity, InviteStatus } from "./invite-entity.js";
+import {
+    InviteEntity,
+    InviteStatus,
+    InvitesSubjects,
+} from "./invite-entity.js";
 import { InvitesSceneControl } from "./invites-schemas.js";
 
 const statusIcons: Record<InviteStatus, string> = {
@@ -42,12 +46,12 @@ export function formatInviteUses(invite: InviteEntity): string {
 }
 
 export function formatGrants(
-    accessService: AccessService,
+    access: AccessControl<InvitesSubjects>,
     t: Translate,
     grants: string[],
 ): string {
     return grants
-        .map((name) => accessService.findGrant(name)?.title(t) ?? name)
+        .map((name) => access.findGrant(name)?.title(t) ?? name)
         .join(", ");
 }
 

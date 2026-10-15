@@ -1,7 +1,8 @@
 import { type Static, Type } from "@sinclair/typebox";
-import { AccessService } from "../access/access-service.js";
+import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
 import { TelegramSceneControl } from "../telegram/telegram-scene.js";
+import { InvitesSubjects } from "./invite-entity.js";
 import { InvitesService } from "./invites-service.js";
 
 const invitesScreenSchema = Type.Union([
@@ -61,6 +62,6 @@ export interface InvitesView {
     ctx: TelegramContext;
     scene: InvitesSceneControl;
     invitesService: InvitesService;
-    accessService: AccessService;
+    access: AccessControl<InvitesSubjects>;
     resolveInviteUrl: InviteUrlResolver;
 }

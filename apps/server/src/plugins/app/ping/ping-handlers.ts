@@ -5,25 +5,24 @@ import { I18nService } from "../i18n-service.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { pingLocales } from "./ping-locales.js";
 
-declare module "../access/access-service.js" {
-    interface AccessSubjects {
-        Ping: never;
-    }
+interface PingSubjects {
+    Ping: never;
 }
 
 export const pingGrant = "ping.use";
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        const accessService =
-            fastify.getDecorator<AccessService>("accessService");
+        const access = fastify
+            .getDecorator<AccessService>("accessService")
+            .subjects<PingSubjects>();
         const router = fastify.getDecorator<TelegramRouter>("telegramRouter");
 
         fastify
             .getDecorator<I18nService>("i18nService")
             .addLocales("ping", pingLocales);
 
-        accessService.register({
+        access.register({
             name: "ping",
             title: (t) => t("ping:section"),
             grants: [
@@ -43,7 +42,7 @@ export default fp(
                 await ctx.reply("pong");
             },
             {
-                guard: accessService.guard("use", "Ping"),
+                guard: access.guard("use", "Ping"),
                 description: (t) => t("ping:command"),
             },
         );

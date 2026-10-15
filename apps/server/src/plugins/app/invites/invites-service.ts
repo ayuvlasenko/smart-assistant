@@ -4,24 +4,26 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
-import { AccessService, adminGrant } from "../access/access-service.js";
+import {
+    AccessControl,
+    AccessService,
+    adminGrant,
+} from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
-import { InviteEntity, readInviteStatus } from "./invite-entity.js";
+import {
+    InviteEntity,
+    InvitesSubjects,
+    readInviteStatus,
+} from "./invite-entity.js";
 import {
     InviteGrantNotAllowedError,
     InviteWithoutGrantsError,
 } from "./invites-errors.js";
 import { InvitesEvents } from "./invites-events.js";
 import { InvitesRepository } from "./invites-repository.js";
-
-declare module "../access/access-service.js" {
-    interface AccessSubjects {
-        Invite: InviteEntity;
-    }
-}
 
 export interface InviteDraft {
     grants: string[];
@@ -64,20 +66,20 @@ export class InvitesService {
     private readonly invitesRepository: InvitesRepository;
     private readonly usersRepository: UsersRepository;
     private readonly usersService: UsersService;
-    private readonly accessService: AccessService;
+    private readonly access: AccessControl<InvitesSubjects>;
     private readonly eventEmitter: Emittery<InvitesEvents>;
 
     constructor(
         invitesRepository: InvitesRepository,
         usersRepository: UsersRepository,
         usersService: UsersService,
-        accessService: AccessService,
+        access: AccessControl<InvitesSubjects>,
         eventEmitter: Emittery<InvitesEvents>,
     ) {
         this.invitesRepository = invitesRepository;
         this.usersRepository = usersRepository;
         this.usersService = usersService;
-        this.accessService = accessService;
+        this.access = access;
         this.eventEmitter = eventEmitter;
     }
 
@@ -90,7 +92,7 @@ export class InvitesService {
             expiresAt: draft.expiresAt,
         };
 
-        this.accessService.assert(actor, "create", subject("Invite", data));
+        this.access.assert(actor, "create", subject("Invite", data));
 
         if (!grants.length) {
             throw new InviteWithoutGrantsError();
@@ -98,8 +100,8 @@ export class InvitesService {
 
         for (const grant of grants) {
             if (
-                !this.accessService.findGrant(grant) ||
-                !this.accessService.holds(actor, grant)
+                !this.access.findGrant(grant) ||
+                !this.access.holds(actor, grant)
             ) {
                 throw new InviteGrantNotAllowedError(grant);
             }
@@ -151,7 +153,7 @@ export class InvitesService {
         return this.invitesRepository.findOne({
             $and: [
                 { _id: inviteId },
-                this.accessService.accessibleBy(actor, "read", "Invite"),
+                this.access.accessibleBy(actor, "read", "Invite"),
             ],
         });
     }
@@ -160,7 +162,7 @@ export class InvitesService {
         actor: UserEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteEntity>> {
-        const filter = this.accessService.accessibleBy(actor, "read", "Invite");
+        const filter = this.access.accessibleBy(actor, "read", "Invite");
         const [items, total] = await Promise.all([
             this.invitesRepository.findPage({
                 filter,
@@ -179,7 +181,7 @@ export class InvitesService {
         invite: InviteEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteUser>> {
-        this.accessService.assert(actor, "read", subject("Invite", invite));
+        this.access.assert(actor, "read", subject("Invite", invite));
 
         const activations = invite.activations
             .toReversed()
@@ -208,7 +210,7 @@ export class InvitesService {
             return null;
         }
 
-        this.accessService.assert(actor, "update", subject("Invite", invite));
+        this.access.assert(actor, "update", subject("Invite", invite));
 
         const revoked = await this.invitesRepository.revoke(
             inviteId,
@@ -315,7 +317,9 @@ export default fp(
             fastify.getDecorator<InvitesRepository>("invitesRepository"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
             fastify.getDecorator<UsersService>("usersService"),
-            fastify.getDecorator<AccessService>("accessService"),
+            fastify
+                .getDecorator<AccessService>("accessService")
+                .subjects<InvitesSubjects>(),
             fastify.getDecorator<Emittery<InvitesEvents>>("eventEmitter"),
         );
         const log = fastify

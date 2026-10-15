@@ -28,7 +28,7 @@ const usersPageSize = 10;
 export async function renderInvite(
     view: InvitesView,
 ): Promise<TelegramMessageContent> {
-    const { ctx, scene, accessService, resolveInviteUrl } = view;
+    const { ctx, scene, access, resolveInviteUrl } = view;
     const { t } = ctx;
     const invite = await findInvite(view);
 
@@ -38,11 +38,7 @@ export async function renderInvite(
 
     const status = readInviteStatus(invite, new Date());
     const isActive = status === "active";
-    const canRevoke = accessService.can(
-        ctx.user,
-        "update",
-        subject("Invite", invite),
-    );
+    const canRevoke = access.can(ctx.user, "update", subject("Invite", invite));
     const summary = [
         formatInviteStatus(t, status),
         formatInviteUses(invite),
@@ -64,7 +60,7 @@ export async function renderInvite(
             summary.join(" · "),
             formatLabeled(
                 t("invites:accessLabel"),
-                formatGrants(accessService, t, invite.grants),
+                formatGrants(access, t, invite.grants),
             ),
             formatLabeledTime(
                 t("invites:createdLabel"),

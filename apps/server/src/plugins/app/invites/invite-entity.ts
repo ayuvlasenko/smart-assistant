@@ -16,6 +16,10 @@ export interface InviteEntity extends BaseEntity {
     activations: InviteActivation[];
 }
 
+export interface InvitesSubjects {
+    Invite: InviteEntity;
+}
+
 export type InviteStatus = "active" | "expired" | "revoked" | "full";
 
 export function readInviteStatus(

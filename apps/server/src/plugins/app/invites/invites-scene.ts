@@ -1,9 +1,10 @@
 import { Type } from "@sinclair/typebox";
 import { ObjectId } from "mongodb";
-import { AccessService } from "../access/access-service.js";
+import { AccessControl } from "../access/access-service.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { numberStep } from "../telegram/telegram-steps.js";
+import { InvitesSubjects } from "./invite-entity.js";
 import {
     renderInviteForm,
     renderInviteFormSection,
@@ -47,17 +48,17 @@ export function buildInvitesState(): InvitesState {
 
 export function createInvitesScene(
     invitesService: InvitesService,
-    accessService: AccessService,
+    access: AccessControl<InvitesSubjects>,
     resolveInviteUrl: InviteUrlResolver,
 ): TelegramScene<typeof invitesStateSchema> {
-    const canCreate = accessService.guard("create", "Invite");
-    const canUpdate = accessService.guard("update", "Invite");
+    const canCreate = access.guard("create", "Invite");
+    const canUpdate = access.guard("update", "Invite");
 
     return defineScene({
         name: "invites",
         state: invitesStateSchema,
         ttl: invitesSceneTtlMilliseconds,
-        guard: accessService.guard("read", "Invite"),
+        guard: access.guard("read", "Invite"),
         key: () => "invites",
         watch: watchInvites,
         slots: {
@@ -66,7 +67,7 @@ export function createInvitesScene(
                     ctx,
                     scene,
                     invitesService,
-                    accessService,
+                    access,
                     resolveInviteUrl,
                 }),
         },
@@ -144,7 +145,7 @@ export function createInvitesScene(
                 value: invitesButtonValues.toggle,
                 guard: canCreate,
                 handle: async (ctx, scene, grant) => {
-                    if (!accessService.holds(ctx.user, grant)) {
+                    if (!access.holds(ctx.user, grant)) {
                         return;
                     }
 

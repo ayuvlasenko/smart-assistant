@@ -9,6 +9,7 @@ import { TelegramContext } from "../telegram/telegram-context.js";
 import { TelegramCommandMessageUpdate } from "../telegram/telegram-filters.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
+import { InvitesSubjects } from "./invite-entity.js";
 import { InvitesEvents } from "./invites-events.js";
 import { invitesLocales } from "./invites-locales.js";
 import {
@@ -23,8 +24,9 @@ const inviteDeepLinkName = "invite";
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        const accessService =
-            fastify.getDecorator<AccessService>("accessService");
+        const access = fastify
+            .getDecorator<AccessService>("accessService")
+            .subjects<InvitesSubjects>();
         const invitesService =
             fastify.getDecorator<InvitesService>("invitesService");
         const telegramBotService =
@@ -44,7 +46,7 @@ export default fp(
 
         const invitesScene = createInvitesScene(
             invitesService,
-            accessService,
+            access,
             (token) =>
                 telegramBotService.resolveDeepLinkUrl({
                     name: inviteDeepLinkName,
@@ -60,7 +62,7 @@ export default fp(
                 await sceneEngine.start(ctx, invitesScene, buildInvitesState());
             },
             {
-                guard: accessService.guard("read", "Invite"),
+                guard: access.guard("read", "Invite"),
                 description: (t) => t("invites:command"),
             },
         );
