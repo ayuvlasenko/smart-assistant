@@ -76,7 +76,28 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 
 ## Scene
 
-`/invites` starts one scene, `invites`, with the key `invites`, a TTL of 24 h and the guard `read Invite`. All its screens share one message: a button changes `screen` in the state, and the slot redraws the same message. A second `/invites` shows the scene again on the screen where the admin left it.
+**Problem.** An admin moves between a list, an invite, its users and a form. A new message per screen would fill the chat, and several messages of one flow would show different versions of the same data.
+
+**Idea.** `/invites` starts one scene, `invites`, with the key `invites`, a TTL of 24 h and the guard `read Invite`. The state says which screen is open, and one slot, also named `invites`, draws that screen into one message. The key gives every admin one instance, so a second `/invites` shows the running scene again at the bottom of the chat, on the screen where the admin left it.
+
+**Data.** The state of the scene:
+
+| Field        | Meaning                                                          |
+| ------------ | ---------------------------------------------------------------- |
+| `screen`     | The open screen, one of the rows of the table below              |
+| `listPage`   | The page of the list, kept while the admin looks at an invite    |
+| `page`       | The page of the open screen: users, sections or grants           |
+| `inviteId`   | The open invite                                                  |
+| `isRevoking` | The first press of revoke happened, and the second press revokes |
+| `section`    | The open section of grants in the form                           |
+| `draft`      | The form: `grants`, `maxUses` (1 by default) and `validForDays`  |
+
+**Walk-through of a press.** The admin presses an invite in the list.
+
+1. The button `open` carries the invite id. The engine finds the button in the record of the scene and runs its handler.
+2. The handler sets `screen` to `invite` and `inviteId` to the id. It sends nothing.
+3. After the handler, the engine renders the slot. `render` in `invites-scene.ts` picks `renderInvite` by `screen`. The screen loads the invite through `InvitesService`, which checks `read Invite` again.
+4. The engine edits the same message with the new text and keyboard. On save, `watch` moves the scene from the topic `invites` to `invites.invite:<id>`.
 
 | Screen     | Shows                                                                                              | Leads to                                   |
 | ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -87,6 +108,8 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 | `sections` | The sections that hold grants the admin has, with pages                                            | `section`, `‹ Back` to `form`              |
 | `section`  | The grants of one section as checkboxes, with pages                                                | `‹ Back` to `sections`                     |
 | `validFor` | 1, 7 or 30 days, another number, or no expiry                                                      | `form`                                     |
+
+Revoke needs two presses: the first one sets `isRevoking`, and the screen asks for a confirmation on the same button; the second one revokes. A move to the list or to another invite resets `isRevoking`.
 
 The form keeps the draft in the scene state and writes nothing until `✅ Create invite`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
 

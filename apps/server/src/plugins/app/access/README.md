@@ -21,9 +21,22 @@ flowchart LR
 | Action              | `manage`, `create`, `read`, `update`, `delete` or `use`. `manage` matches every action, and the subject `all` matches every subject.           |
 | `UserEntity.grants` | The names of the grants the user holds. Only the invites domain adds names; an operator can change them in MongoDB.                            |
 
-The `admin` grant is registered by this domain and gives `manage all`. A grant name that no domain registers any more is ignored, so a removed feature does not break the users who still hold its grant.
+The `admin` grant is registered by this domain and gives `manage all`.
 
-`AccessService` builds the ability once per user object and keeps it in a `WeakMap`. The update handler loads the user once per update, so one update builds one ability, and a user whose grants changed gets a new ability on the next update.
+## From grants to an ability
+
+**Problem.** The user document stores only grant names, such as `["ping.use"]`. The rules behind a name belong to the domain that registered it, and a rule can depend on the user, such as "the reports that this user created".
+
+**Idea.** The names stay in MongoDB, and the rules stay in code. On the first question about a user, the service runs `define` of every grant the user holds and builds one CASL ability from the result.
+
+**Walk-through.**
+
+1. On start, every domain plugin calls `access.register(section)`. The service keeps the sections in order for the invite form, and the grants in a map by name. A second section or grant with the same name stops the start.
+2. A call of `can`, `assert`, `accessibleBy` or a guard asks for the ability of the user object.
+3. For a user without a ban, the service creates one `AbilityBuilder` and calls `define(builder, user)` of every grant in `user.grants`. Each grant adds its `can` and `cannot` rules to the same builder. A banned user gets no rules at all.
+4. The service builds the ability and keeps it in a `WeakMap` by the user object.
+
+**Edge cases.** The update handler loads the user once per update, so one update builds one ability. A user whose grants changed gets a new ability on the next update, because the next update loads a new user object. A grant name that no domain registers any more is skipped, so a removed feature does not break the users who still hold its grant. `subjects<M>()` returns the same object for every domain: the type parameter only narrows what the compiler accepts, and the ability itself covers every subject.
 
 ## Bans and grants
 
@@ -43,9 +56,9 @@ A guard only shapes what the user can reach in the chat, so it checks the subjec
 
 Never check a loaded document against the subject name. With a string, CASL answers whether the user may act on at least one document of the subject and ignores the conditions of the rules, so `can("update", "Report", { ownerId: user._id })` would let the user update every report. Load the document first and tag it with `subject("Report", report)` from `@casl/ability`. A new document is checked the same way, with `subject` around the data it is going to have.
 
-For a list, put `accessibleBy` into the query. It turns the rules into a MongoDB query: `{}` for an unconditional rule, the conditions for conditional ones, and `{ $expr: { $eq: [0, 1] } }`, which matches nothing, when the user has no rule. So the page and the count include only the documents the user may see. It is a port of `accessibleBy` from `@casl/mongoose`, which supports the plain MongoDB driver but imports `mongoose` and needs it as a peer dependency; for a 15-line helper on top of `rulesToCondition` from `@casl/ability/extra`, the project keeps its own copy instead of a second MongoDB driver. Combine it with other conditions through `$and`, never by spreading it into another object, or a key such as `$or` can overwrite the restriction.
+For a list, put `accessibleBy` into the query. It takes the rules of the user for the action and the subject and turns them into a MongoDB query: `{}` for an unconditional rule, the conditions for conditional ones joined with `$or`, a `cannot` rule as `$nor` joined with `$and`, and `{ $expr: { $eq: [0, 1] } }`, which matches nothing, when the user has no rule. So the page and the count include only the documents the user may see. It is a port of `accessibleBy` from `@casl/mongoose`, which supports the plain MongoDB driver but imports `mongoose` and needs it as a peer dependency; for a 15-line helper on top of `rulesToCondition` from `@casl/ability/extra`, the project keeps its own copy instead of a second MongoDB driver. Combine it with other conditions through `$and`, never by spreading it into another object, or a key such as `$or` can overwrite the restriction.
 
-`holds(user, grant)` answers a different question: whether the user may hand a grant to somebody else, which the invite form uses to stop a user from granting more than the user has.
+`holds(user, grant)` answers a different question: whether the user may hand a grant to somebody else. It does not look at rules. It is true when the user is not banned and holds the grant name itself or `admin`. The invite form offers only these grants, and `InvitesService.create` checks them again, so a user cannot grant more than the user has.
 
 ## Adding a permission to a domain
 
