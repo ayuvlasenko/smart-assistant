@@ -7,8 +7,6 @@ import { pathToFileURL } from "node:url";
 
 const NAMESPACE = "smart-assistant";
 
-const valkeyPasswordPattern = /^[A-Za-z0-9._~-]+$/;
-
 const REQUIRED_ENV_VARS = [
     "DATABASE_URL",
     "DOMAIN",
@@ -20,10 +18,10 @@ const REQUIRED_ENV_VARS = [
     "S3_ENDPOINT",
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_WEBHOOK_SECRET_TOKEN",
-    "VALKEY_PASSWORD",
+    "VALKEY_URL",
 ];
 
-const OPTIONAL_ENV_VARS = ["TELEGRAM_WEBHOOK_URL"];
+const OPTIONAL_ENV_VARS = ["INVITE_TOKEN", "TELEGRAM_WEBHOOK_URL", "TIME_ZONE"];
 
 function validateEnvVars() {
     const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);
@@ -41,8 +39,6 @@ function validateEnvVars() {
         );
         process.exit(1);
     }
-
-    validateValkeyPassword(process.env.VALKEY_PASSWORD);
 }
 
 export function buildCommand(secretName, dryRun) {
@@ -51,7 +47,7 @@ export function buildCommand(secretName, dryRun) {
         ...OPTIONAL_ENV_VARS.filter((v) => process.env[v]),
     ];
     const literals = envVars
-        .map((v) => `--from-literal=${v}="${process.env[v]}"`)
+        .map((v) => quoteShellArgument(`--from-literal=${v}=${process.env[v]}`))
         .join(" \\\n          ");
 
     if (dryRun) {
@@ -59,6 +55,10 @@ export function buildCommand(secretName, dryRun) {
     }
 
     return `kubectl create secret generic ${secretName} -n ${NAMESPACE} \\\n          ${literals} --dry-run=client -o yaml | kubectl apply -f -`;
+}
+
+export function quoteShellArgument(value) {
+    return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 export function buildNamespaceCommand() {
@@ -88,14 +88,6 @@ export function validateSecretName(secretName) {
 
     if (!secretName.startsWith("server-secrets-")) {
         throw new Error("Secret name must start with 'server-secrets-'");
-    }
-}
-
-export function validateValkeyPassword(password) {
-    if (typeof password !== "string" || !valkeyPasswordPattern.test(password)) {
-        throw new Error(
-            "VALKEY_PASSWORD must contain only URL-safe characters: A-Z, a-z, 0-9, '.', '_', '~', '-'",
-        );
     }
 }
 

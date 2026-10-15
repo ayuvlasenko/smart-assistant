@@ -43,20 +43,3 @@ s3:
   ip: 192.168.0.182
   port: 9000
   bucket: smart-assistant
-
-valkey:
-  image:
-    repository: valkey/valkey
-    tag: "8-alpine"
-    pullPolicy: IfNotPresent
-  port: 6379
-  replicas: 1
-  maxmemory: "128mb"
-  maxmemoryPolicy: allkeys-lru
-  resources:
-    requests:
-      memory: "64Mi"
-      cpu: "50m"
-    limits:
-      memory: "256Mi"
-      cpu: "250m"
