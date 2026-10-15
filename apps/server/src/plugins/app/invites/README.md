@@ -58,7 +58,7 @@ A user who is already in the bot can open a link too: the invite adds its grants
 
 ## Bootstrap
 
-`INVITE_TOKEN` creates the first admin. On every start, `InvitesService.bootstrap` runs in `onReady`:
+`INVITE_TOKEN` creates the first admin. It is optional and must match `[A-Za-z0-9_-]{1,57}`, so that `invite_<INVITE_TOKEN>` fits the 64 characters of a deep link. `scripts/create-server-secret.js` writes it to the `server-secrets-*` secret when it is set. On every start, `InvitesService.bootstrap` runs in `onReady`:
 
 ```mermaid
 flowchart TD
