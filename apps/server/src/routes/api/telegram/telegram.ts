@@ -82,7 +82,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
             },
             async () => {
                 const botUrl = await telegramBotService.resolveBotUrl();
-                const webhookUrl = await telegramBotService.setWebhook();
+                const webhookUrl = await telegramBotService.refreshWebhook();
 
                 return { webhookUrl, botUrl };
             },

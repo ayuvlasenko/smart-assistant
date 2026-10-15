@@ -2,7 +2,7 @@ import { BotCommand } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Env } from "../../../schemas/env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
@@ -40,6 +40,7 @@ const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
 const telegramBotUsernameCacheKey = "telegram:bot:username";
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
 const telegramChatCommandsCacheTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
+const telegramCommandsGenerationKey = "telegram:commands:generation";
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
@@ -125,6 +126,17 @@ export class TelegramBotService {
         return url;
     }
 
+    async refreshWebhook(): Promise<string> {
+        const url = await this.setWebhook();
+
+        await this.setDefaultCommands();
+        await this.cache.set(telegramCommandsGenerationKey, randomUUID(), {
+            ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
+        });
+
+        return url;
+    }
+
     async resolveBotUrl(): Promise<string> {
         return `https://t.me/${await this.resolveUsername()}`;
     }
@@ -140,28 +152,11 @@ export class TelegramBotService {
             return;
         }
 
-        const commands = this.telegramRouter
-            .listCommands()
-            .filter(({ guard }) => !guard);
-
-        for (const languageCode of [undefined, ...languages]) {
-            await this.setCommands({
-                commands: describeCommands(
-                    commands,
-                    this.i18nService.getT(languageCode ?? defaultLanguage),
-                ),
-                ...(languageCode ? { language_code: languageCode } : {}),
-            });
-        }
-
-        this.log.info(
-            { commands: commands.map(({ name }) => name) },
-            "Telegram commands set successfully",
-        );
+        await this.setDefaultCommands();
     }
 
     async syncCommands(user: UserEntity): Promise<void> {
-        if (this.config.ENVIRONMENT === "preview" || user.isBanned) {
+        if (user.isBanned) {
             return;
         }
 
@@ -172,11 +167,16 @@ export class TelegramBotService {
             this.i18nService.getT(user.languageCode),
         );
         const key = `telegram:commands:${user.telegramId}`;
-        const hash = createHash("sha256")
-            .update(JSON.stringify(commands))
-            .digest("base64url");
 
         try {
+            const generation = await this.cache.get(
+                telegramCommandsGenerationKey,
+                Type.String(),
+            );
+            const hash = createHash("sha256")
+                .update(JSON.stringify({ generation, commands }))
+                .digest("base64url");
+
             if ((await this.cache.get(key, Type.String())) === hash) {
                 return;
             }
@@ -202,6 +202,27 @@ export class TelegramBotService {
                 "Failed to set telegram chat commands",
             );
         }
+    }
+
+    private async setDefaultCommands(): Promise<void> {
+        const commands = this.telegramRouter
+            .listCommands()
+            .filter(({ guard }) => !guard);
+
+        for (const languageCode of [undefined, ...languages]) {
+            await this.setCommands({
+                commands: describeCommands(
+                    commands,
+                    this.i18nService.getT(languageCode ?? defaultLanguage),
+                ),
+                ...(languageCode ? { language_code: languageCode } : {}),
+            });
+        }
+
+        this.log.info(
+            { commands: commands.map(({ name }) => name) },
+            "Telegram commands set successfully",
+        );
     }
 
     private resolveUsername(): Promise<string> {

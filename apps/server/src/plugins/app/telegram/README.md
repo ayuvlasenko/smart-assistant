@@ -166,7 +166,7 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 | scene button          | button press                                       | the callback gets `forbidden`, the handler does not run                         |
 | scene input           | `ask`, input text, input button                    | `ask` replies `forbidden`, the text goes to the routes                          |
 
-The guard of a command also builds the command menu of the chat. `TelegramBotService.syncCommands` runs on every update of a user with access, keeps a hash of the last menu of the chat in Valkey, and calls `setMyCommands` with the chat scope only when the menu changes: after a new grant, a language change or a deploy that adds a command.
+The guard of a command also builds the command menu of the chat. `TelegramBotService.syncCommands` runs on every update of a user with access, keeps a hash of the last menu of the chat in Valkey, and calls `setMyCommands` with the chat scope only when the menu changes: after a new grant, a language change or a deploy that adds a command. A preview syncs chat menus too, because only the preview that holds the webhook gets updates. `POST /api/telegram/webhook/refresh` sets the default commands and writes a new menu generation into the hash, so a preview that takes the bot back from another one sets every chat menu again.
 
 `isBanned` is not a guard: it is the gate before the router. A banned user gets only the deep links registered with `allowBanned`, such as an invite link.
 

@@ -174,7 +174,7 @@ void describe("POST /api/telegram/webhook", () => {
 });
 
 void describe("POST /api/telegram/webhook/refresh", () => {
-    void it("points the webhook at this environment on preview", async (t) => {
+    void it("points the webhook and the default commands at this environment on preview", async (t) => {
         const { app, telegramApiService } = await buildTestApp({
             t,
             environment: "preview",
@@ -202,6 +202,12 @@ void describe("POST /api/telegram/webhook/refresh", () => {
                     },
                 ],
             ],
+        );
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments[0].language_code ?? "default",
+            ),
+            ["default", "en", "uk", "ru"],
         );
     });
 

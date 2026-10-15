@@ -324,30 +324,46 @@ void describe("TelegramBotService chat commands", () => {
         );
     });
 
-    void it("doesn't set chat commands for banned users or on preview", async (t) => {
-        const production = await buildTelegramBotServiceTestApp(
-            buildMenuAppOptions(t),
-        );
-        const preview = await buildTelegramBotServiceTestApp({
-            ...buildMenuAppOptions(t),
-            environment: "preview",
-        });
+    void it("doesn't set chat commands for banned users", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await production.telegramBotService.syncCommands(
+        await telegramBotService.syncCommands(
             buildUserEntity({ telegramId: "987654604", isBanned: true }),
         );
-        await preview.telegramBotService.syncCommands(
-            buildUserEntity({ telegramId: "987654605" }),
-        );
 
-        assert.equal(
-            production.telegramApiService.setMyCommands.mock.callCount(),
-            0,
-        );
-        assert.equal(
-            preview.telegramApiService.setMyCommands.mock.callCount(),
-            0,
-        );
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
+    });
+
+    void it("sets the chat commands on preview again after the webhook is refreshed", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                environment: "preview",
+            });
+        const user = buildUserEntity({ telegramId: "987654605" });
+        const readScopes = () =>
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments[0].scope?.type ?? "default",
+            );
+
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands(user);
+
+        assert.deepEqual(readScopes(), ["chat"]);
+
+        await telegramBotService.refreshWebhook();
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands(user);
+
+        assert.deepEqual(readScopes(), [
+            "chat",
+            "default",
+            "default",
+            "default",
+            "default",
+            "chat",
+        ]);
     });
 
     void it("logs a rejected chat menu, keeps going and tries again next time", async (t) => {
