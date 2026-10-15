@@ -76,6 +76,7 @@ Route files must match their parent directory name for correct autoload prefix m
 
 - Keep the chat free of service buttons. Mention `/cancel` once, in the first question of an input, instead of attaching a cancel button to every message.
 - Mention step commands such as `/skip` in the prompt text of the step that accepts them.
+- Name a command in snake case: lowercase Latin letters, digits and underscores, such as `/new_invite`, at most 32 characters. Telegram accepts only these characters in the command menu.
 - Use inline buttons only when the user picks from a set of options, such as an account or a date. Accept typed text for free-form input.
 - Update the existing message for pagination and similar controls instead of sending a new one: show it as a slot and keep the page in the scene state.
 
