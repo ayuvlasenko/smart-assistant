@@ -22,6 +22,8 @@ import { isAllowed, TelegramGuard } from "./telegram-guard.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import { TelegramScene } from "./telegram-scene.js";
 
+const commandNamePattern = /^[a-z0-9_]{1,32}$/;
+
 export type TelegramMiddleware<TUpdate extends Update = Update> = (
     ctx: TelegramContext<TUpdate>,
     next: () => Promise<void>,
@@ -105,6 +107,12 @@ export class TelegramRouter {
         options: TelegramCommandOptions = {},
     ): void {
         this.assertUnlocked();
+
+        if (!commandNamePattern.test(name)) {
+            throw new Error(
+                `Telegram command "${name}" must match ${String(commandNamePattern)}`,
+            );
+        }
 
         if (this.commandRoutes.has(name)) {
             throw new Error(`Telegram command "${name}" is already registered`);

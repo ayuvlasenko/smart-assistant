@@ -197,6 +197,40 @@ void describe("TelegramRouter", () => {
         );
     });
 
+    void it("rejects a command name that Telegram does not accept", async (t) => {
+        await Promise.all(
+            ["newInvite", "new-invite", "", "a".repeat(33)].map((name) =>
+                assert.rejects(
+                    () =>
+                        buildTelegramBotServiceTestApp({
+                            databaseName,
+                            mongoClient,
+                            t,
+                            registerRoutes: (router) => {
+                                router.command(name, async () => undefined);
+                            },
+                        }),
+                    {
+                        message: `Telegram command "${name}" must match /^[a-z0-9_]{1,32}$/`,
+                    },
+                ),
+            ),
+        );
+    });
+
+    void it("accepts a command name in snake case", async (t) => {
+        const bot = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            registerRoutes: (router) => {
+                router.command("new_invite_2", async () => undefined);
+            },
+        });
+
+        assert.ok(bot.telegramBotService);
+    });
+
     void it("routes by an async predicate that reads the context", async (t) => {
         const calls: string[] = [];
         const bot = await buildTelegramSceneBot({
