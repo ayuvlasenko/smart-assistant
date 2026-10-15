@@ -1,3 +1,5 @@
+import { ApiError } from "@grammyjs/types";
+
 export class DuplicateTelegramUpdateError extends Error {
     constructor() {
         super("Telegram update was already received");
@@ -30,5 +32,21 @@ export class UnhandledTelegramUpdateError extends Error {
     constructor() {
         super("No Telegram route handled the update");
         this.name = "UnhandledTelegramUpdateError";
+    }
+}
+
+export class TelegramApiError extends Error {
+    readonly method: string;
+    readonly errorCode: number;
+    readonly description: string;
+    readonly retryAfter: number | undefined;
+
+    constructor(method: string, response: ApiError) {
+        super(`Telegram ${method} failed: ${response.description}`);
+        this.name = "TelegramApiError";
+        this.method = method;
+        this.errorCode = response.error_code;
+        this.description = response.description;
+        this.retryAfter = response.parameters?.retry_after;
     }
 }

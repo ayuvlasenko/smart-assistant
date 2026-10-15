@@ -24,6 +24,7 @@ import {
     buildTelegramDeepLink,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
+import { TelegramApiError } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
@@ -118,9 +119,7 @@ export class TelegramBotService {
         });
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to set telegram webhook: ${result.description}`,
-            );
+            throw new TelegramApiError("setWebhook", result);
         }
 
         this.log.info({ url }, "Telegram webhook set successfully");
@@ -240,9 +239,7 @@ export class TelegramBotService {
         const result = await this.telegramApiService.getMe();
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to get telegram bot: ${result.description}`,
-            );
+            throw new TelegramApiError("getMe", result);
         }
 
         return result.result.username;
@@ -254,9 +251,7 @@ export class TelegramBotService {
         const result = await this.telegramApiService.setMyCommands(...args);
 
         if (!result.ok) {
-            throw new Error(
-                `Failed to set telegram commands: ${result.description}`,
-            );
+            throw new TelegramApiError("setMyCommands", result);
         }
     }
 }

@@ -12,6 +12,8 @@ export type TelegramUpdateResult =
     | "banned"
     | "handled"
     | "unhandled"
+    | "blocked"
+    | "rate_limited"
     | "error";
 
 export type TelegramSceneEvent =

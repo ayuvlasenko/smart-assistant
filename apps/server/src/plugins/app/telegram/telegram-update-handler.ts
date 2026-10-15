@@ -19,6 +19,7 @@ import {
     BannedTelegramUserError,
     DuplicateTelegramUpdateError,
     NonPrivateChatError,
+    TelegramApiError,
     TelegramUpdateWithoutUserError,
     UnhandledTelegramUpdateError,
 } from "./telegram-errors.js";
@@ -207,6 +208,23 @@ export class TelegramUpdateHandler {
 
         if (err instanceof UnhandledTelegramUpdateError) {
             return this.replyUnknown(run);
+        }
+
+        if (err instanceof TelegramApiError && err.errorCode === 403) {
+            run.log.info(
+                { method: err.method, description: err.description },
+                "User blocked the bot, skipping update",
+            );
+            return "blocked";
+        }
+
+        if (err instanceof TelegramApiError && err.errorCode === 429) {
+            run.log.warn(
+                { method: err.method, retryAfter: err.retryAfter },
+                "Telegram rate limit reached, skipping update",
+            );
+            await run.responder.answerPendingCallback();
+            return "rate_limited";
         }
 
         await this.reportError(run, err);

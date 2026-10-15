@@ -169,8 +169,10 @@ void describe("TelegramContext", () => {
         );
 
         await assert.rejects(() => context.reply("hello"), {
-            message:
-                "Failed to send telegram message: Forbidden: bot was blocked by the user",
+            name: "TelegramApiError",
+            method: "sendMessage",
+            errorCode: 403,
+            description: "Forbidden: bot was blocked by the user",
         });
     });
 

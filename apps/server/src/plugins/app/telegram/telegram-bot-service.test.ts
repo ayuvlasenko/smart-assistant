@@ -134,7 +134,9 @@ void describe("TelegramBotService", () => {
             });
 
         await assert.rejects(() => telegramBotService.setWebhookOnStart(), {
-            message: "Failed to set telegram webhook: bad webhook",
+            name: "TelegramApiError",
+            method: "setWebhook",
+            description: "bad webhook",
         });
         assert.equal(
             await cache.get("telegram:webhook:set", webhookClaimSchema),

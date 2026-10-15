@@ -76,7 +76,7 @@ sequenceDiagram
     H->>H: answer callback, map errors to a reply and a metric
 ```
 
-`TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. For a request with a valid secret token the route always answers `200`, so Telegram does not retry an update that failed in the bot.
+`TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`; the handler labels a 403, a user who blocked the bot, as `blocked` and a 429 as `rate_limited`, and sends no error reply for them, because that reply would fail the same way. For a request with a valid secret token the route always answers `200`, so Telegram does not retry an update that failed in the bot.
 
 ## An update for other users
 
