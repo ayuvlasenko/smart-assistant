@@ -1,10 +1,4 @@
-import {
-    InlineKeyboardButton,
-    RichBlockTableCell,
-    RichText,
-    RichTextDateTime,
-} from "@grammyjs/types";
-import { formatDate } from "../../../utils/parsers.js";
+import { InlineKeyboardButton } from "@grammyjs/types";
 import { AccessService } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import { InviteEntity, InviteStatus } from "./invite-entity.js";
@@ -48,19 +42,6 @@ export function formatGrants(
     return grants
         .map((name) => accessService.findGrant(name)?.title(t) ?? name)
         .join(", ");
-}
-
-export function richDate(date: Date, timeZone: string): RichTextDateTime {
-    return {
-        type: "date_time",
-        text: formatDate(date, timeZone),
-        unix_time: Math.floor(date.getTime() / 1000),
-        date_time_format: "dt",
-    };
-}
-
-export function tableCell(text: RichText): RichBlockTableCell {
-    return { text, align: "left", valign: "top" };
 }
 
 export function withoutEmptyRows(

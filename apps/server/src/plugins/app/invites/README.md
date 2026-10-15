@@ -35,7 +35,7 @@ sequenceDiagram
     alt matched
         S->>Us: grantAccess: unban, add grants
         S->>E: invites.inviteActivated
-        E-->>H: deliver to the scenes of the author
+        E-->>H: deliver to the scene of the author
     else not matched
         S->>I: find by token, explain the refusal
     end
@@ -72,26 +72,32 @@ flowchart TD
 
 A bootstrap invite is an invite without `createdBy`. So the token works once, for the first user, while no admin exists; a changed or removed token, or an admin from any source, closes every older bootstrap invite. A token that comes back before anybody used it reopens its invite; a token that was used stays closed, and the server logs a warning on every start until `INVITE_TOKEN` changes. Nothing makes the check and the insert atomic: two instances that start at the same moment against a database without an admin can both try to insert, and the unique index on `token` stops the second one.
 
-## Scenes
+## Scene
 
-| Scene            | Started by            | Key       | TTL    | Guard           | Shows                                                                                              |
-| ---------------- | --------------------- | --------- | ------ | --------------- | -------------------------------------------------------------------------------------------------- |
-| `invites.list`   | `/invites`            | `list`    | 1 h    | `read Invite`   | Five invites per page, active first; a button opens each one; `➕ New invite` with `create Invite` |
-| `invites.form`   | `➕ New invite`       | none      | 30 min | `create Invite` | A blocking form: grants by section with pages, user limit, valid days                              |
-| `invites.invite` | the list, or the form | invite id | 24 h   | `read Invite`   | The link, status, uses, expiry, grants; the users who came; revoke with `update Invite`            |
+`/invites` starts one scene, `invites`, with the key `invites`, a TTL of 24 h and the guard `read Invite`. All its screens share one message: a button changes `screen` in the state, and the slot redraws the same message. A second `/invites` shows the scene again on the screen where the admin left it.
 
-The form keeps the draft in its own state and writes nothing until `✅ Create invite`. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit.
+| Screen     | Shows                                                                                              | Leads to                                   |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `list`     | Five invites per page, active first; a button opens each one; `➕ New invite` with `create Invite` | `invite`, `form`                           |
+| `invite`   | Status, uses, expiry, grants; `📋 Copy link` while active; revoke with `update Invite`             | `users`, `‹ Back` to `list`                |
+| `users`    | The users who came, ten per page                                                                   | `‹ Back` to `invite`                       |
+| `form`     | The draft: grants, user limit, valid days; `✅ Create invite`                                      | `sections`, `validFor`, `invite`, `‹ Back` |
+| `sections` | The sections that hold grants the admin has, with pages                                            | `section`, `‹ Back` to `form`              |
+| `section`  | The grants of one section as checkboxes, with pages                                                | `‹ Back` to `sections`                     |
+| `validFor` | 1, 7 or 30 days, another number, or no expiry                                                      | `form`                                     |
 
-The invite and the list redraw by themselves when somebody uses an invite: `invites.inviteActivated` carries the invite id and the author, and the handler delivers both scenes of the author. `🔄 Refresh` redraws them on demand. All slots are rich messages, and every callback button stays in the inline keyboard, because the scene engine does not see buttons inside rich blocks yet (`docs/backlog/rich-message-block-buttons-not-recorded.md`).
+The form keeps the draft in the scene state and writes nothing until `✅ Create invite`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
+
+The scene redraws by itself when somebody uses an invite: `invites.inviteActivated` carries the invite id and the author, and the handler delivers the scene of the author. `🔄 Refresh` redraws it on demand. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
 
 ## Files
 
-| File                                                               | Owns                                                                                     |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `invite-entity.ts`                                                 | The invite document and its status                                                       |
-| `invites-repository.ts`                                            | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page |
-| `invites-service.ts`                                               | The rules: who can create, read and revoke, activation and its refusals, bootstrap       |
-| `invites-handlers.ts`                                              | The Telegram side: the deep link, `/invites`, the scenes, the delivery of the event      |
-| `invites-list-scene.ts`, `invite-form-scene.ts`, `invite-scene.ts` | The three scenes                                                                         |
-| `invite-format.ts`                                                 | Shared view helpers of the scenes: status labels, dates, table cells                     |
-| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts`     | Events, errors, texts                                                                    |
+| File                                                           | Owns                                                                                     |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `invite-entity.ts`                                             | The invite document and its status                                                       |
+| `invites-repository.ts`                                        | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page |
+| `invites-service.ts`                                           | The rules: who can create, read and revoke, activation and its refusals, bootstrap       |
+| `invites-handlers.ts`                                          | The Telegram side: the deep link, `/invites`, the scene, the delivery of the event       |
+| `invites-scene.ts`                                             | The scene and its screens                                                                |
+| `invite-format.ts`                                             | View helpers of the scene: status labels, uses, grants, keyboard rows                    |
+| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts` | Events, errors, texts                                                                    |
