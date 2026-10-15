@@ -1,8 +1,7 @@
 import { ObjectId } from "mongodb";
 
 export interface InvitesEvents {
-    "invites.inviteActivated": {
+    "invites.inviteChanged": {
         inviteId: ObjectId;
-        createdBy?: ObjectId;
     };
 }

@@ -177,6 +177,63 @@ void describe("Invites scenes", () => {
         );
     });
 
+    void it("redraws the invite list of another admin and leaves other screens alone", async (t) => {
+        const bot = await buildBot(t);
+        const author = buildTelegramPrivateChat({ id: 987654824 });
+        const watcher = buildTelegramPrivateChat({ id: 987654825 });
+        const drafter = buildTelegramPrivateChat({ id: 987654826 });
+        const guest = buildTelegramPrivateChat({ id: 987654827 });
+
+        await createAdmin(bot, author);
+        await createAdmin(bot, watcher);
+        await createAdmin(bot, drafter);
+        await createInviteThroughForm(bot, author);
+        await bot.sendText(watcher, "/invites");
+        await bot.sendText(drafter, "/invites");
+        await bot.pressButton(drafter, en.newInviteButton);
+
+        const draftEdits = countEditsIn(bot, drafter);
+
+        await sendAsStranger(
+            bot,
+            guest,
+            `/start invite_${await readInviteToken()}`,
+        );
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await bot.readMessageTexts(author.id)).at(-1)?.includes("1/3"),
+        );
+        assert.ok(
+            (await bot.readMessageTexts(watcher.id)).at(-1)?.includes("1/3"),
+        );
+        assert.equal(countEditsIn(bot, drafter), draftEdits);
+    });
+
+    void it("redraws the invite list of another admin when an invite is created or revoked", async (t) => {
+        const bot = await buildBot(t);
+        const author = buildTelegramPrivateChat({ id: 987654828 });
+        const watcher = buildTelegramPrivateChat({ id: 987654829 });
+
+        await createAdmin(bot, author);
+        await createAdmin(bot, watcher);
+        await bot.sendText(watcher, "/invites");
+        await createInviteThroughForm(bot, author);
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await bot.readMessageTexts(watcher.id)).at(-1)?.includes("🟢 0/3"),
+        );
+
+        await bot.pressButton(author, en.revokeButton);
+        await bot.pressButton(author, en.confirmRevokeButton);
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await bot.readMessageTexts(watcher.id)).at(-1)?.includes("⛔ 0/3"),
+        );
+    });
+
     void it("adds the access of an invite to a user who is already in", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654817 });
@@ -378,6 +435,12 @@ function readSentTextsTo(bot: InvitesBot, chat: Chat.PrivateChat): string[] {
         .map((call) => call.arguments[0])
         .filter(({ chat_id: chatId }) => chatId === chat.id)
         .map(({ text }) => text);
+}
+
+function countEditsIn(bot: InvitesBot, chat: Chat.PrivateChat): number {
+    return bot.telegramApiService.editMessageText.mock.calls.filter(
+        (call) => call.arguments[0].chat_id === chat.id,
+    ).length;
 }
 
 function readCopyTexts(bot: InvitesBot): string[] {

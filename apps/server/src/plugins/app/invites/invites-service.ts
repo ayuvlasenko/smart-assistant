@@ -95,10 +95,16 @@ export class InvitesService {
             }
         }
 
-        return this.invitesRepository.create({
+        const invite = await this.invitesRepository.create({
             token: randomBytes(inviteTokenBytes).toString("base64url"),
             ...data,
         });
+
+        await this.eventEmitter.emit("invites.inviteChanged", {
+            inviteId: invite._id,
+        });
+
+        return invite;
     }
 
     async activate(
@@ -118,9 +124,8 @@ export class InvitesService {
                 activated.grants,
             );
 
-            await this.eventEmitter.emit("invites.inviteActivated", {
+            await this.eventEmitter.emit("invites.inviteChanged", {
                 inviteId: activated._id,
-                createdBy: activated.createdBy,
             });
 
             return { status: "activated", invite: activated, user: updated };
@@ -195,7 +200,18 @@ export class InvitesService {
 
         this.accessService.assert(actor, "update", subject("Invite", invite));
 
-        return this.invitesRepository.revoke(inviteId, new Date());
+        const revoked = await this.invitesRepository.revoke(
+            inviteId,
+            new Date(),
+        );
+
+        if (revoked) {
+            await this.eventEmitter.emit("invites.inviteChanged", {
+                inviteId: revoked._id,
+            });
+        }
+
+        return revoked;
     }
 
     async bootstrap(token: string | undefined): Promise<InvitesBootstrap> {

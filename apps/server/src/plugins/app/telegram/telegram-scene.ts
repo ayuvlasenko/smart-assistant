@@ -143,6 +143,7 @@ export interface TelegramSceneDefinition<
         };
     };
     key?(state: Static<TStateSchema>): string;
+    watch?(state: Static<TStateSchema>): string[];
     start?(
         ctx: TelegramContext,
         scene: TelegramSceneControl<Static<TStateSchema>, TButtons, TInputs>,
@@ -192,6 +193,7 @@ interface TelegramSceneShape<TStateSchema extends TObject> {
     readonly inputs: Readonly<Record<string, TelegramSceneInput>>;
     readonly slots: Readonly<Record<string, TelegramSceneSlot>>;
     key(state: Record<string, unknown>): string | undefined;
+    watch(state: Record<string, unknown>): string[];
     start(ctx: TelegramContext, scene: ErasedSceneControl): Promise<unknown>;
 }
 
@@ -243,6 +245,9 @@ export function defineScene<
         >,
         key(state) {
             return definition.key?.(state);
+        },
+        watch(state) {
+            return definition.watch?.(state) ?? [];
         },
         async start(ctx, scene) {
             await definition.start?.(ctx, scene);

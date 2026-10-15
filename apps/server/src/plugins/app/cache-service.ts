@@ -6,7 +6,7 @@ import { Redis } from "ioredis";
 import { AppLogger } from "./app-logger.js";
 
 const conditionCheck = `
-if #KEYS > 1 and redis.call("get", KEYS[2]) ~= ARGV[1] then
+if ARGV[1] ~= "" and redis.call("get", KEYS[2]) ~= ARGV[1] then
     return 0
 end
 `;
@@ -31,15 +31,34 @@ return redis.call("del", KEYS[1])
 `;
 
 const updateHashScript = `${conditionCheck}
-local writeCount = tonumber(ARGV[2])
+local now = ARGV[2]
 local index = 3
-for _ = 1, writeCount do
-    redis.call("hset", KEYS[1], ARGV[index], ARGV[index + 1])
-    redis.call("hpexpire", KEYS[1], ARGV[index + 2], "FIELDS", 1, ARGV[index])
-    index = index + 3
+local function nextArg()
+    index = index + 1
+    return ARGV[index - 1]
 end
-for removeIndex = index, #ARGV do
-    redis.call("hdel", KEYS[1], ARGV[removeIndex])
+for _ = 1, tonumber(nextArg()) do
+    local field = nextArg()
+    redis.call("hset", KEYS[1], field, nextArg())
+    redis.call("hpexpire", KEYS[1], nextArg(), "FIELDS", 1, field)
+end
+for _ = 1, tonumber(nextArg()) do
+    redis.call("hdel", KEYS[1], nextArg())
+end
+for keyIndex = 3, #KEYS do
+    local set = KEYS[keyIndex]
+    for _ = 1, tonumber(nextArg()) do
+        local member = nextArg()
+        redis.call("zadd", set, nextArg(), member)
+    end
+    for _ = 1, tonumber(nextArg()) do
+        redis.call("zrem", set, nextArg())
+    end
+    redis.call("zremrangebyscore", set, "-inf", now)
+    local last = redis.call("zrange", set, -1, -1, "WITHSCORES")
+    if last[2] then
+        redis.call("pexpireat", set, last[2])
+    end
 end
 return 1
 `;
@@ -67,6 +86,18 @@ export interface CacheHashFieldWrite {
 export interface CacheHashUpdate {
     writes: CacheHashFieldWrite[];
     removals: string[];
+    expiringSets?: CacheExpiringSetUpdate[];
+}
+
+export interface CacheExpiringSetUpdate {
+    key: string;
+    adds: CacheExpiringSetMember[];
+    removals: string[];
+}
+
+export interface CacheExpiringSetMember {
+    member: string;
+    expiresAt: number;
 }
 
 export class CacheService {
@@ -121,7 +152,7 @@ export class CacheService {
     ): Promise<boolean> {
         this.assertValidTtl(ttlMilliseconds);
 
-        return this.runConditional(setScript, key, ifEquals, [
+        return this.runConditional(setScript, [key], ifEquals, [
             JSON.stringify(value),
             ttlMilliseconds,
             ifMissing ? "1" : "0",
@@ -135,7 +166,7 @@ export class CacheService {
     ): Promise<boolean> {
         this.assertValidTtl(ttlMilliseconds);
 
-        return this.runConditional(expireScript, key, ifEquals, [
+        return this.runConditional(expireScript, [key], ifEquals, [
             ttlMilliseconds,
         ]);
     }
@@ -144,7 +175,7 @@ export class CacheService {
         key: string,
         { ifEquals }: CacheConditionOptions = {},
     ): Promise<boolean> {
-        return this.runConditional(deleteScript, key, ifEquals, []);
+        return this.runConditional(deleteScript, [key], ifEquals, []);
     }
 
     async updateHash(
@@ -156,15 +187,37 @@ export class CacheService {
             this.assertValidTtl(write.ttlMilliseconds);
         }
 
-        return this.runConditional(updateHashScript, key, ifEquals, [
-            update.writes.length,
-            ...update.writes.flatMap((write) => [
-                write.field,
-                JSON.stringify(write.value),
-                write.ttlMilliseconds,
-            ]),
-            ...update.removals,
-        ]);
+        const expiringSets = update.expiringSets ?? [];
+
+        return this.runConditional(
+            updateHashScript,
+            [key, ...expiringSets.map((set) => set.key)],
+            ifEquals,
+            [
+                Date.now(),
+                update.writes.length,
+                ...update.writes.flatMap((write) => [
+                    write.field,
+                    JSON.stringify(write.value),
+                    write.ttlMilliseconds,
+                ]),
+                update.removals.length,
+                ...update.removals,
+                ...expiringSets.flatMap((set) => [
+                    set.adds.length,
+                    ...set.adds.flatMap(({ member, expiresAt }) => [
+                        member,
+                        expiresAt,
+                    ]),
+                    set.removals.length,
+                    ...set.removals,
+                ]),
+            ],
+        );
+    }
+
+    async getExpiringSetMembers(key: string): Promise<string[]> {
+        return this.client.zrangebyscore(key, `(${Date.now()}`, "+inf");
     }
 
     async remember<Schema extends TSchema>(
@@ -188,11 +241,11 @@ export class CacheService {
 
     private async runConditional(
         script: string,
-        key: string,
+        [key, ...otherKeys]: [string, ...string[]],
         condition: CacheCondition | undefined,
         args: (string | number)[],
     ): Promise<boolean> {
-        const keys = condition ? [key, condition.key] : [key];
+        const keys = [key, condition?.key ?? key, ...otherKeys];
         const result = await this.client.eval(
             script,
             keys.length,

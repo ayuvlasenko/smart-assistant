@@ -379,6 +379,94 @@ void describe("CacheService", () => {
         assert.equal(await client.hget(key, "other"), "{}");
     });
 
+    void it("updates expiring sets together with the hash", async (t) => {
+        const { cache } = await buildCacheServiceTestApp({ t });
+        const ifEquals = { key: "lock:8", value: "owner" };
+        const expiresAt = Date.now() + 60_000;
+        const update = {
+            writes: [],
+            removals: [],
+            expiringSets: [
+                {
+                    key: "set:8",
+                    adds: [
+                        { member: "first", expiresAt },
+                        { member: "second", expiresAt },
+                    ],
+                    removals: [],
+                },
+            ],
+        };
+
+        await cache.set("lock:8", "owner", { ttlMilliseconds: 10_000 });
+
+        assert.equal(
+            await cache.updateHash("hash:8", update, {
+                ifEquals: { key: "lock:8", value: "other" },
+            }),
+            false,
+        );
+        assert.deepEqual(await cache.getExpiringSetMembers("set:8"), []);
+
+        await cache.updateHash("hash:8", update, { ifEquals });
+
+        assert.deepEqual(await cache.getExpiringSetMembers("set:8"), [
+            "first",
+            "second",
+        ]);
+
+        await cache.updateHash("hash:8", {
+            writes: [],
+            removals: [],
+            expiringSets: [{ key: "set:8", adds: [], removals: ["first"] }],
+        });
+
+        assert.deepEqual(await cache.getExpiringSetMembers("set:8"), [
+            "second",
+        ]);
+    });
+
+    void it("drops expired members of an expiring set and expires the set", async (t) => {
+        const { cache, client } = await buildCacheServiceTestApp({ t });
+        const now = Date.now();
+        const touch = () =>
+            cache.updateHash("hash:9", {
+                writes: [],
+                removals: [],
+                expiringSets: [{ key: "set:9", adds: [], removals: [] }],
+            });
+
+        await cache.updateHash("hash:9", {
+            writes: [],
+            removals: [],
+            expiringSets: [
+                {
+                    key: "set:9",
+                    adds: [
+                        { member: "short", expiresAt: now + 100 },
+                        { member: "long", expiresAt: now + 60_000 },
+                    ],
+                    removals: [],
+                },
+            ],
+        });
+        await setTimeout(200);
+
+        assert.deepEqual(await cache.getExpiringSetMembers("set:9"), ["long"]);
+        assert.deepEqual(await client.zrange("set:9", "0", "-1"), [
+            "short",
+            "long",
+        ]);
+
+        await touch();
+
+        assert.deepEqual(await client.zrange("set:9", "0", "-1"), ["long"]);
+        assert.ok(
+            Math.abs((await client.pexpiretime("set:9")) - now - 60_000) <
+                1_000,
+        );
+    });
+
     void it("rejects non-positive TTL values for hash fields", async (t) => {
         const { cache } = await buildCacheServiceTestApp({ t });
 

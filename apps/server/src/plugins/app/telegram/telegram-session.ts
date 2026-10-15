@@ -6,10 +6,30 @@ interface StoredField {
     ttlMilliseconds?: number;
 }
 
+export interface TelegramSessionChanges {
+    fields: CacheHashUpdate;
+    indexes: TelegramSessionIndexUpdate[];
+}
+
+export interface TelegramSessionIndexUpdate {
+    name: string;
+    adds: TelegramSessionIndexEntry[];
+    removals: string[];
+}
+
+export interface TelegramSessionIndexEntry {
+    entry: string;
+    expiresAt: number;
+}
+
 export class TelegramSession {
     readonly key: string;
     private readonly fields = new Map<string, StoredField | undefined>();
     private readonly changedFields = new Set<string>();
+    private readonly indexChanges = new Map<
+        string,
+        Map<string, number | undefined>
+    >();
     private readonly cache: Pick<CacheService, "getHashField">;
 
     constructor(cache: Pick<CacheService, "getHashField">, key: string) {
@@ -18,7 +38,7 @@ export class TelegramSession {
     }
 
     get hasChanges(): boolean {
-        return this.changedFields.size > 0;
+        return this.changedFields.size > 0 || this.indexChanges.size > 0;
     }
 
     async read<Schema extends TSchema>(
@@ -52,7 +72,35 @@ export class TelegramSession {
         this.changedFields.add(field);
     }
 
-    collectChanges(): CacheHashUpdate {
+    index(name: string, entry: string, expiresAt: number): void {
+        this.indexChangesOf(name).set(entry, expiresAt);
+    }
+
+    unindex(name: string, entry: string): void {
+        this.indexChangesOf(name).set(entry, undefined);
+    }
+
+    collectChanges(): TelegramSessionChanges {
+        return {
+            fields: this.collectFieldChanges(),
+            indexes: [...this.indexChanges].map(([name, entries]) =>
+                collectIndexUpdate(name, entries),
+            ),
+        };
+    }
+
+    private indexChangesOf(name: string): Map<string, number | undefined> {
+        let entries = this.indexChanges.get(name);
+
+        if (!entries) {
+            entries = new Map();
+            this.indexChanges.set(name, entries);
+        }
+
+        return entries;
+    }
+
+    private collectFieldChanges(): CacheHashUpdate {
         const update: CacheHashUpdate = { writes: [], removals: [] };
 
         for (const field of this.changedFields) {
@@ -71,4 +119,25 @@ export class TelegramSession {
 
         return update;
     }
+}
+
+function collectIndexUpdate(
+    name: string,
+    entries: Map<string, number | undefined>,
+): TelegramSessionIndexUpdate {
+    const update: TelegramSessionIndexUpdate = {
+        name,
+        adds: [],
+        removals: [],
+    };
+
+    for (const [entry, expiresAt] of entries) {
+        if (expiresAt === undefined) {
+            update.removals.push(entry);
+        } else {
+            update.adds.push({ entry, expiresAt });
+        }
+    }
+
+    return update;
 }

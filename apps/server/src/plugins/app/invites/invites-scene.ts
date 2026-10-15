@@ -33,7 +33,11 @@ import {
 } from "./invite-format.js";
 import { InvitesService, InviteUser } from "./invites-service.js";
 
-export const invitesSceneKey = "invites";
+export const invitesTopic = "invites";
+
+export function inviteTopic(inviteId: string): string {
+    return `invites.invite:${inviteId}`;
+}
 
 const invitesSceneTtlMilliseconds = 24 * 60 * 60 * 1000;
 const dayMilliseconds = 24 * 60 * 60 * 1000;
@@ -128,7 +132,8 @@ export function createInvitesScene(
         state: invitesStateSchema,
         ttl: invitesSceneTtlMilliseconds,
         guard: accessService.guard("read", "Invite"),
-        key: () => invitesSceneKey,
+        key: () => "invites",
+        watch: watchInvites,
         slots: {
             invites: (ctx, scene) =>
                 render({
@@ -311,6 +316,18 @@ export function createInvitesScene(
             },
         },
     });
+}
+
+function watchInvites({ screen, inviteId }: InvitesState): string[] {
+    if (screen === "list") {
+        return [invitesTopic];
+    }
+
+    if ((screen === "invite" || screen === "users") && inviteId) {
+        return [inviteTopic(inviteId)];
+    }
+
+    return [];
 }
 
 function render(view: InvitesView): Promise<TelegramMessageContent> {
