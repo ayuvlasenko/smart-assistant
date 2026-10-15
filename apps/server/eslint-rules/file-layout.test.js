@@ -67,6 +67,11 @@ ruleTester.run("file-layout", fileLayout, {
             errors: [{ messageId: "codeKindFile" }],
         },
         {
+            filename: "src/types/utility.ts",
+            code: "export type Answer = number;",
+            errors: [{ messageId: "codeKindFile" }],
+        },
+        {
             filename: "src/plugins/app/users/users-types.ts",
             code: "export const answer = 42;",
             errors: [{ messageId: "codeKindFile" }],

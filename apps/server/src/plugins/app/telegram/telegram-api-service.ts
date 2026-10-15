@@ -5,7 +5,7 @@ import {
     FastifyPluginOptions,
 } from "fastify";
 import fp from "fastify-plugin";
-import { Env } from "../../../schemas/env.js";
+import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 

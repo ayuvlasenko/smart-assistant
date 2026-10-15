@@ -2,7 +2,7 @@ import { Update } from "@grammyjs/types";
 import { type Static, type TObject } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Env } from "../../../schemas/env.js";
+import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
