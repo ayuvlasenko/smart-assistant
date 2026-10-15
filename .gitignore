@@ -141,3 +141,6 @@ dist
 .mcp.json
 
 .idea
+
+# revmux review archive
+.revmux/tasks/

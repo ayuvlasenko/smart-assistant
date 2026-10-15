@@ -21,10 +21,12 @@
     "lint": "prettier --check \"scripts/**/*.js\" && eslint \"scripts/**/*.js\" && pnpm -r lint",
     "format": "prettier --write \"scripts/**/*.js\" && eslint --fix \"scripts/**/*.js\" && pnpm -r format",
     "lint:md": "prettier --check \"**/*.md\"",
-    "format:md": "prettier --write \"**/*.md\""
+    "format:md": "prettier --write \"**/*.md\"",
+    "test": "node --test \"scripts/**/*.test.js\" && pnpm -r test"
   },
   "devDependencies": {
     "@stylistic/eslint-plugin": "5.10.0",
+    "@typescript/native": "npm:typescript@7.0.2",
     "@typescript-eslint/eslint-plugin": "8.71.0",
     "@typescript-eslint/parser": "8.71.0",
     "eslint": "10.11.0",

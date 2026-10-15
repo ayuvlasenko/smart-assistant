@@ -26,7 +26,7 @@
     "migrate:up": "migrate-mongo up -f ./migrate-mongo-config.js",
     "migrate:down": "migrate-mongo down -f ./migrate-mongo-config.js",
     "migrate:status": "migrate-mongo status -f ./migrate-mongo-config.js",
-    "test": "node --env-file=.env.test --import tsx --test \"src/**/*.test.ts\" \"src/**/*.test.js\""
+    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=4 \"src/**/*.test.ts\" \"src/**/*.test.js\""
   },
   "author": "ayuvlasenko",
   "license": "MIT",
@@ -49,8 +49,10 @@
     "@sinclair/typebox": "0.34.52",
     "ajv": "8.20.0",
     "close-with-grace": "2.5.0",
+    "emittery": "2.1.0",
     "fastify": "5.12.5",
     "fastify-plugin": "6.0.0",
+    "i18next": "26.4.2",
     "ioredis": "6.0.0",
     "migrate-mongo": "14.0.7",
     "mongodb": "7.7.0",
