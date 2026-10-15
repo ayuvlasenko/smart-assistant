@@ -21,7 +21,7 @@ export interface InvitesBot extends TelegramSceneBot {
     accessService: AccessService;
     invitesRepository: InvitesRepository;
     invitesService: InvitesService;
-    readRichTexts(chatId: number): Promise<string[]>;
+    readMessageTexts(chatId: number): Promise<string[]>;
 }
 
 export async function buildInvitesBot(
@@ -46,26 +46,23 @@ export async function buildInvitesBot(
         invitesRepository:
             bot.app.getDecorator<InvitesRepository>("invitesRepository"),
         invitesService: bot.app.getDecorator<InvitesService>("invitesService"),
-        readRichTexts: (chatId) =>
-            readRichTexts(bot.telegramApiService, chatId),
+        readMessageTexts: (chatId) =>
+            readMessageTexts(bot.telegramApiService, chatId),
     };
 }
 
-async function readRichTexts(
+async function readMessageTexts(
     telegramApiService: TelegramApiServiceMock,
     chatId: number,
 ): Promise<string[]> {
     const messages = new Map<number, string>();
 
-    for (const call of telegramApiService.sendRichMessage.mock.calls) {
+    for (const call of telegramApiService.sendMessage.mock.calls) {
         const response = await call.result;
         const args = call.arguments[0];
 
         if (response?.ok && args.chat_id === chatId) {
-            messages.set(
-                response.result.message_id,
-                readRichText(args.rich_message),
-            );
+            messages.set(response.result.message_id, stripTags(args.text));
         }
     }
 
@@ -75,16 +72,15 @@ async function readRichTexts(
         if (
             args.chat_id === chatId &&
             args.message_id !== undefined &&
-            "rich_message" in args
+            "text" in args &&
+            typeof args.text === "string"
         ) {
-            messages.set(args.message_id, readRichText(args.rich_message));
+            messages.set(args.message_id, stripTags(args.text));
         }
     }
 
-    for (const call of telegramApiService.deleteMessage.mock.calls) {
-        if (call.arguments[0].chat_id === chatId) {
-            messages.delete(call.arguments[0].message_id);
-        }
+    for (const messageId of readDeletedMessageIds(telegramApiService, chatId)) {
+        messages.delete(messageId);
     }
 
     return [...messages.entries()]
@@ -92,21 +88,31 @@ async function readRichTexts(
         .map(([, text]) => text);
 }
 
-function readRichText(value: unknown): string {
-    if (typeof value === "string") {
-        return value;
-    }
+function readDeletedMessageIds(
+    telegramApiService: TelegramApiServiceMock,
+    chatId: number,
+): number[] {
+    return [
+        ...telegramApiService.deleteMessage.mock.calls.map(
+            (call) => call.arguments[0],
+        ),
+        ...telegramApiService.deleteMessages.mock.calls.flatMap((call) =>
+            call.arguments[0].message_ids.map((messageId) => ({
+                chat_id: call.arguments[0].chat_id,
+                message_id: messageId,
+            })),
+        ),
+    ]
+        .filter(({ chat_id: messageChatId }) => messageChatId === chatId)
+        .map(({ message_id: messageId }) => messageId);
+}
 
-    if (Array.isArray(value)) {
-        return value.map(readRichText).join("");
-    }
+function stripTags(html: string): string {
+    const [first = "", ...rest] = html.split("<");
 
-    if (!value || typeof value !== "object") {
-        return "";
-    }
+    return first + rest.map(dropTag).join("");
+}
 
-    return Object.entries(value)
-        .filter(([key]) => ["blocks", "items", "cells", "text"].includes(key))
-        .map(([, item]) => readRichText(item))
-        .join(" ");
+function dropTag(part: string): string {
+    return part.slice(part.indexOf(">") + 1);
 }

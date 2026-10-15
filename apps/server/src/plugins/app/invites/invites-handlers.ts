@@ -11,15 +11,13 @@ import { TelegramCommandMessageUpdate } from "../telegram/telegram-filters.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
 import { UsersRepository } from "../users/users-repository.js";
-import { createInviteFormScene } from "./invite-form-scene.js";
-import { createInviteScene } from "./invite-scene.js";
 import { InvitesEvents } from "./invites-events.js";
-import {
-    buildInvitesListState,
-    createInvitesListScene,
-    invitesListKey,
-} from "./invites-list-scene.js";
 import { invitesLocales } from "./invites-locales.js";
+import {
+    buildInvitesState,
+    createInvitesScene,
+    invitesSceneKey,
+} from "./invites-scene.js";
 import { InvitesService } from "./invites-service.js";
 
 const inviteDeepLinkName = "invite";
@@ -50,7 +48,7 @@ export default fp(
             .getDecorator<I18nService>("i18nService")
             .addLocales("invites", invitesLocales);
 
-        const inviteScene = createInviteScene(
+        const invitesScene = createInvitesScene(
             invitesService,
             accessService,
             (token) =>
@@ -59,32 +57,13 @@ export default fp(
                     value: token,
                 }),
         );
-        const inviteFormScene = createInviteFormScene(
-            invitesService,
-            accessService,
-            sceneEngine,
-            inviteScene,
-        );
-        const invitesListScene = createInvitesListScene(
-            invitesService,
-            accessService,
-            sceneEngine,
-            inviteScene,
-            inviteFormScene,
-        );
 
-        router.scene(inviteScene);
-        router.scene(inviteFormScene);
-        router.scene(invitesListScene);
+        router.scene(invitesScene);
 
         router.command(
             "invites",
             async (ctx) => {
-                await sceneEngine.start(
-                    ctx,
-                    invitesListScene,
-                    buildInvitesListState(),
-                );
+                await sceneEngine.start(ctx, invitesScene, buildInvitesState());
             },
             {
                 guard: accessService.guard("read", "Invite"),
@@ -110,13 +89,11 @@ export default fp(
                     return;
                 }
 
-                const userId = Number(creator.telegramId);
-
-                telegramChats.deliver(inviteScene, [
-                    { userId, key: data.inviteId.toHexString() },
-                ]);
-                telegramChats.deliver(invitesListScene, [
-                    { userId, key: invitesListKey },
+                telegramChats.deliver(invitesScene, [
+                    {
+                        userId: Number(creator.telegramId),
+                        key: invitesSceneKey,
+                    },
                 ]);
             } catch (err) {
                 log.error({ err }, "Failed to deliver an invite activation");

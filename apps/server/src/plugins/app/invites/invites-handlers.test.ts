@@ -113,12 +113,15 @@ void describe("Invites scenes", () => {
                 (invite.expiresAt as Date).getTime() - Date.now() - sevenDays,
             ) < 60_000,
         );
-        assert.ok(
-            (await bot.readRichTexts(admin.id))
-                .at(-1)
-                ?.includes(`?start=invite_${String(invite.token)}`),
+        const messages = await bot.readMessageTexts(admin.id);
+
+        assert.equal(messages.length, 1);
+        assert.ok(messages[0]?.includes(en.inviteTitle));
+        assert.match(
+            readCopyTexts(bot).at(-1) ?? "",
+            new RegExp(`\\?start=invite_${String(invite.token)}$`),
         );
-        assert.deepEqual(bot.readSentTexts(), [en.limitPrompt]);
+        assert.ok(bot.readSentTexts().includes(en.limitPrompt));
     });
 
     void it("refuses to create an invite without access", async (t) => {
@@ -161,12 +164,16 @@ void describe("Invites scenes", () => {
         assert.deepEqual(readSentTextsTo(bot, outsider), [
             telegramLocales.en.unknown,
         ]);
-        assert.ok((await bot.readRichTexts(admin.id)).at(-1)?.includes("1/3"));
+        assert.ok(
+            (await bot.readMessageTexts(admin.id)).at(-1)?.includes("1/3"),
+        );
 
         await bot.pressButton(admin, "👥 Users (1)");
 
         assert.ok(
-            (await bot.readRichTexts(admin.id)).at(-1)?.includes("user @user"),
+            (await bot.readMessageTexts(admin.id))
+                .at(-1)
+                ?.includes("user @user"),
         );
     });
 
@@ -211,7 +218,7 @@ void describe("Invites scenes", () => {
         assert.ok((await mongo.collection("invites").findOne())?.revokedAt);
         assert.deepEqual(readSentTextsTo(bot, guest), [en.inviteUnavailable]);
         assert.ok(
-            (await bot.readRichTexts(admin.id))
+            (await bot.readMessageTexts(admin.id))
                 .at(-1)
                 ?.includes(invitesLocales.en.statusRevoked),
         );
@@ -261,26 +268,34 @@ void describe("Invites scenes", () => {
         await bot.pressButton(reader, en.refreshButton);
     });
 
-    void it("opens an invite from the list", async (t) => {
+    void it("navigates between the list and an invite in one message", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654821 });
 
         await createAdmin(bot, admin);
         await createInviteThroughForm(bot, admin);
-        await bot.sendText(admin, "/invites");
+        await bot.pressButton(admin, en.backButton);
 
-        const list = (await bot.readRichTexts(admin.id)).at(-1) ?? "";
+        const [list = "", ...rest] = await bot.readMessageTexts(admin.id);
 
         assert.ok(list.includes(en.listTitle));
         assert.ok(list.includes("0/3"));
+        assert.deepEqual(rest, []);
 
         await bot.pressButton(admin, "#1 🟢 0/3");
 
         assert.ok(
-            (await bot.readRichTexts(admin.id))
+            (await bot.readMessageTexts(admin.id))
                 .at(-1)
                 ?.includes(en.inviteTitle),
         );
+
+        await bot.sendText(admin, "/invites");
+
+        const messages = await bot.readMessageTexts(admin.id);
+
+        assert.equal(messages.length, 1);
+        assert.ok(messages[0]?.includes(en.inviteTitle));
     });
 });
 
@@ -363,6 +378,31 @@ function readSentTextsTo(bot: InvitesBot, chat: Chat.PrivateChat): string[] {
         .map((call) => call.arguments[0])
         .filter(({ chat_id: chatId }) => chatId === chat.id)
         .map(({ text }) => text);
+}
+
+function readCopyTexts(bot: InvitesBot): string[] {
+    const texts: string[] = [];
+
+    const calls = [
+        ...bot.telegramApiService.sendMessage.mock.calls,
+        ...bot.telegramApiService.editMessageText.mock.calls,
+    ];
+
+    for (const call of calls) {
+        const markup = call.arguments[0].reply_markup;
+
+        if (!markup || !("inline_keyboard" in markup)) {
+            continue;
+        }
+
+        for (const button of markup.inline_keyboard.flat()) {
+            if ("copy_text" in button) {
+                texts.push(button.copy_text.text);
+            }
+        }
+    }
+
+    return texts;
 }
 
 function readChatCommands(
