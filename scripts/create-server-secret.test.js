@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { describe, it } from "node:test";
 import {
     applySecret,
     buildCommand,
     buildNamespaceCommand,
     ensureNamespaceExists,
+    quoteShellArgument,
     validateSecretName,
-    validateValkeyPassword,
 } from "./create-server-secret.js";
 
 function withEnv(vars, fn) {
@@ -100,27 +101,6 @@ void describe("validateSecretName", () => {
     });
 });
 
-void describe("validateValkeyPassword", () => {
-    void it("accepts URL-safe passwords", () => {
-        assert.doesNotThrow(() => validateValkeyPassword("abcXYZ012._~-"));
-    });
-
-    void it("throws when the password contains characters that are unsafe in a URL", () => {
-        assert.throws(() => validateValkeyPassword("abc:def"), {
-            message:
-                "VALKEY_PASSWORD must contain only URL-safe characters: A-Z, a-z, 0-9, '.', '_', '~', '-'",
-        });
-        assert.throws(() => validateValkeyPassword("abc@def"), {
-            message:
-                "VALKEY_PASSWORD must contain only URL-safe characters: A-Z, a-z, 0-9, '.', '_', '~', '-'",
-        });
-        assert.throws(() => validateValkeyPassword("abc/def"), {
-            message:
-                "VALKEY_PASSWORD must contain only URL-safe characters: A-Z, a-z, 0-9, '.', '_', '~', '-'",
-        });
-    });
-});
-
 void describe("applySecret", () => {
     void it("ensures the namespace only when applying a validated secret", () => {
         const commands = [];
@@ -138,7 +118,7 @@ void describe("applySecret", () => {
                 S3_ENDPOINT: "https://s3.bambom.org",
                 TELEGRAM_BOT_TOKEN: "token",
                 TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret-token",
-                VALKEY_PASSWORD: "valkey-secret",
+                VALKEY_URL: "redis://default:valkey-secret@valkey:6379",
             },
             () => {
                 applySecret({
@@ -154,11 +134,36 @@ void describe("applySecret", () => {
                 secretCommand = buildCommand("server-secrets-main", false);
                 assert.match(
                     secretCommand,
-                    /--from-literal=VALKEY_PASSWORD="valkey-secret"/,
+                    /'--from-literal=VALKEY_URL=redis:\/\/default:valkey-secret@valkey:6379'/,
                 );
             },
         );
 
         assert.deepEqual(commands, [buildNamespaceCommand(), secretCommand]);
+    });
+});
+
+void describe("buildCommand", () => {
+    void it("includes the invite token when it is set", () => {
+        withEnv({ INVITE_TOKEN: "invite-secret" }, () => {
+            assert.match(
+                buildCommand("server-secrets-main", true),
+                /'--from-literal=INVITE_TOKEN=invite-secret'/,
+            );
+        });
+    });
+});
+
+void describe("quoteShellArgument", () => {
+    void it("keeps shell characters in the value", () => {
+        const value = "a$HOME`id`\"b'c\\d e";
+
+        assert.equal(
+            execSync(`printf %s ${quoteShellArgument(value)}`, {
+                encoding: "utf-8",
+                shell: "/bin/bash",
+            }),
+            value,
+        );
     });
 });

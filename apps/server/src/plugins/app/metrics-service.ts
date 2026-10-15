@@ -2,6 +2,10 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import {
     collectDefaultMetrics,
+    Counter,
+    type CounterConfiguration,
+    Histogram,
+    type HistogramConfiguration,
     Registry,
     type RegistryContentType,
 } from "prom-client";
@@ -19,6 +23,18 @@ export class MetricsService {
 
     async metrics(): Promise<string> {
         return this.registry.metrics();
+    }
+
+    counter<TLabel extends string>(
+        config: Omit<CounterConfiguration<TLabel>, "registers">,
+    ): Counter<TLabel> {
+        return new Counter({ ...config, registers: [this.registry] });
+    }
+
+    histogram<TLabel extends string>(
+        config: Omit<HistogramConfiguration<TLabel>, "registers">,
+    ): Histogram<TLabel> {
+        return new Histogram({ ...config, registers: [this.registry] });
     }
 }
 

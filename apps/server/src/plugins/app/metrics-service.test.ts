@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
-import metricsPlugin, { MetricsService } from "./metrics.js";
+import metricsPlugin, { MetricsService } from "./metrics-service.js";
 
 const prometheusContentType = "text/plain; version=0.0.4; charset=utf-8";
 

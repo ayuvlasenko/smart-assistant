@@ -6,7 +6,7 @@ import { createLogCollector } from "../../test/log-collector.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../external/request-context.js";
-import loggerPlugin, { AppLogger } from "./logger.js";
+import loggerPlugin, { AppLogger } from "./app-logger.js";
 
 void describe("AppLogger", () => {
     void it("uses the fallback logger with nested child bindings outside request context", async (t) => {

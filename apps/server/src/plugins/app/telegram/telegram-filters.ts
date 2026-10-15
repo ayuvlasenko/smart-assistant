@@ -1,5 +1,16 @@
 import { CallbackQuery, Message, Update } from "@grammyjs/types";
-import { TelegramUpdateFilter } from "./telegram-context.js";
+import { extractTelegramCommand } from "./telegram-extractors.js";
+
+export type TelegramUpdateFilter<TUpdate extends Update> = (
+    update: Update,
+) => update is TUpdate;
+
+export type GuardedTelegramUpdate<TFilter> =
+    TFilter extends TelegramUpdateFilter<infer TUpdate> ? TUpdate : never;
+
+export type GuardedTelegramUpdates<
+    TFilters extends readonly TelegramUpdateFilter<Update>[],
+> = GuardedTelegramUpdate<TFilters[number]>;
 
 export type TelegramTextMessageUpdate = Omit<
     Update,
@@ -40,34 +51,31 @@ export function message(
     };
 }
 
+export function text(
+    value: string,
+): TelegramUpdateFilter<TelegramTextMessageUpdate> {
+    const isTextMessage = message("text");
+
+    return (update): update is TelegramTextMessageUpdate =>
+        isTextMessage(update) && update.message.text === value;
+}
+
+export function anyOf<TUpdates extends Update[]>(
+    ...filters: {
+        [Key in keyof TUpdates]: TelegramUpdateFilter<TUpdates[Key]>;
+    }
+): TelegramUpdateFilter<TUpdates[number]> {
+    return (update): update is TUpdates[number] =>
+        filters.some((filter) => filter(update));
+}
+
 export function command(
     name?: string,
 ): TelegramUpdateFilter<TelegramCommandMessageUpdate> {
     return (update): update is TelegramCommandMessageUpdate => {
-        if (!hasTextMessage(update)) {
-            return false;
-        }
+        const parsedCommand = extractTelegramCommand(update);
 
-        const first = update.message.entities?.[0];
-        if (first?.type !== "bot_command") {
-            return false;
-        }
-
-        if (first.offset !== 0) {
-            return false;
-        }
-
-        const [commandPart] = update.message.text
-            .slice(0, first.length)
-            .split("@");
-
-        if (!commandPart) {
-            return false;
-        }
-
-        const commandName = commandPart.slice(1);
-
-        return !name || commandName === name;
+        return !!parsedCommand && (!name || parsedCommand.name === name);
     };
 }
 

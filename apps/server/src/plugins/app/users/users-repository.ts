@@ -5,11 +5,16 @@ import { ClientSession, ObjectId } from "mongodb";
 import {
     EntityVersionMismatchError,
     NotFoundError,
-} from "../../errors/common-errors.js";
-import { UserEntity } from "../../types/entities/user-entity.js";
+} from "../../../errors/common-errors.js";
+import { Language } from "../i18n-service.js";
+import { UserEntity } from "./user-entity.js";
 
 export class UsersRepository {
-    constructor(public readonly mongo: Required<FastifyMongoObject>) {}
+    readonly mongo: Required<FastifyMongoObject>;
+
+    constructor(mongo: Required<FastifyMongoObject>) {
+        this.mongo = mongo;
+    }
 
     findOneByTelegramId(
         telegramId: string,
@@ -21,7 +26,7 @@ export class UsersRepository {
     }
 
     async findOneByTelegramIdOrCreate(
-        data: Pick<UserEntity, "telegramId" | "isBanned">,
+        data: Pick<UserEntity, "telegramId" | "isBanned" | "languageCode">,
         session?: ClientSession,
     ): Promise<UserEntity> {
         return (await this.mongo.db
@@ -45,20 +50,21 @@ export class UsersRepository {
             )) as UserEntity;
     }
 
-    findOneById(
+    async updateLanguage(
         _id: ObjectId,
-        session?: ClientSession,
-    ): Promise<UserEntity | null> {
-        return this.mongo.db
-            .collection<UserEntity>("users")
-            .findOne({ _id }, { session });
-    }
-
-    async findOneByIdOrFail(
-        _id: ObjectId,
+        languageCode: Language,
         session?: ClientSession,
     ): Promise<UserEntity> {
-        const user = await this.findOneById(_id, session);
+        const user = await this.mongo.db
+            .collection<UserEntity>("users")
+            .findOneAndUpdate(
+                { _id },
+                {
+                    $set: { languageCode, updatedAt: new Date() },
+                    $inc: { version: 1 },
+                },
+                { session, returnDocument: "after" },
+            );
 
         if (!user) {
             throw new NotFoundError("User");

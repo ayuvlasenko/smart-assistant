@@ -4,7 +4,7 @@ import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramTextMessageUpdate,
 } from "../../../test/telegram-fixtures.js";
-import { callbackQuery, command, message } from "./telegram-filters.js";
+import { callbackQuery, command, message, text } from "./telegram-filters.js";
 
 void describe("telegram filters", () => {
     void describe("message", () => {
@@ -27,6 +27,28 @@ void describe("telegram filters", () => {
             });
 
             assert.equal(message("text")(update), false);
+        });
+    });
+
+    void describe("text", () => {
+        void it("matches a text message with the exact text", () => {
+            const update = buildTelegramTextMessageUpdate({
+                message: {
+                    text: "ping",
+                },
+            });
+
+            assert.equal(text("ping")(update), true);
+        });
+
+        void it("rejects a text message with other text", () => {
+            const update = buildTelegramTextMessageUpdate({
+                message: {
+                    text: "ping pong",
+                },
+            });
+
+            assert.equal(text("ping")(update), false);
         });
     });
 

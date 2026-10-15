@@ -4,10 +4,8 @@ import {
     REQUEST_ID_HEADER,
     TELEGRAM_SECRET_HEADER,
 } from "../../../constants/headers.js";
-import {
-    resolveTelegramWebhookUrl,
-    TelegramBotService,
-} from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -78,16 +76,17 @@ void describe("POST /api/telegram/webhook", () => {
         assert.equal(body.statusCode, 400);
     });
 
-    void it("logs request id when update handling throws", async (t) => {
+    void it("returns 200 and logs the error with the request id when update handling throws", async (t) => {
         const logs = createLogCollector();
         const { app } = await buildTestApp({
             logger: logs.logger,
             t,
         });
-        const telegramBotService =
-            app.getDecorator<TelegramBotService>("telegramBotService");
+        const telegramUpdateHandler = app.getDecorator<TelegramUpdateHandler>(
+            "telegramUpdateHandler",
+        );
 
-        t.mock.method(telegramBotService, "handleUpdate", async () => {
+        t.mock.method(telegramUpdateHandler, "handle", async () => {
             throw new Error("Telegram update failed");
         });
 
@@ -103,14 +102,14 @@ void describe("POST /api/telegram/webhook", () => {
         });
 
         const responseRequestId = response.headers[REQUEST_ID_HEADER];
-        const unhandledErrorLog = logs
+        const updateErrorLog = logs
             .readEntries()
-            .find((entry) => entry.msg === "Unhandled error occurred");
+            .find((entry) => entry.msg === "Failed to handle Telegram update");
 
-        assert.equal(response.statusCode, 500);
+        assert.equal(response.statusCode, 200);
         assert.ok(typeof responseRequestId === "string");
-        assert.ok(unhandledErrorLog);
-        assert.equal(unhandledErrorLog.reqId, responseRequestId);
+        assert.ok(updateErrorLog);
+        assert.equal(updateErrorLog.reqId, responseRequestId);
     });
 
     void it("writes service logs with the request id during a real webhook request", async (t) => {
@@ -143,6 +142,34 @@ void describe("POST /api/telegram/webhook", () => {
         assert.ok(typeof responseRequestId === "string");
         assert.ok(receivedUpdateLog);
         assert.equal(receivedUpdateLog.reqId, responseRequestId);
+    });
+
+    void it("doesn't write the message text to the logs", async (t) => {
+        const logs = createLogCollector();
+        const { app } = await buildTestApp({
+            logger: logs.logger,
+            t,
+        });
+
+        await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook",
+            headers: buildTelegramWebhookHeaders(),
+            body: buildTelegramTextMessageUpdate({
+                message: {
+                    chat: buildTelegramPrivateChat({
+                        id: 987654394,
+                    }),
+                    entities: [{ length: 6, offset: 0, type: "bot_command" }],
+                    text: "/start secret-invite-token",
+                },
+            }),
+        });
+
+        const logOutput = JSON.stringify(logs.readEntries());
+
+        assert.ok(logOutput.includes("Received update"));
+        assert.ok(!logOutput.includes("secret-invite-token"));
     });
 });
 
@@ -178,7 +205,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         );
     });
 
-    void it("calls Telegram on every refresh", async (t) => {
+    void it("sets the webhook on every refresh and looks the bot up once", async (t) => {
         const { app, telegramApiService } = await buildTestApp({
             t,
             environment: "preview",
@@ -194,6 +221,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         });
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
+        assert.equal(telegramApiService.getMe.mock.callCount(), 1);
     });
 
     void it("returns 500 when Telegram rejects the webhook", async (t) => {

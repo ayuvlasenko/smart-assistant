@@ -47,7 +47,10 @@ async function init() {
 
     // Delay is the number of milliseconds for the graceful close to finish
     closeWithGrace(
-        { delay: Number(process.env.FASTIFY_CLOSE_GRACE_DELAY ?? 500) },
+        {
+            delay: Number(process.env.FASTIFY_CLOSE_GRACE_DELAY ?? 500),
+            skip: ["unhandledRejection"],
+        },
         async ({ err }) => {
             if (err) {
                 app.log.error(err);

@@ -22,12 +22,19 @@ export class AppLogger implements FastifyBaseLogger {
         FastifyBaseLogger,
         FastifyBaseLogger
     >();
+    private readonly fallback: FastifyBaseLogger;
+    private readonly parent?: AppLogger;
+    private readonly childConfig?: ChildConfig;
 
     constructor(
-        private readonly fallback: FastifyBaseLogger,
-        private readonly parent?: AppLogger,
-        private readonly childConfig?: ChildConfig,
-    ) {}
+        fallback: FastifyBaseLogger,
+        parent?: AppLogger,
+        childConfig?: ChildConfig,
+    ) {
+        this.fallback = fallback;
+        this.parent = parent;
+        this.childConfig = childConfig;
+    }
 
     get level() {
         return this.currentLogger.level;
