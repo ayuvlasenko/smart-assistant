@@ -1,5 +1,6 @@
 import { BotCommand } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
+import Emittery from "emittery";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { createHash, randomUUID } from "node:crypto";
@@ -14,6 +15,7 @@ import {
 } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
 import { UserEntity } from "../users/user-entity.js";
+import { UsersEvents } from "../users/users-events.js";
 import {
     TelegramApiClient,
     TelegramMethodArgs,
@@ -287,6 +289,12 @@ export default fp(
 
         fastify.decorate("telegramBotService", telegramBotService);
 
+        fastify
+            .getDecorator<Emittery<UsersEvents>>("eventEmitter")
+            .on("users.accessChanged", ({ data }) =>
+                telegramBotService.syncCommands(data.user),
+            );
+
         fastify.addHook("onListen", async () => {
             await telegramBotService.setWebhookOnStart();
             await telegramBotService.setCommandsOnStart();
@@ -298,6 +306,7 @@ export default fp(
             "@fastify/env",
             "app-logger",
             "cache",
+            "emittery",
             "i18n-service",
             "lock-service",
             "telegram-api-service",

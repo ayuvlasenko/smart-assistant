@@ -94,7 +94,6 @@ export default fp(
             switch (result.status) {
                 case "activated":
                 case "alreadyActivated":
-                    await telegramBotService.syncCommands(result.user);
                     await ctx.reply(
                         ctx.t(
                             ctx.user.isBanned

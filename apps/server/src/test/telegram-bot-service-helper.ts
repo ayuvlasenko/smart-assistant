@@ -39,6 +39,8 @@ import telegramUpdateHandlerPlugin, {
 import usersRepositoryPlugin, {
     UsersRepository,
 } from "../plugins/app/users/users-repository.js";
+import usersServicePlugin from "../plugins/app/users/users-service.js";
+import emitteryPlugin from "../plugins/external/emittery.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
 } from "../plugins/external/env.js";
@@ -118,7 +120,9 @@ export async function buildTelegramBotServiceTestApp({
     });
     app.register(valkeyPlugin);
     app.register(requestContextPlugin, requestContextAutoConfig);
+    app.register(emitteryPlugin);
     app.register(usersRepositoryPlugin);
+    app.register(usersServicePlugin);
     app.register(appLoggerPlugin);
     app.register(cachePlugin);
     app.register(i18nPlugin);
