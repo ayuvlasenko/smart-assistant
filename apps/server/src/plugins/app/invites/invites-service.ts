@@ -16,6 +16,12 @@ import {
 import { InvitesEvents } from "./invites-events.js";
 import { InvitesRepository } from "./invites-repository.js";
 
+declare module "../access/access-service.js" {
+    interface AccessSubjects {
+        Invite: InviteEntity;
+    }
+}
+
 export interface InviteDraft {
     grants: string[];
     maxUses?: number;
@@ -347,9 +353,3 @@ export default fp(
         ],
     },
 );
-
-declare module "../access/access-service.js" {
-    interface AccessSubjects {
-        Invite: InviteEntity;
-    }
-}

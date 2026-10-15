@@ -5,6 +5,12 @@ import { I18nService } from "../i18n-service.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { pingLocales } from "./ping-locales.js";
 
+declare module "../access/access-service.js" {
+    interface AccessSubjects {
+        Ping: never;
+    }
+}
+
 export const pingGrant = "ping.use";
 
 export default fp(
@@ -47,9 +53,3 @@ export default fp(
         dependencies: ["access-service", "i18n-service", "telegram-router"],
     },
 );
-
-declare module "../access/access-service.js" {
-    interface AccessSubjects {
-        Ping: never;
-    }
-}
