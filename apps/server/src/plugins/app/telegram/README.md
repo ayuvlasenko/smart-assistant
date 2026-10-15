@@ -156,7 +156,7 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 ## Access
 
-A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows only this type; a domain builds the guard from its CASL rules with `accessService.guard(action, subject)`. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
+A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
 
 | Guard on              | Checked                                            | When the guard refuses                                                          |
 | --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |

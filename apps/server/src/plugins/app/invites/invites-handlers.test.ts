@@ -19,6 +19,7 @@ import {
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
 import { telegramLocales } from "../telegram/telegram-locales.js";
+import { InvitesSubjects } from "./invite-entity.js";
 import { invitesLocales } from "./invites-locales.js";
 
 let databaseName!: string;
@@ -286,7 +287,7 @@ void describe("Invites scenes", () => {
         const admin = buildTelegramPrivateChat({ id: 987654822 });
         const reader = buildTelegramPrivateChat({ id: 987654823 });
 
-        bot.accessService.register({
+        bot.accessService.subjects<InvitesSubjects>().register({
             name: "test",
             title: () => "Test",
             grants: [

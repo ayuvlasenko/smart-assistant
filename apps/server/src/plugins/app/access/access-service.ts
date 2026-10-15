@@ -14,41 +14,68 @@ import { I18nService, Translate } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { accessLocales } from "./access-locales.js";
 
-export interface AccessSubjects {
-    all: never;
-}
-
 export type AccessAction =
     "manage" | "create" | "read" | "update" | "delete" | "use";
 
-export type AccessSubjectName = Extract<keyof AccessSubjects, string>;
+export type AccessSubjectName<TSubjects> = Extract<keyof TSubjects, string>;
 
-export type AccessSubjectOf<TName extends AccessSubjectName> =
-    ForcedSubject<TName> & Partial<AccessSubjects[TName]>;
-
-export type AccessSubject =
-    | AccessSubjectName
+export type AccessSubject<TSubjects> =
+    | AccessSubjectName<TSubjects>
+    | "all"
     | {
-          [TName in AccessSubjectName]: AccessSubjectOf<TName>;
-      }[AccessSubjectName];
+          [TName in AccessSubjectName<TSubjects>]: ForcedSubject<TName> &
+              Partial<TSubjects[TName]>;
+      }[AccessSubjectName<TSubjects>];
 
-export type AppAbility = MongoAbility<[AccessAction, AccessSubject]>;
+export type AccessAbility<TSubjects> = MongoAbility<
+    [AccessAction, AccessSubject<TSubjects>]
+>;
 
-export type AccessRules = Pick<AbilityBuilder<AppAbility>, "can" | "cannot">;
+export type AccessRules<TSubjects> = Pick<
+    AbilityBuilder<AccessAbility<TSubjects>>,
+    "can" | "cannot"
+>;
 
 export type AccessGuard = (user: UserEntity) => boolean;
 
-export interface AccessGrant {
+export interface AccessGrant<TSubjects = AnySubjects> {
     name: string;
     title: (t: Translate) => string;
-    define: (rules: AccessRules, user: UserEntity) => void;
+    define: (rules: AccessRules<TSubjects>, user: UserEntity) => void;
 }
 
-export interface AccessSection {
+export interface AccessSection<TSubjects = AnySubjects> {
     name: string;
     title: (t: Translate) => string;
-    grants: AccessGrant[];
+    grants: AccessGrant<TSubjects>[];
 }
+
+export interface AccessControl<TSubjects> {
+    register(section: AccessSection<TSubjects>): void;
+    can(
+        user: UserEntity,
+        action: AccessAction,
+        target: AccessSubject<TSubjects>,
+    ): boolean;
+    assert(
+        user: UserEntity,
+        action: AccessAction,
+        target: AccessSubject<TSubjects>,
+    ): void;
+    accessibleBy(
+        user: UserEntity,
+        action: AccessAction,
+        subjectName: AccessSubjectName<TSubjects>,
+    ): Document;
+    guard(action: AccessAction, target: AccessSubject<TSubjects>): AccessGuard;
+    holds(user: UserEntity, grant: string): boolean;
+    listSections(): readonly AccessSection[];
+    findGrant(name: string): AccessGrant | undefined;
+}
+
+type AnySubjects = Record<string, object>;
+
+type AnyAbility = AccessAbility<AnySubjects>;
 
 export const adminGrant = "admin";
 
@@ -57,9 +84,33 @@ const noRecordsQuery: Document = { $expr: { $eq: [0, 1] } };
 export class AccessService {
     private readonly sections: AccessSection[] = [];
     private readonly grants = new Map<string, AccessGrant>();
-    private readonly abilities = new WeakMap<UserEntity, AppAbility>();
+    private readonly abilities = new WeakMap<UserEntity, AnyAbility>();
+    private readonly control: AccessControl<AnySubjects> = {
+        register: (section) => {
+            this.register(section);
+        },
+        can: (user, action, target) =>
+            this.abilityFor(user).can(action, target),
+        assert: (user, action, target) => {
+            ForbiddenError.from(this.abilityFor(user)).throwUnlessCan(
+                action,
+                target,
+            );
+        },
+        accessibleBy: (user, action, subjectName) =>
+            this.accessibleBy(user, action, subjectName),
+        guard: (action, target) => (user) =>
+            this.abilityFor(user).can(action, target),
+        holds: (user, grant) => this.holds(user, grant),
+        listSections: () => this.sections,
+        findGrant: (name) => this.grants.get(name),
+    };
 
-    register(section: AccessSection): void {
+    subjects<TSubjects>(): AccessControl<TSubjects> {
+        return this.control;
+    }
+
+    private register(section: AccessSection): void {
         if (this.sections.some(({ name }) => name === section.name)) {
             throw new Error(
                 `Access section "${section.name}" is already registered`,
@@ -81,39 +132,12 @@ export class AccessService {
         }
     }
 
-    listSections(): readonly AccessSection[] {
-        return this.sections;
-    }
-
-    findGrant(name: string): AccessGrant | undefined {
-        return this.grants.get(name);
-    }
-
-    can(
+    private accessibleBy(
         user: UserEntity,
         action: AccessAction,
-        target: AccessSubject,
-    ): boolean {
-        return this.abilityFor(user).can(action, target);
-    }
-
-    assert(
-        user: UserEntity,
-        action: AccessAction,
-        target: AccessSubject,
-    ): void {
-        ForbiddenError.from(this.abilityFor(user)).throwUnlessCan(
-            action,
-            target,
-        );
-    }
-
-    accessibleBy(
-        user: UserEntity,
-        action: AccessAction,
-        subjectName: AccessSubjectName,
+        subjectName: string,
     ): Document {
-        const query = rulesToCondition<AppAbility, Document, Document>(
+        const query = rulesToCondition<AnyAbility, Document, Document>(
             this.abilityFor(user).rulesFor(action, subjectName),
             ruleToQuery,
             {
@@ -126,18 +150,14 @@ export class AccessService {
         return query ?? noRecordsQuery;
     }
 
-    guard(action: AccessAction, target: AccessSubject): AccessGuard {
-        return (user) => this.can(user, action, target);
-    }
-
-    holds(user: UserEntity, grant: string): boolean {
+    private holds(user: UserEntity, grant: string): boolean {
         return (
             !user.isBanned &&
             (user.grants.includes(grant) || user.grants.includes(adminGrant))
         );
     }
 
-    abilityFor(user: UserEntity): AppAbility {
+    private abilityFor(user: UserEntity): AnyAbility {
         let ability = this.abilities.get(user);
 
         if (!ability) {
@@ -148,8 +168,8 @@ export class AccessService {
         return ability;
     }
 
-    private buildAbility(user: UserEntity): AppAbility {
-        const builder = new AbilityBuilder<AppAbility>(createMongoAbility);
+    private buildAbility(user: UserEntity): AnyAbility {
+        const builder = new AbilityBuilder<AnyAbility>(createMongoAbility);
 
         if (!user.isBanned) {
             for (const name of user.grants) {
@@ -161,7 +181,7 @@ export class AccessService {
     }
 }
 
-function ruleToQuery(rule: RuleOf<AppAbility>): Document {
+function ruleToQuery(rule: RuleOf<AnyAbility>): Document {
     const conditions = rule.conditions ?? {};
 
     return rule.inverted ? { $nor: [conditions] } : conditions;
@@ -175,7 +195,7 @@ export default fp(
             .getDecorator<I18nService>("i18nService")
             .addLocales("access", accessLocales);
 
-        accessService.register({
+        accessService.subjects<object>().register({
             name: "access",
             title: (t) => t("access:section"),
             grants: [

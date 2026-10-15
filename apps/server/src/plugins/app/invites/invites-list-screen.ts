@@ -1,9 +1,13 @@
-import { AccessService } from "../access/access-service.js";
+import { AccessControl } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { InviteEntity, readInviteStatus } from "./invite-entity.js";
+import {
+    InviteEntity,
+    InvitesSubjects,
+    readInviteStatus,
+} from "./invite-entity.js";
 import {
     buildInvitesMessage,
     formatBold,
@@ -20,7 +24,7 @@ export async function renderInvitesList({
     ctx,
     scene,
     invitesService,
-    accessService,
+    access,
 }: InvitesView): Promise<TelegramMessageContent> {
     const { t } = ctx;
     const offset = scene.state.listPage * invitesPageSize;
@@ -34,7 +38,7 @@ export async function renderInvitesList({
               describeListItem(
                   t,
                   ctx.timeZone,
-                  accessService,
+                  access,
                   invite,
                   offset + index + 1,
                   now,
@@ -61,7 +65,7 @@ export async function renderInvitesList({
                 invitesPageSize,
                 (text, target) => scene.button(text, "listPage", target),
             ),
-            accessService.can(ctx.user, "create", "Invite")
+            access.can(ctx.user, "create", "Invite")
                 ? [scene.button(t("invites:newInviteButton"), "create", null)]
                 : [],
         ],
@@ -71,14 +75,14 @@ export async function renderInvitesList({
 function describeListItem(
     t: Translate,
     timeZone: string,
-    accessService: AccessService,
+    access: AccessControl<InvitesSubjects>,
     invite: InviteEntity,
     number: number,
     now: Date,
 ): string {
     const parts = [
         `<b>#${number}</b> ${escapeTelegramHtml(formatInviteLabel(invite, readInviteStatus(invite, now)))}`,
-        escapeTelegramHtml(formatGrants(accessService, t, invite.grants)),
+        escapeTelegramHtml(formatGrants(access, t, invite.grants)),
     ];
 
     if (invite.expiresAt) {

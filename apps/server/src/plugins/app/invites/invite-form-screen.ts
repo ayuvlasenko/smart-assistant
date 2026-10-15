@@ -1,9 +1,10 @@
-import { AccessSection, AccessService } from "../access/access-service.js";
+import { AccessControl, AccessSection } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { UserEntity } from "../users/user-entity.js";
+import { InvitesSubjects } from "./invite-entity.js";
 import {
     buildInvitesMessage,
     formatBold,
@@ -57,9 +58,9 @@ export function renderInviteForm(view: InvitesView): TelegramMessageContent {
 export function renderInviteFormSections(
     view: InvitesView,
 ): TelegramMessageContent {
-    const { ctx, scene, accessService } = view;
+    const { ctx, scene, access } = view;
     const { t } = ctx;
-    const sections = listGrantableSections(accessService, ctx.user);
+    const sections = listGrantableSections(access, ctx.user);
     const page = pageOf(sections, scene.state.page, sectionsPageSize);
 
     return buildInvitesMessage(
@@ -90,9 +91,9 @@ export function renderInviteFormSections(
 export function renderInviteFormSection(
     view: InvitesView,
 ): TelegramMessageContent {
-    const { ctx, scene, accessService } = view;
+    const { ctx, scene, access } = view;
     const { t } = ctx;
-    const section = listGrantableSections(accessService, ctx.user).find(
+    const section = listGrantableSections(access, ctx.user).find(
         ({ name }) => name === scene.state.section,
     );
 
@@ -151,7 +152,7 @@ export function renderInviteFormValidFor(
     );
 }
 
-function describeDraft({ ctx, scene, accessService }: InvitesView): string[] {
+function describeDraft({ ctx, scene, access }: InvitesView): string[] {
     const { t } = ctx;
     const { draft } = scene.state;
 
@@ -160,7 +161,7 @@ function describeDraft({ ctx, scene, accessService }: InvitesView): string[] {
         formatLabeled(
             t("invites:accessLabel"),
             draft.grants.length
-                ? formatGrants(accessService, t, draft.grants)
+                ? formatGrants(access, t, draft.grants)
                 : t("invites:nothingSelected"),
         ),
         formatLabeled(t("invites:usersLabel"), formatMaxUses(t, draft.maxUses)),
@@ -180,12 +181,12 @@ function formatValidFor(t: Translate, days: number | null): string {
 }
 
 function listGrantableSections(
-    accessService: AccessService,
+    access: AccessControl<InvitesSubjects>,
     user: UserEntity,
 ): AccessSection[] {
-    return accessService.listSections().flatMap((section) => {
+    return access.listSections().flatMap((section) => {
         const grants = section.grants.filter((grant) =>
-            accessService.holds(user, grant.name),
+            access.holds(user, grant.name),
         );
 
         return grants.length ? [{ ...section, grants }] : [];
