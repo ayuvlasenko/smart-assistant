@@ -5,7 +5,7 @@ import { ClientSession, ObjectId } from "mongodb";
 import {
     EntityVersionMismatchError,
     NotFoundError,
-} from "../../../errors/common-errors.js";
+} from "../../../entity-errors.js";
 import { UserEntity, UserProfile } from "./user-entity.js";
 
 const optionalProfileFields = ["firstName", "username"] as const;

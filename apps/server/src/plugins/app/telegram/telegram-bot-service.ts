@@ -4,7 +4,7 @@ import Emittery from "emittery";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { createHash, randomUUID } from "node:crypto";
-import { Env } from "../../../schemas/env.js";
+import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
 import {

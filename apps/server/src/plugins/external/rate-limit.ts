@@ -2,7 +2,7 @@ import rateLimit from "@fastify/rate-limit";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { resolveClientAddress } from "../../client-address.js";
-import { Env } from "../../schemas/env.js";
+import { Env } from "../../env.js";
 
 export const autoConfig = (fastify: FastifyInstance) => {
     return {

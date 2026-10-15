@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis, RedisOptions } from "ioredis";
-import { Env } from "../../schemas/env.js";
+import { Env } from "../../env.js";
 
 export default fp(
     async function valkeyPlugin(fastify: FastifyInstance) {

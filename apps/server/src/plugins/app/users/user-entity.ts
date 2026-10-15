@@ -1,4 +1,4 @@
-import { BaseEntity } from "../../../types/entities/base-entity.js";
+import { BaseEntity } from "../../../entity.js";
 import { Language } from "../i18n-service.js";
 
 export interface UserEntity extends BaseEntity {

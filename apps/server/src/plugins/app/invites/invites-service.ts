@@ -4,7 +4,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
-import { Env } from "../../../schemas/env.js";
+import { Env } from "../../../env.js";
 import {
     AccessControl,
     AccessService,

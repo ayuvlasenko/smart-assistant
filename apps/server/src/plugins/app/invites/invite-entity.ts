@@ -1,5 +1,5 @@
 import { ObjectId } from "mongodb";
-import { BaseEntity } from "../../../types/entities/base-entity.js";
+import { BaseEntity } from "../../../entity.js";
 
 export interface InviteActivation {
     userId: ObjectId;

@@ -8,6 +8,7 @@ import { Redis } from "ioredis";
 import { MongoClient } from "mongodb";
 import { TestContext } from "node:test";
 import { options as appOptions } from "../app.js";
+import { Env } from "../env.js";
 import appLoggerPlugin from "../plugins/app/app-logger.js";
 import cachePlugin, { CacheService } from "../plugins/app/cache-service.js";
 import i18nPlugin from "../plugins/app/i18n-service.js";
@@ -49,7 +50,6 @@ import mongoPlugin from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
-import { Env } from "../schemas/env.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,

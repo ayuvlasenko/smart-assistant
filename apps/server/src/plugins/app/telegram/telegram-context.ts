@@ -1,7 +1,6 @@
 import { InlineKeyboardMarkup, Message, Update } from "@grammyjs/types";
 import Emittery from "emittery";
 import { FastifyBaseLogger } from "fastify";
-import { MaybeArray } from "../../../types/utility.js";
 import { Translate } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import {
@@ -17,6 +16,8 @@ import {
 } from "./telegram-responder.js";
 import { TelegramMessageMarkup } from "./telegram-scene-buttons.js";
 import { TelegramSession } from "./telegram-session.js";
+
+export type MaybeArray<T> = T | readonly T[];
 
 export interface TelegramContextOptions<TUpdate extends Update | undefined> {
     update: TUpdate;

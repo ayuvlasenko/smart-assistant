@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { Env } from "../../../schemas/env.js";
+import { Env } from "../../../env.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";

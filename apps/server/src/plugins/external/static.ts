@@ -3,7 +3,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import fs from "node:fs";
 import path from "node:path";
-import { Env } from "../../schemas/env.js";
+import { Env } from "../../env.js";
 
 export const autoConfig = (fastify: FastifyInstance): FastifyStaticOptions => {
     const config = fastify.getDecorator<Env>("config");

@@ -1,7 +1,7 @@
 import mongo, { FastifyMongodbOptions } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Env } from "../../schemas/env.js";
+import { Env } from "../../env.js";
 
 export const autoConfig = (fastify: FastifyInstance): FastifyMongodbOptions => {
     return {

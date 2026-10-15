@@ -1,7 +1,7 @@
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import fp from "fastify-plugin";
-import { Env } from "../../schemas/env.js";
+import { Env } from "../../env.js";
 
 export default fp(
     async function (fastify) {

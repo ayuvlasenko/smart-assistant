@@ -1,4 +1,5 @@
-const codeKindDirectory = /(?:^|\/)(?:utils|constants)\//;
+const codeKindDirectory =
+    /(?:^|\/)(?:utils|constants|types|errors|helpers|schemas)\//;
 const codeKindName = /-(?:types|constants|utils|helpers)\.[jt]s$/;
 const typeDeclarations = new Set([
     "TSTypeAliasDeclaration",

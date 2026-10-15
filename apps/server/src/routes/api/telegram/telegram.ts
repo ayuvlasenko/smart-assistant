@@ -4,12 +4,17 @@ import {
 } from "@fastify/type-provider-typebox";
 import { Update } from "@grammyjs/types";
 import { FastifyRequest } from "fastify";
+import { Env } from "../../../env.js";
 import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
-import { unauthorizedErrorSchema } from "../../../schemas/common.js";
-import { Env } from "../../../schemas/env.js";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
+
+const unauthorizedErrorSchema = Type.Object({
+    message: Type.Literal("Unauthorized"),
+    error: Type.Literal("Unauthorized"),
+    statusCode: Type.Literal(401),
+});
 
 const telegramWebhookHeadersSchema = Type.Object({
     [TELEGRAM_SECRET_HEADER]: Type.String(),
