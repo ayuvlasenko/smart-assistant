@@ -25,8 +25,9 @@ sequenceDiagram
     participant H as invites-handlers
     participant S as InvitesService
     participant I as InvitesRepository
-    participant Us as UsersRepository
+    participant Us as UsersService
     participant E as eventEmitter
+    participant B as TelegramBotService
 
     U->>R: /start with invite and the token
     R->>H: deep link invite (allowBanned)
@@ -34,12 +35,13 @@ sequenceDiagram
     S->>I: one update that matches an active invite and pushes the user
     alt matched
         S->>Us: grantAccess: unban, add grants
+        Us->>E: users.accessChanged
+        E-->>B: syncCommands: the chat menu of the new grants
         S->>E: invites.inviteChanged
         E-->>H: publish the list and the invite topics
     else not matched
         S->>I: find by token, explain the refusal
     end
-    H->>H: syncCommands(user) after a grant
     H->>U: welcome, access updated, or refusal
 ```
 

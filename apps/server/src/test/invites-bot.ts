@@ -9,7 +9,6 @@ import invitesServicePlugin, {
     InvitesService,
 } from "../plugins/app/invites/invites-service.js";
 import pingHandlersPlugin from "../plugins/app/ping/ping-handlers.js";
-import emitteryPlugin from "../plugins/external/emittery.js";
 import { TelegramApiServiceMock } from "./telegram-api-service-mock.js";
 import { BuildTelegramBotServiceTestAppOptions } from "./telegram-bot-service-helper.js";
 import {
@@ -30,7 +29,6 @@ export async function buildInvitesBot(
     const bot = await buildTelegramSceneBot({
         ...options,
         plugins: [
-            emitteryPlugin,
             accessPlugin,
             pingHandlersPlugin,
             invitesRepositoryPlugin,

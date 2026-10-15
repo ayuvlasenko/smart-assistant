@@ -8,6 +8,7 @@ import { AccessService, adminGrant } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
+import { UsersService } from "../users/users-service.js";
 import { InviteEntity, readInviteStatus } from "./invite-entity.js";
 import {
     InviteGrantNotAllowedError,
@@ -62,17 +63,20 @@ const inviteTokenBytes = 16;
 export class InvitesService {
     private readonly invitesRepository: InvitesRepository;
     private readonly usersRepository: UsersRepository;
+    private readonly usersService: UsersService;
     private readonly accessService: AccessService;
     private readonly eventEmitter: Emittery<InvitesEvents>;
 
     constructor(
         invitesRepository: InvitesRepository,
         usersRepository: UsersRepository,
+        usersService: UsersService,
         accessService: AccessService,
         eventEmitter: Emittery<InvitesEvents>,
     ) {
         this.invitesRepository = invitesRepository;
         this.usersRepository = usersRepository;
+        this.usersService = usersService;
         this.accessService = accessService;
         this.eventEmitter = eventEmitter;
     }
@@ -125,7 +129,7 @@ export class InvitesService {
         );
 
         if (activated) {
-            const updated = await this.usersRepository.grantAccess(
+            const updated = await this.usersService.grantAccess(
                 user._id,
                 activated.grants,
             );
@@ -294,7 +298,7 @@ export class InvitesService {
             return {
                 status: "alreadyActivated",
                 invite,
-                user: await this.usersRepository.grantAccess(
+                user: await this.usersService.grantAccess(
                     user._id,
                     invite.grants,
                 ),
@@ -310,6 +314,7 @@ export default fp(
         const invitesService = new InvitesService(
             fastify.getDecorator<InvitesRepository>("invitesRepository"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
+            fastify.getDecorator<UsersService>("usersService"),
             fastify.getDecorator<AccessService>("accessService"),
             fastify.getDecorator<Emittery<InvitesEvents>>("eventEmitter"),
         );
@@ -350,6 +355,7 @@ export default fp(
             "emittery",
             "invites-repository",
             "users-repository",
+            "users-service",
         ],
     },
 );
