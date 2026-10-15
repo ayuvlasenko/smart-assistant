@@ -10,6 +10,7 @@ import {
     it,
     TestContext,
 } from "node:test";
+import { setTimeout } from "node:timers/promises";
 import { requestLogSerializers } from "../../../constants/options.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
@@ -19,7 +20,9 @@ import {
     buildTelegramSceneBot,
     TelegramSceneBot,
 } from "../../../test/telegram-scene-bot.js";
+import { telegramSceneTopicIndex } from "./telegram-scene-storage.js";
 import { defineScene } from "./telegram-scene.js";
+import { TelegramSessionStore } from "./telegram-session-store.js";
 
 interface RoomEvents {
     "test.roomChanged": TestRoom;
@@ -153,7 +156,278 @@ void describe("TelegramChats", () => {
                 ),
         );
     });
+
+    void it("redraws only the scenes that watch a published topic", async (t) => {
+        const boards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654460 });
+        const bob = buildTelegramPrivateChat({ id: 987654461 });
+
+        await bot.sendText(ada, "/board");
+        await bot.sendText(bob, "/board");
+        await bot.pressButton(bob, "Open b");
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        boards.b = 1;
+        bot.telegramChats.publish(["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: ada.id, text: "Board a: 1" },
+        ]);
+    });
+
+    void it("stops redrawing a scene that switched away or ended", async (t) => {
+        const boards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654462 });
+        const bob = buildTelegramPrivateChat({ id: 987654463 });
+
+        await bot.sendText(ada, "/board");
+        await bot.sendText(bob, "/board");
+        await bot.pressButton(ada, "Open b");
+        await bot.pressButton(bob, "Close");
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        bot.telegramChats.publish(["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), []);
+        assert.deepEqual(await readWatchers(bot, "board:a"), []);
+        assert.deepEqual(await readWatchers(bot, "board:b"), [ada.id]);
+    });
+
+    void it("forgets a watching scene after its TTL", async (t) => {
+        const boards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards, { ttl: 300 });
+        const ada = buildTelegramPrivateChat({ id: 987654464 });
+
+        await bot.sendText(ada, "/board");
+
+        assert.deepEqual(await readWatchers(bot, "board:a"), [ada.id]);
+
+        await setTimeout(500);
+
+        assert.deepEqual(await readWatchers(bot, "board:a"), []);
+
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        bot.telegramChats.publish(["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), []);
+    });
+
+    void it("redraws a scene once when it watches several published topics", async (t) => {
+        const boards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654465 });
+
+        await bot.sendText(ada, "/board");
+        await bot.pressButton(ada, "Open both");
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        boards.b = 1;
+        bot.telegramChats.publish(["board:a", "board:b"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: ada.id, text: "Board a: 1, b: 1" },
+        ]);
+    });
+
+    void it("waits for the running update of a watcher and keeps its state", async (t) => {
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654471 });
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+
+        await bot.sendText(ada, "/board");
+        boards.slowSwitch = { entered, gate: gate.promise };
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+
+        const press = bot.pressButton(ada, "Slow b");
+
+        await entered.promise;
+        boards.a = 1;
+        boards.b = 1;
+        bot.telegramChats.publish(["board:a"]);
+
+        try {
+            await setTimeout(200);
+
+            assert.deepEqual(readEditedTexts(bot), []);
+        } finally {
+            gate.resolve();
+            await press;
+        }
+
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: ada.id, text: "Board b: 1" },
+        ]);
+        assert.deepEqual(await readWatchers(bot, "board:a"), []);
+        assert.deepEqual(await readWatchers(bot, "board:b"), [ada.id]);
+    });
+
+    void it("skips a watcher who fails the guard of the scene or is banned", async (t) => {
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654466 });
+        const bob = buildTelegramPrivateChat({ id: 987654467 });
+        const carl = buildTelegramPrivateChat({ id: 987654468 });
+
+        await bot.sendText(ada, "/board");
+        await bot.sendText(bob, "/board");
+        await bot.sendText(carl, "/board");
+        boards.blockedUserId = bob.id;
+        await mongo
+            .collection("users")
+            .updateOne(
+                { telegramId: String(carl.id) },
+                { $set: { isBanned: true } },
+            );
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        bot.telegramChats.publish(["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: ada.id, text: "Board a: 1" },
+        ]);
+    });
+
+    void it("publishes to the other watchers when one of them fails", async (t) => {
+        const logs = createLogCollector();
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards, { logger: logs.logger });
+        const ada = buildTelegramPrivateChat({ id: 987654469 });
+        const bob = buildTelegramPrivateChat({ id: 987654470 });
+
+        await bot.sendText(ada, "/board");
+        await bot.sendText(bob, "/board");
+        boards.failingUserId = ada.id;
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 1;
+        bot.telegramChats.publish(["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: bob.id, text: "Board a: 1" },
+        ]);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    (entry) => entry.msg === "Failed to publish a scene update",
+                ),
+        );
+        assert.match(
+            await bot.metrics.metrics(),
+            /^telegram_scene_events_total\{scene="board",event="delivery_failed"\} 1$/m,
+        );
+    });
 });
+
+interface TestBoards {
+    a: number;
+    b: number;
+    blockedUserId?: number;
+    failingUserId?: number;
+    slowSwitch?: {
+        entered: PromiseWithResolvers<void>;
+        gate: Promise<void>;
+    };
+}
+
+async function buildBoardBot(
+    t: TestContext,
+    boards: TestBoards,
+    {
+        ttl = 60_000,
+        logger,
+    }: {
+        ttl?: number;
+        logger?: ReturnType<typeof createLogCollector>["logger"];
+    } = {},
+): Promise<TelegramSceneBot> {
+    const boardView = Type.Union([
+        Type.Literal("a"),
+        Type.Literal("b"),
+        Type.Literal("both"),
+    ]);
+    const boardScene = defineScene({
+        name: "board",
+        state: Type.Object({ view: boardView }),
+        key: () => "board",
+        ttl,
+        guard: (user) => user.telegramId !== String(boards.blockedUserId),
+        watch: ({ view }) =>
+            (view === "both" ? ["a", "b"] : [view]).map(
+                (name) => `board:${name}`,
+            ),
+        slots: {
+            board: async (ctx, scene) => {
+                if (ctx.user.telegramId === String(boards.failingUserId)) {
+                    throw new Error("Render failed");
+                }
+
+                return {
+                    kind: "text",
+                    text:
+                        scene.state.view === "both"
+                            ? `Board a: ${boards.a}, b: ${boards.b}`
+                            : `Board ${scene.state.view}: ${boards[scene.state.view]}`,
+                    keyboard: [
+                        [
+                            scene.button("Open b", "open", "b"),
+                            scene.button("Open both", "open", "both"),
+                            scene.button("Close", "close", null),
+                            scene.button("Slow b", "slowSwitch", null),
+                        ],
+                    ],
+                };
+            },
+        },
+        buttons: {
+            open: {
+                value: boardView,
+                handle: async (ctx, scene, view) => {
+                    scene.state.view = view;
+                },
+            },
+            close: {
+                value: Type.Null(),
+                handle: (ctx, scene) => scene.end(),
+            },
+            slowSwitch: {
+                value: Type.Null(),
+                handle: async (ctx, scene) => {
+                    boards.slowSwitch?.entered.resolve();
+                    await boards.slowSwitch?.gate;
+                    scene.state.view = "b";
+                },
+            },
+        },
+    });
+
+    return buildTelegramSceneBot({
+        databaseName,
+        mongoClient,
+        t,
+        logger: logger
+            ? { ...logger, serializers: requestLogSerializers }
+            : false,
+        registerRoutes: (router, sceneEngine) => {
+            router.scene(boardScene);
+            router.command("board", (ctx) =>
+                sceneEngine.start(ctx, boardScene, { view: "a" }),
+            );
+        },
+    });
+}
 
 interface TestRoom {
     id: string;
@@ -236,6 +510,17 @@ async function buildRoomBot(
     });
 
     return bot;
+}
+
+async function readWatchers(
+    bot: TelegramSceneBot,
+    topic: string,
+): Promise<number[]> {
+    const matches = await bot.app
+        .getDecorator<TelegramSessionStore>("telegramSessionStore")
+        .findIndexed(telegramSceneTopicIndex(topic));
+
+    return matches.map(({ userId }) => userId);
 }
 
 function readEditedTexts(

@@ -13,6 +13,11 @@ import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
+import {
+    parseTelegramSceneTopicEntry,
+    TelegramSceneRef,
+    telegramSceneTopicIndex,
+} from "./telegram-scene-storage.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSessionStore } from "./telegram-session-store.js";
 
@@ -88,10 +93,11 @@ export class TelegramChats {
         targets: TelegramSceneTarget[],
         handle?: TelegramDeliveryHandler<Static<TStateSchema>>,
     ): void {
-        const delivery = this.deliverAll(scene, targets, handle);
+        this.track(this.deliverAll(scene, targets, handle));
+    }
 
-        this.pendingDeliveries.add(delivery);
-        void delivery.finally(() => this.pendingDeliveries.delete(delivery));
+    publish(topics: string[]): void {
+        this.track(this.publishAll(topics));
     }
 
     async idle(): Promise<void> {
@@ -132,24 +138,109 @@ export class TelegramChats {
         target: TelegramSceneTarget,
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
+        await this.withUser(target.userId, { scene: scene.name }, (ctx) =>
+            this.sceneEngine.deliver(ctx, scene, target.key, async (control) =>
+                handle?.(ctx, control),
+            ),
+        );
+    }
+
+    private async publishAll(topics: string[]): Promise<void> {
+        try {
+            const watchers = [...(await this.findWatchers(topics))];
+            const results = await Promise.allSettled(
+                watchers.map(([userId, scenes]) =>
+                    this.withUser(userId, { topics }, async (ctx) => {
+                        for (const { sceneId } of scenes) {
+                            await this.sceneEngine.redraw(ctx, sceneId, topics);
+                        }
+                    }),
+                ),
+            );
+
+            for (const [index, result] of results.entries()) {
+                const [userId, scenes = []] = watchers[index] ?? [];
+
+                if (result.status === "rejected") {
+                    this.recordPublishFailure(
+                        result.reason,
+                        topics,
+                        userId,
+                        scenes,
+                    );
+                }
+            }
+        } catch (err) {
+            this.log.error({ err, topics }, "Failed to publish a scene update");
+        }
+    }
+
+    private async findWatchers(
+        topics: string[],
+    ): Promise<Map<number, TelegramSceneRef[]>> {
+        const entries = new Map<number, Set<string>>();
+        const matches = await Promise.all(
+            topics.map((topic) =>
+                this.sessionStore.findIndexed(telegramSceneTopicIndex(topic)),
+            ),
+        );
+
+        for (const { userId, entry } of matches.flat()) {
+            entries.set(userId, (entries.get(userId) ?? new Set()).add(entry));
+        }
+
+        return new Map(
+            [...entries].map(([userId, userEntries]) => [
+                userId,
+                [...userEntries].flatMap(
+                    (entry) => parseTelegramSceneTopicEntry(entry) ?? [],
+                ),
+            ]),
+        );
+    }
+
+    private recordPublishFailure(
+        err: unknown,
+        topics: string[],
+        userId: number | undefined,
+        scenes: TelegramSceneRef[],
+    ): void {
+        for (const { sceneName } of scenes) {
+            this.telegramMetrics.recordSceneEvent(sceneName, "delivery_failed");
+        }
+
+        this.log.error(
+            {
+                err,
+                topics,
+                telegramUserId: userId,
+                scenes: scenes.map(({ sceneName }) => sceneName),
+            },
+            "Failed to publish a scene update",
+        );
+    }
+
+    private track(delivery: Promise<void>): void {
+        this.pendingDeliveries.add(delivery);
+        void delivery.finally(() => this.pendingDeliveries.delete(delivery));
+    }
+
+    private async withUser(
+        userId: number,
+        bindings: Record<string, unknown>,
+        handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
+    ): Promise<void> {
         const user = await this.usersRepository.findOneByTelegramId(
-            String(target.userId),
+            String(userId),
         );
 
         if (!user || user.isBanned) {
             return;
         }
 
-        const log = this.log.child({
-            telegramUserId: target.userId,
-            scene: scene.name,
-        });
+        const log = this.log.child({ telegramUserId: userId, ...bindings });
 
-        await this.withChat({ userId: target.userId, user, log }, (ctx) =>
-            this.sceneEngine.deliver(ctx, scene, target.key, async (control) =>
-                handle?.(ctx, control),
-            ),
-        );
+        await this.withChat({ userId, user, log }, handle);
     }
 
     private withChat<T>(

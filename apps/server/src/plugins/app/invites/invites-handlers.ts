@@ -2,7 +2,6 @@ import Emittery from "emittery";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { AccessService } from "../access/access-service.js";
-import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
 import { TelegramChats } from "../telegram/telegram-chats.js";
@@ -10,13 +9,13 @@ import { TelegramContext } from "../telegram/telegram-context.js";
 import { TelegramCommandMessageUpdate } from "../telegram/telegram-filters.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
-import { UsersRepository } from "../users/users-repository.js";
 import { InvitesEvents } from "./invites-events.js";
 import { invitesLocales } from "./invites-locales.js";
 import {
     buildInvitesState,
     createInvitesScene,
-    invitesSceneKey,
+    invitesTopic,
+    inviteTopic,
 } from "./invites-scene.js";
 import { InvitesService } from "./invites-service.js";
 
@@ -28,8 +27,6 @@ export default fp(
             fastify.getDecorator<AccessService>("accessService");
         const invitesService =
             fastify.getDecorator<InvitesService>("invitesService");
-        const usersRepository =
-            fastify.getDecorator<UsersRepository>("usersRepository");
         const telegramBotService =
             fastify.getDecorator<TelegramBotService>("telegramBotService");
         const telegramChats =
@@ -40,9 +37,6 @@ export default fp(
         );
         const events =
             fastify.getDecorator<Emittery<InvitesEvents>>("eventEmitter");
-        const log = fastify
-            .getDecorator<AppLogger>("appLogger")
-            .child({ module: "invites" });
 
         fastify
             .getDecorator<I18nService>("i18nService")
@@ -79,25 +73,11 @@ export default fp(
             { allowBanned: true },
         );
 
-        events.on("invites.inviteActivated", async ({ data }) => {
-            try {
-                const creator =
-                    data.createdBy &&
-                    (await usersRepository.findOneById(data.createdBy));
-
-                if (!creator) {
-                    return;
-                }
-
-                telegramChats.deliver(invitesScene, [
-                    {
-                        userId: Number(creator.telegramId),
-                        key: invitesSceneKey,
-                    },
-                ]);
-            } catch (err) {
-                log.error({ err }, "Failed to deliver an invite activation");
-            }
+        events.on("invites.inviteChanged", ({ data }) => {
+            telegramChats.publish([
+                invitesTopic,
+                inviteTopic(data.inviteId.toHexString()),
+            ]);
         });
 
         async function acceptInvite(
@@ -139,7 +119,6 @@ export default fp(
         name: "invites-handlers",
         dependencies: [
             "access-service",
-            "app-logger",
             "emittery",
             "i18n-service",
             "invites-service",
@@ -147,7 +126,6 @@ export default fp(
             "telegram-chats",
             "telegram-router",
             "telegram-scene-engine",
-            "users-repository",
         ],
     },
 );

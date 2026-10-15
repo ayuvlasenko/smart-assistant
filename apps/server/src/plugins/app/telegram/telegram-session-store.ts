@@ -14,6 +14,11 @@ export interface TelegramSessionStoreOptions {
     lockTtlMilliseconds?: number;
 }
 
+export interface TelegramSessionIndexMatch {
+    userId: number;
+    entry: string;
+}
+
 const lockName = "telegram-session";
 
 export class TelegramSessionStore {
@@ -40,7 +45,7 @@ export class TelegramSessionStore {
         userId: number,
         handle: (session: TelegramSession) => Promise<T>,
     ): Promise<T> {
-        const sessionKey = `telegram:session:${userId}`;
+        const sessionKey = sessionKeyOf(userId);
         await using lock = await this.lockService.acquire(
             `${sessionKey}:lock`,
             this.lockOptions,
@@ -51,7 +56,7 @@ export class TelegramSessionStore {
         try {
             result = await handle(session);
         } catch (err) {
-            await this.save(lock, session).catch((saveErr: unknown) => {
+            await this.save(lock, userId, session).catch((saveErr: unknown) => {
                 throw new AggregateError(
                     [err, saveErr],
                     "Telegram update failed and its session was not saved",
@@ -60,19 +65,49 @@ export class TelegramSessionStore {
             throw err;
         }
 
-        await this.save(lock, session);
+        await this.save(lock, userId, session);
 
         return result;
     }
 
-    private async save(lock: Lock, session: TelegramSession): Promise<void> {
+    async findIndexed(name: string): Promise<TelegramSessionIndexMatch[]> {
+        const members = await this.cache.getExpiringSetMembers(
+            indexKeyOf(name),
+        );
+
+        return members.flatMap((member) => {
+            const separator = member.indexOf(":");
+            const userId = Number(member.slice(0, separator));
+
+            return separator > 0 && Number.isSafeInteger(userId)
+                ? [{ userId, entry: member.slice(separator + 1) }]
+                : [];
+        });
+    }
+
+    private async save(
+        lock: Lock,
+        userId: number,
+        session: TelegramSession,
+    ): Promise<void> {
         if (!session.hasChanges) {
             return;
         }
 
+        const { fields, indexes } = session.collectChanges();
         const isSaved = await this.cache.updateHash(
             session.key,
-            session.collectChanges(),
+            {
+                ...fields,
+                expiringSets: indexes.map(({ name, adds, removals }) => ({
+                    key: indexKeyOf(name),
+                    adds: adds.map(({ entry, expiresAt }) => ({
+                        member: `${userId}:${entry}`,
+                        expiresAt,
+                    })),
+                    removals: removals.map((entry) => `${userId}:${entry}`),
+                })),
+            },
             { ifEquals: this.lockService.heldCondition(lock) },
         );
 
@@ -80,6 +115,14 @@ export class TelegramSessionStore {
             throw new LockLostError(lockName);
         }
     }
+}
+
+function sessionKeyOf(userId: number): string {
+    return `telegram:session:${userId}`;
+}
+
+function indexKeyOf(name: string): string {
+    return `telegram:index:${name}`;
 }
 
 export default fp(

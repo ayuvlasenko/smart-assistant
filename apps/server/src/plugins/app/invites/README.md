@@ -34,8 +34,8 @@ sequenceDiagram
     S->>I: one update that matches an active invite and pushes the user
     alt matched
         S->>Us: grantAccess: unban, add grants
-        S->>E: invites.inviteActivated
-        E-->>H: deliver to the scene of the author
+        S->>E: invites.inviteChanged
+        E-->>H: publish the list and the invite topics
     else not matched
         S->>I: find by token, explain the refusal
     end
@@ -88,7 +88,7 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 
 The form keeps the draft in the scene state and writes nothing until `✅ Create invite`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
 
-The scene redraws by itself when somebody uses an invite: `invites.inviteActivated` carries the invite id and the author, and the handler delivers the scene of the author. `🔄 Refresh` redraws it on demand. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
+The scene redraws by itself when an invite changes. The scene watches `invites` on the list and `invites.invite:<id>` on the invite and its users, and nothing on the form. `InvitesService` emits `invites.inviteChanged` with the invite id after it creates, activates or revokes an invite, and the handler publishes both topics, so every admin who looks at the list or at that invite sees the change. The bootstrap on start emits nothing. `🔄 Refresh` redraws the scene on demand. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
 
 ## Files
 
@@ -97,7 +97,7 @@ The scene redraws by itself when somebody uses an invite: `invites.inviteActivat
 | `invite-entity.ts`                                             | The invite document and its status                                                       |
 | `invites-repository.ts`                                        | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page |
 | `invites-service.ts`                                           | The rules: who can create, read and revoke, activation and its refusals, bootstrap       |
-| `invites-handlers.ts`                                          | The Telegram side: the deep link, `/invites`, the scene, the delivery of the event       |
+| `invites-handlers.ts`                                          | The Telegram side: the deep link, `/invites`, the scene, the publish of the event        |
 | `invites-scene.ts`                                             | The scene and its screens                                                                |
 | `invite-format.ts`                                             | View helpers of the scene: status labels, uses, grants, keyboard rows                    |
 | `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts` | Events, errors, texts                                                                    |

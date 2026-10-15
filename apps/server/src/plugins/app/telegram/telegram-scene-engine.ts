@@ -187,6 +187,26 @@ export class TelegramSceneEngine {
         return true;
     }
 
+    async redraw(
+        ctx: TelegramContext,
+        sceneId: string,
+        topics: readonly string[],
+    ): Promise<boolean> {
+        const instance = await this.storageFor(ctx).load(sceneId);
+
+        if (
+            !instance?.record.topics.some((topic) => topics.includes(topic)) ||
+            !isAllowed(instance.scene.guard, ctx.user)
+        ) {
+            return false;
+        }
+
+        this.telegramMetrics.recordSceneEvent(instance.scene.name, "delivered");
+        this.touch(ctx, instance);
+
+        return true;
+    }
+
     async withScenes<T>(
         ctx: TelegramContext,
         action: () => Promise<T>,

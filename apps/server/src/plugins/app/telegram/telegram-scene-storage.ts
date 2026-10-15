@@ -15,9 +15,15 @@ const sceneRecordSchema = Type.Object({
     buttons: telegramButtonsStateSchema,
     slots: telegramSlotsStateSchema,
     input: Type.Optional(telegramInputStateSchema),
+    topics: Type.Array(Type.String()),
 });
 
 export type TelegramSceneRecord = Static<typeof sceneRecordSchema>;
+
+export interface TelegramSceneRef {
+    sceneName: string;
+    sceneId: string;
+}
 
 export interface TelegramSceneInstance {
     readonly id: string;
@@ -93,6 +99,7 @@ export class TelegramSceneStorage {
             state,
             buttons: { nextId: 1, messages: [] },
             slots: {},
+            topics: [],
         };
         const instance = this.toInstance(id, scene, record);
 
@@ -149,6 +156,7 @@ export class TelegramSceneStorage {
             return;
         }
 
+        this.indexTopics(instance, Date.now() + ttlMilliseconds);
         this.session.write(
             sceneField(instance.id),
             instance.record,
@@ -175,6 +183,11 @@ export class TelegramSceneStorage {
     remove(instance: TelegramSceneInstance): void {
         this.instances.set(instance.id, undefined);
         this.session.remove(sceneField(instance.id));
+        this.unindexTopics(
+            instance.scene.name,
+            instance.id,
+            instance.record.topics,
+        );
 
         if (this.focus?.id === instance.id) {
             this.clearFocus();
@@ -182,6 +195,40 @@ export class TelegramSceneStorage {
 
         if (instance.scene.blocking) {
             this.clearBlocker();
+        }
+    }
+
+    private indexTopics(
+        instance: TelegramSceneInstance,
+        expiresAt: number,
+    ): void {
+        const topics = [
+            ...new Set(instance.scene.watch(instance.record.state)),
+        ];
+
+        this.unindexTopics(
+            instance.scene.name,
+            instance.id,
+            instance.record.topics.filter((topic) => !topics.includes(topic)),
+        );
+
+        for (const topic of topics) {
+            this.session.index(
+                telegramSceneTopicIndex(topic),
+                topicEntry(instance.scene.name, instance.id),
+                expiresAt,
+            );
+        }
+
+        instance.record.topics = topics;
+    }
+
+    private unindexTopics(name: string, id: string, topics: string[]): void {
+        for (const topic of topics) {
+            this.session.unindex(
+                telegramSceneTopicIndex(topic),
+                topicEntry(name, id),
+            );
         }
     }
 
@@ -226,6 +273,7 @@ export class TelegramSceneStorage {
             "Telegram scene is not registered or its state is outdated, removing it",
         );
         this.session.remove(sceneField(id));
+        this.unindexTopics(record.name, id, record.topics);
     }
 
     private toInstance(
@@ -239,6 +287,29 @@ export class TelegramSceneStorage {
             record,
         };
     }
+}
+
+export function telegramSceneTopicIndex(topic: string): string {
+    return `scene-topic:${topic}`;
+}
+
+export function parseTelegramSceneTopicEntry(
+    entry: string,
+): TelegramSceneRef | undefined {
+    const separator = entry.lastIndexOf(":");
+
+    if (separator <= 0) {
+        return;
+    }
+
+    return {
+        sceneName: entry.slice(0, separator),
+        sceneId: entry.slice(separator + 1),
+    };
+}
+
+function topicEntry(name: string, id: string): string {
+    return `${name}:${id}`;
 }
 
 function sceneField(id: string): string {
