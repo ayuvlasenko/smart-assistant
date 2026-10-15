@@ -65,7 +65,7 @@ Fastify autoload processes directories sequentially — order matters for depend
 - A file holds one abstraction: its main export, the types of its own public API, and private helpers. A type, schema, constant or function that describes another abstraction's data lives in that abstraction's file. A domain keeps its errors in `<domain>-errors.ts` and its events in `<domain>-events.ts`: one interface that maps every event name of the domain to its payload. `telegram-router.ts` is the reference.
 - Split a file by abstraction, never by kind of code: do not create `*-types.ts`, `*-constants.ts` or `*-utils.ts`. Only `<domain>-errors.ts`, `<domain>-events.ts`, `<domain>-schemas.ts` and `<domain>-locales.ts` collect one kind of code for the whole domain.
 - Order a file the same way every time: imports, then the types, schemas, constants and `declare module` augmentations of the file, then the main export, then private helpers in the order of their first use. A file that exports a class ends with the plugin that registers it, `export default fp(...)`. In a file without a class the plugin is the main export, and its helpers follow it.
-- Treat a source file over about 400 lines as a sign of a second abstraction inside it: find it and move it to its own file, such as one screen of a scene with several screens.
+- Treat a source file over about 400 lines as a sign of a second abstraction inside it: find it and move it to its own file, such as one screen of a scene with several screens. `pnpm --filter server lint` warns about these layout rules through `max-lines` and the local rule `local/file-layout` in `apps/server/eslint-rules/`; `src/server.ts` and tests are exempt. Fix a warning in the code you touch.
 
 ### Plugin DI
 
