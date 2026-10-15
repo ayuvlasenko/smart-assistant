@@ -1,4 +1,8 @@
-import Fastify, { FastifyInstance, FastifyServerOptions } from "fastify";
+import Fastify, {
+    FastifyInstance,
+    FastifyPluginAsync,
+    FastifyServerOptions,
+} from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
 import { MongoClient } from "mongodb";
@@ -58,6 +62,7 @@ export interface BuildTelegramBotServiceTestAppOptions {
     environment?: Env["ENVIRONMENT"];
     env?: Record<string, string>;
     sessionStoreOptions?: TelegramSessionStoreOptions;
+    plugins?: FastifyPluginAsync[];
     registerRoutes?: (
         router: TelegramRouter,
         sceneEngine: TelegramSceneEngine,
@@ -85,6 +90,7 @@ export async function buildTelegramBotServiceTestApp({
     environment = "production",
     env = {},
     sessionStoreOptions,
+    plugins = [],
     registerRoutes,
     logger = false,
 }: BuildTelegramBotServiceTestAppOptions): Promise<TelegramBotServiceTestApp> {
@@ -98,8 +104,9 @@ export async function buildTelegramBotServiceTestApp({
 
     app.register(envPlugin, {
         ...envAutoConfig,
+        env: false,
         data: {
-            ...process.env,
+            ...withoutInviteToken(process.env),
             ENVIRONMENT: environment,
             RESOURCE_NAME: resourceName,
             ...env,
@@ -128,6 +135,10 @@ export async function buildTelegramBotServiceTestApp({
     app.register(telegramSystemHandlersPlugin);
     app.register(telegramPlugin);
     app.register(telegramUpdateHandlerPlugin);
+
+    for (const plugin of plugins) {
+        app.register(plugin);
+    }
 
     if (registerRoutes) {
         app.register(
@@ -176,4 +187,12 @@ export async function buildTelegramBotServiceTestApp({
         ),
         usersRepository: app.getDecorator<UsersRepository>("usersRepository"),
     };
+}
+
+function withoutInviteToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const copy = { ...env };
+
+    delete copy.INVITE_TOKEN;
+
+    return copy;
 }

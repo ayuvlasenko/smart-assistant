@@ -4,13 +4,21 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Translate } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
-import { UnhandledTelegramUpdateError } from "./telegram-errors.js";
+import {
+    assertTelegramDeepLinkName,
+    parseTelegramDeepLink,
+} from "./telegram-deep-links.js";
+import {
+    BannedTelegramUserError,
+    UnhandledTelegramUpdateError,
+} from "./telegram-errors.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import {
     GuardedTelegramUpdate,
     TelegramCommandMessageUpdate,
     TelegramUpdateFilter,
 } from "./telegram-filters.js";
+import { isAllowed, TelegramGuard } from "./telegram-guard.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import { TelegramScene } from "./telegram-scene.js";
 
@@ -29,22 +37,34 @@ export type TelegramPredicate = (
 
 export type TelegramCommandDescription = (t: Translate) => string;
 
+export type TelegramDeepLinkHandler = (
+    ctx: TelegramContext<TelegramCommandMessageUpdate>,
+    value: string,
+) => Promise<unknown>;
+
 export interface TelegramRouteOptions {
     use?: TelegramMiddleware[];
+    guard?: TelegramGuard;
 }
 
 export interface TelegramCommandOptions extends TelegramRouteOptions {
     description?: TelegramCommandDescription;
 }
 
+export interface TelegramDeepLinkOptions extends TelegramRouteOptions {
+    allowBanned?: boolean;
+}
+
 export interface TelegramCommandInfo {
     name: string;
     description: TelegramCommandDescription;
+    guard?: TelegramGuard;
 }
 
 interface TelegramRoute {
     middlewares: TelegramMiddleware[];
     handler: TelegramHandler;
+    guard?: TelegramGuard;
 }
 
 interface TelegramCommandRoute extends TelegramRoute {
@@ -55,10 +75,18 @@ interface TelegramMatchRoute extends TelegramRoute {
     matches: TelegramPredicate;
 }
 
+interface TelegramDeepLinkRoute {
+    middlewares: TelegramMiddleware[];
+    handler: TelegramDeepLinkHandler;
+    guard?: TelegramGuard;
+    allowBanned: boolean;
+}
+
 export class TelegramRouter {
     private readonly middlewares: TelegramMiddleware[] = [];
     private readonly commandRoutes = new Map<string, TelegramCommandRoute>();
     private readonly matchRoutes: TelegramMatchRoute[] = [];
+    private readonly deepLinkRoutes = new Map<string, TelegramDeepLinkRoute>();
     private isLocked = false;
     private readonly sceneEngine: TelegramSceneEngine;
 
@@ -85,7 +113,30 @@ export class TelegramRouter {
         this.commandRoutes.set(name, {
             middlewares: options.use ?? [],
             handler: handler as TelegramHandler,
+            guard: options.guard,
             description: options.description,
+        });
+    }
+
+    deepLink(
+        name: string,
+        handler: TelegramDeepLinkHandler,
+        options: TelegramDeepLinkOptions = {},
+    ): void {
+        this.assertUnlocked();
+        assertTelegramDeepLinkName(name);
+
+        if (this.deepLinkRoutes.has(name)) {
+            throw new Error(
+                `Telegram deep link "${name}" is already registered`,
+            );
+        }
+
+        this.deepLinkRoutes.set(name, {
+            middlewares: options.use ?? [],
+            handler,
+            guard: options.guard,
+            allowBanned: options.allowBanned ?? false,
         });
     }
 
@@ -99,6 +150,7 @@ export class TelegramRouter {
             matches: (ctx) => filter(ctx.update),
             middlewares: options.use ?? [],
             handler: handler as TelegramHandler,
+            guard: options.guard,
         });
     }
 
@@ -112,6 +164,7 @@ export class TelegramRouter {
             matches: predicate,
             middlewares: options.use ?? [],
             handler,
+            guard: options.guard,
         });
     }
 
@@ -131,7 +184,11 @@ export class TelegramRouter {
 
         for (const [name, route] of this.commandRoutes) {
             if (route.description) {
-                commands.push({ name, description: route.description });
+                commands.push({
+                    name,
+                    description: route.description,
+                    guard: route.guard,
+                });
             }
         }
 
@@ -139,6 +196,10 @@ export class TelegramRouter {
     }
 
     async dispatch(ctx: TelegramContext<Update>): Promise<void> {
+        if (ctx.user.isBanned) {
+            return this.dispatchBanned(ctx);
+        }
+
         await runMiddlewares(
             ctx,
             [
@@ -152,6 +213,16 @@ export class TelegramRouter {
         );
     }
 
+    private async dispatchBanned(ctx: TelegramContext<Update>): Promise<void> {
+        const route = this.findDeepLink(ctx, { bannedOnly: true });
+
+        if (!route) {
+            throw new BannedTelegramUserError();
+        }
+
+        await runRoute(ctx, route);
+    }
+
     private async route(
         ctx: TelegramContext<Update>,
         next: () => Promise<void>,
@@ -162,26 +233,64 @@ export class TelegramRouter {
             return next();
         }
 
-        await runMiddlewares(ctx, route.middlewares, async () => {
-            await route.handler(ctx);
-        });
+        await runRoute(ctx, route);
     }
 
     private async findRoute(
         ctx: TelegramContext<Update>,
     ): Promise<TelegramRoute | undefined> {
+        const deepLink = this.findDeepLink(ctx, { bannedOnly: false });
+
+        if (deepLink) {
+            return deepLink;
+        }
+
         const command = extractTelegramCommand(ctx.update);
         const commandRoute = command && this.commandRoutes.get(command.name);
 
-        if (commandRoute) {
+        if (commandRoute && isAllowed(commandRoute.guard, ctx.user)) {
             return commandRoute;
         }
 
         for (const route of this.matchRoutes) {
-            if (await route.matches(ctx)) {
+            if (
+                isAllowed(route.guard, ctx.user) &&
+                (await route.matches(ctx))
+            ) {
                 return route;
             }
         }
+    }
+
+    private findDeepLink(
+        ctx: TelegramContext<Update>,
+        { bannedOnly }: { bannedOnly: boolean },
+    ): TelegramRoute | undefined {
+        const command = extractTelegramCommand(ctx.update);
+
+        const link =
+            command?.name === "start"
+                ? parseTelegramDeepLink(command.payload)
+                : undefined;
+        const route = link && this.deepLinkRoutes.get(link.name);
+
+        if (
+            !link ||
+            !route ||
+            (bannedOnly && !route.allowBanned) ||
+            !isAllowed(route.guard, ctx.user)
+        ) {
+            return;
+        }
+
+        return {
+            middlewares: route.middlewares,
+            handler: (routeCtx) =>
+                route.handler(
+                    routeCtx as TelegramContext<TelegramCommandMessageUpdate>,
+                    link.value,
+                ),
+        };
     }
 
     private assertUnlocked(): void {
@@ -191,6 +300,15 @@ export class TelegramRouter {
             );
         }
     }
+}
+
+async function runRoute(
+    ctx: TelegramContext<Update>,
+    route: TelegramRoute,
+): Promise<void> {
+    await runMiddlewares(ctx, route.middlewares, async () => {
+        await route.handler(ctx);
+    });
 }
 
 async function runMiddlewares(

@@ -8,6 +8,7 @@ import {
 import { Translate } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramUpdateFilter } from "./telegram-filters.js";
+import { TelegramGuard } from "./telegram-guard.js";
 import { TelegramMessageContent } from "./telegram-responder.js";
 import { TelegramSlotMessages } from "./telegram-scene-slots.js";
 
@@ -87,9 +88,11 @@ export interface TelegramSceneDefinition<
     state: TStateSchema;
     ttl: number;
     maxAge?: number;
+    guard?: TelegramGuard;
     buttons?: {
         [TName in keyof TButtons]: {
             value: TButtons[TName];
+            guard?: TelegramGuard;
             handle(
                 ctx: TelegramContext<Update>,
                 scene: TelegramSceneControl<
@@ -115,6 +118,7 @@ export interface TelegramSceneDefinition<
     inputs?: {
         [TName in keyof TInputs]: {
             payload: TInputs[TName];
+            guard?: TelegramGuard;
             cleanup?: boolean;
             steps(
                 step: TelegramStepFactory<Static<TInputs[TName]>>,
@@ -149,6 +153,7 @@ type ErasedSceneControl = TelegramSceneControl<Record<string, unknown>>;
 
 export interface TelegramSceneButton {
     value: TSchema;
+    guard?: TelegramGuard;
     handle(
         ctx: TelegramContext<Update>,
         scene: ErasedSceneControl,
@@ -158,6 +163,7 @@ export interface TelegramSceneButton {
 
 export interface TelegramSceneInput {
     payload: TObject;
+    guard?: TelegramGuard;
     steps: TelegramStep<Record<string, unknown>>[];
     cleanup: boolean;
     complete(
@@ -181,6 +187,7 @@ interface TelegramSceneShape<TStateSchema extends TObject> {
     readonly state: TStateSchema;
     readonly ttl: number;
     readonly maxAge: number | undefined;
+    readonly guard: TelegramGuard | undefined;
     readonly buttons: Readonly<Record<string, TelegramSceneButton>>;
     readonly inputs: Readonly<Record<string, TelegramSceneInput>>;
     readonly slots: Readonly<Record<string, TelegramSceneSlot>>;
@@ -227,6 +234,7 @@ export function defineScene<
         state: definition.state,
         ttl: definition.ttl,
         maxAge: definition.maxAge,
+        guard: definition.guard,
         buttons: definition.buttons ?? {},
         slots: definition.slots ?? {},
         inputs: Object.fromEntries(inputs) as Record<

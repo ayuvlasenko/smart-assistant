@@ -6,7 +6,11 @@ import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
-import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
+import {
+    buildTelegramBotServiceTestApp,
+    BuildTelegramBotServiceTestAppOptions,
+} from "../../../test/telegram-bot-service-helper.js";
+import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { Language } from "../i18n-service.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramLocales } from "./telegram-locales.js";
@@ -246,6 +250,139 @@ void describe("TelegramBotService commands on start", () => {
     });
 });
 
+void describe("TelegramBotService chat commands", () => {
+    void it("keeps guarded commands out of the menu on start", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+
+        await telegramBotService.setCommandsOnStart();
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls[0]?.arguments[0]
+                .commands,
+            buildExpectedCommands("en"),
+        );
+    });
+
+    void it("sets the commands that the user's grants allow in the user's language for the chat", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+
+        await telegramBotService.syncCommands(
+            buildUserEntity({
+                telegramId: "987654601",
+                languageCode: "uk",
+                grants: ["vip"],
+            }),
+        );
+        await telegramBotService.syncCommands(
+            buildUserEntity({ telegramId: "987654602" }),
+        );
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [
+                [
+                    {
+                        commands: [
+                            ...buildExpectedCommands("uk"),
+                            {
+                                command: "secret",
+                                description: telegramLocales.uk.error,
+                            },
+                        ],
+                        scope: { type: "chat", chat_id: 987654601 },
+                    },
+                ],
+                [
+                    {
+                        commands: buildExpectedCommands("en"),
+                        scope: { type: "chat", chat_id: 987654602 },
+                    },
+                ],
+            ],
+        );
+    });
+
+    void it("sets the chat commands again only when they change", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+        const user = buildUserEntity({ telegramId: "987654603" });
+
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands({ ...user, grants: ["vip"] });
+        await telegramBotService.syncCommands({ ...user, languageCode: "ru" });
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments[0].commands.length,
+            ),
+            [2, 3, 2],
+        );
+    });
+
+    void it("doesn't set chat commands for banned users or on preview", async (t) => {
+        const production = await buildTelegramBotServiceTestApp(
+            buildMenuAppOptions(t),
+        );
+        const preview = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            environment: "preview",
+        });
+
+        await production.telegramBotService.syncCommands(
+            buildUserEntity({ telegramId: "987654604", isBanned: true }),
+        );
+        await preview.telegramBotService.syncCommands(
+            buildUserEntity({ telegramId: "987654605" }),
+        );
+
+        assert.equal(
+            production.telegramApiService.setMyCommands.mock.callCount(),
+            0,
+        );
+        assert.equal(
+            preview.telegramApiService.setMyCommands.mock.callCount(),
+            0,
+        );
+    });
+
+    void it("logs a rejected chat menu, keeps going and tries again next time", async (t) => {
+        const logs = createLogCollector();
+        const telegramApiService = buildTelegramApiServiceMock({ t });
+        const { telegramBotService } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            telegramApiService,
+            logger: logs.logger,
+        });
+        const user = buildUserEntity({ telegramId: "987654606" });
+
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => ({
+                ok: false,
+                error_code: 400,
+                description: "Bad Request",
+            }),
+        );
+
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands(user);
+
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 2);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    (entry) =>
+                        entry.msg === "Failed to set telegram chat commands",
+                ),
+        );
+    });
+});
+
 void describe("telegram plugin on listen", () => {
     void it("sets the webhook once on production", async (t) => {
         const logs = createLogCollector();
@@ -283,6 +420,25 @@ void describe("telegram plugin on listen", () => {
         assert.equal(skipEntry.module, "telegram");
     });
 });
+
+function buildMenuAppOptions(
+    t: BuildTelegramBotServiceTestAppOptions["t"],
+): BuildTelegramBotServiceTestAppOptions {
+    return {
+        databaseName,
+        mongoClient,
+        t,
+        registerRoutes: (router) => {
+            router.command("help", async () => undefined, {
+                description: (translate) => translate("telegram:unknown"),
+            });
+            router.command("secret", async () => undefined, {
+                description: (translate) => translate("telegram:error"),
+                guard: (user) => user.grants.includes("vip"),
+            });
+        },
+    };
+}
 
 function buildExpectedCommands(language: Language) {
     return [
