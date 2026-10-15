@@ -2,9 +2,11 @@
 
 This directory is the Telegram transport and the scene engine of the bot. It turns a webhook request into a call of a command, a route or a scene, keeps the per-user state in Valkey, and draws the scene messages. It does not import feature domains: a domain registers its commands and scenes through `TelegramRouter`.
 
-The root `AGENTS.md` says how to write a scene. This file explains how each mechanism works inside and which problem it solves. Every mechanism follows the same shape: the problem, the idea, the data it keeps, a walk-through, and the edge cases.
+The first part of this file says how to write bot code in a domain: commands, deep links, scenes and their buttons, slots and inputs. The second part explains how each mechanism works inside and which problem it solves. Every mechanism there follows the same shape: the problem, the idea, the data it keeps, a walk-through, and the edge cases.
 
 - [What Telegram gives us](#what-telegram-gives-us)
+- [Writing bot code](#writing-bot-code)
+- [Bot UX](#bot-ux)
 - [Map](#map)
 - [An incoming update](#an-incoming-update)
 - [Session and lock](#session-and-lock)
@@ -30,6 +32,142 @@ Most of the code below exists because of these limits of the Bot API:
 - The bot can delete its own message only during 48 hours after it sent it.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
 - The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
+
+## Writing bot code
+
+A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, registers commands, deep links and scenes on `TelegramRouter`, and subscribes to its own events. It registers them while the plugin loads: the router locks on `onReady`, and a later registration throws. `invites-handlers.ts` and `invites-scene.ts` are the reference.
+
+### Commands, routes and deep links
+
+- `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
+- `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
+- `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl({ name, value })`, never by hand. See [Deep links](#deep-links).
+- Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
+- Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
+
+### A scene
+
+Build every interaction that keeps state between updates as a scene. A scene keeps the user's view of the data, such as the id of an entity or the current page. The data itself stays in the domain repository, because other users share it and a scene record can expire or be dropped after a deploy.
+
+```ts
+const reportStateSchema = Type.Object({ reportId: Type.String() });
+
+export function createReportScene(
+    reportsService: ReportsService,
+    access: AccessControl<ReportsSubjects>,
+) {
+    return defineScene({
+        name: "report",
+        state: reportStateSchema,
+        ttl: 24 * 60 * 60 * 1000,
+        guard: access.guard("read", "Report"),
+        key: (state) => state.reportId,
+        watch: (state) => [`reports.report:${state.reportId}`],
+        slots: {
+            report: async (ctx, scene) => {
+                const report = await reportsService.find(
+                    ctx.user,
+                    scene.state.reportId,
+                );
+
+                return {
+                    kind: "text",
+                    text: report.title,
+                    keyboard: [
+                        [scene.button(ctx.t("reports:rename"), "rename", null)],
+                    ],
+                };
+            },
+        },
+        buttons: {
+            rename: {
+                value: Type.Null(),
+                guard: access.guard("update", "Report"),
+                handle: (ctx, scene) => scene.ask("title"),
+            },
+        },
+        inputs: {
+            title: {
+                payload: Type.Object({ title: Type.String() }),
+                guard: access.guard("update", "Report"),
+                cleanup: true,
+                steps: (step) => [
+                    textStep(step, {
+                        name: "title",
+                        property: "title",
+                        prompt: (t) => t("reports:titlePrompt"),
+                    }),
+                ],
+                complete: async (ctx, scene, { title }) => {
+                    await reportsService.rename(
+                        ctx.user,
+                        scene.state.reportId,
+                        title,
+                    );
+                },
+            },
+        },
+    });
+}
+```
+
+The handlers plugin creates the scene, registers it and starts it:
+
+```ts
+const reportScene = createReportScene(reportsService, access);
+
+router.scene(reportScene);
+router.deepLink("report", async (ctx, reportId) => {
+    await sceneEngine.start(ctx, reportScene, { reportId });
+});
+events.on("reports.reportChanged", ({ data }) => {
+    telegramChats.publish([`reports.report:${data.reportId}`]);
+});
+```
+
+**The definition.**
+
+- `state` is a TypeBox schema. The engine checks every stored record against it, so a record from an older schema is dropped, not misread.
+- `ttl` is how long the scene lives after its last use. An optional `maxAge` limits its whole life from the start. A scene lives until it calls `scene.end()` or its time runs out, and a user can have many scenes at once.
+- `key(state)` makes one instance per business entity, such as the id of the entity. A second `start` with the same key shows the running scene again and keeps its state.
+- Create a scene in a factory, `create<Name>Scene(dependencies)`, that receives the services it needs. A handler that starts another scene gets `telegramSceneEngine` from the factory too and calls `sceneEngine.start(ctx, otherScene, state)` from the closure.
+
+**Handlers.** A scene handler gets the context and the scene as separate arguments, `(ctx, scene)` or `(ctx, scene, value)`; a step gets `(ctx, input)`. The context only talks to Telegram. The scene object holds `state`, `button`, `ask` and `end`.
+
+**Change the state last.** The engine saves every scene that the update touched, also when a handler fails, so a failed handler keeps the changes it made before the error. Call the domain and check the data first, then change `scene.state`. A failed input step drops the input.
+
+**Buttons.** Create every inline button with `scene.button(text, name, value)` for a handler in `buttons`, or with `input.button(text, value)` inside a step. Never write `callback_data` by hand: the scene keeps the value, and `callback_data` holds only a reference. The buttons of every running scene work at the same time. See [Buttons](#buttons).
+
+**Slots.** Show a message that changes with the state as a slot: a function in `slots` that returns `TelegramMessageContent` (`text`, `rich` or `media`) or `undefined`. A handler only changes the state; the engine draws the slots after the update and edits, replaces or deletes the message itself. Never keep the message id of a slot in the state. A reply sent in a handler comes before the slot messages. Choose what happens to the slot messages when the scene ends with `scene.end({ messages: "keep" | "removeButtons" | "delete" })`. See [Slots](#slots).
+
+**Pagination.** Keep the page in the state and draw it in a slot, with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one.
+
+**Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a reply that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. See [Inputs](#inputs).
+
+**Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, replies with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene. See [Blocking scenes](#blocking-scenes).
+
+**Access.** Put `guard: access.guard(action, subject)` on every command, deep link, scene, scene button and scene input that needs a permission. The guard only shapes the chat; the service still checks every read and write. `plugins/app/access/README.md` explains the model.
+
+### Scenes of other users
+
+Never write to the session of another user. Change the scenes of other users through a domain event:
+
+1. The domain service saves the change and emits `<domain>.<entity>Changed` on `eventEmitter`, narrowed with `fastify.getDecorator<Emittery<<Domain>Events>>("eventEmitter")`. The events of a domain live in `<domain>-events.ts`.
+2. The handlers plugin subscribes with `on` and calls one of these:
+    - `telegramChats.publish(topics)` when any user may look at the data. The scene declares the topics it shows now with `watch(state)`, such as `<domain>.<entity>:<id>`.
+    - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. `targets` are user ids with scene keys. The optional `handle` runs under the user's session lock without an incoming update.
+3. Both return at once and run in the background, and the engine renders the slots afterwards. So a handler only changes the state or sends a notification. Tests wait for both with `telegramChats.idle()`.
+
+See [Updates for other users](#updates-for-other-users) for how the engine finds and redraws the scenes.
+
+## Bot UX
+
+- Keep the chat free of service buttons. Mention `/cancel` once, in the first question of an input, instead of a cancel button on every message.
+- Mention step commands such as `/skip` in the prompt text of the step that accepts them.
+- Use inline buttons only when the user picks from a set of options, such as an account or a date. Accept typed text for free-form input.
+- Update the existing message for pagination and similar controls instead of sending a new one: show it as a slot and keep the page in the state.
+- Name a command in snake case: lowercase Latin letters, digits and underscores, such as `/new_invite`, at most 32 characters.
+- The bot works in private chats only. The update handler ignores groups and channels, so do not add group-specific behavior such as reply targets or forum topics.
 
 ## Map
 
