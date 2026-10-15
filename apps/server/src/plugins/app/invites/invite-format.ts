@@ -1,7 +1,14 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
 import { AccessService } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
+import {
+    escapeTelegramHtml,
+    formatTelegramHtmlTime,
+} from "../telegram/telegram-html.js";
+import { TelegramPageButton } from "../telegram/telegram-pagination.js";
+import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { InviteEntity, InviteStatus } from "./invite-entity.js";
+import { InvitesSceneControl } from "./invites-schemas.js";
 
 const statusIcons: Record<InviteStatus, string> = {
     active: "🟢",
@@ -44,8 +51,34 @@ export function formatGrants(
         .join(", ");
 }
 
-export function withoutEmptyRows(
-    rows: InlineKeyboardButton[][],
-): InlineKeyboardButton[][] {
-    return rows.filter((row) => row.length);
+export function buildInvitesMessage(
+    lines: string[],
+    keyboard: InlineKeyboardButton[][],
+): TelegramMessageContent {
+    return {
+        kind: "text",
+        parse_mode: "HTML",
+        text: lines.join("\n"),
+        keyboard: keyboard.filter((row) => row.length),
+    };
+}
+
+export function formatBold(text: string): string {
+    return `<b>${escapeTelegramHtml(text)}</b>`;
+}
+
+export function formatLabeled(label: string, value: string): string {
+    return `${escapeTelegramHtml(label)}: ${escapeTelegramHtml(value)}`;
+}
+
+export function formatLabeledTime(
+    label: string,
+    date: Date,
+    timeZone: string,
+): string {
+    return `${escapeTelegramHtml(label)} ${formatTelegramHtmlTime(date, timeZone)}`;
+}
+
+export function pageButtonOf(scene: InvitesSceneControl): TelegramPageButton {
+    return (text, target) => scene.button(text, "page", target);
 }

@@ -92,12 +92,14 @@ The scene redraws by itself when an invite changes. The scene watches `invites` 
 
 ## Files
 
-| File                                                           | Owns                                                                                     |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `invite-entity.ts`                                             | The invite document and its status                                                       |
-| `invites-repository.ts`                                        | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page |
-| `invites-service.ts`                                           | The rules: who can create, read and revoke, activation and its refusals, bootstrap       |
-| `invites-handlers.ts`                                          | The Telegram side: the deep link, `/invites`, the scene, the publish of the event        |
-| `invites-scene.ts`                                             | The scene and its screens                                                                |
-| `invite-format.ts`                                             | View helpers of the scene: status labels, uses, grants, keyboard rows                    |
-| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts` | Events, errors, texts                                                                    |
+| File                                                                  | Owns                                                                                                |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `invite-entity.ts`                                                    | The invite document and its status                                                                  |
+| `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page            |
+| `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap                  |
+| `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event                   |
+| `invites-scene.ts`                                                    | The scene: its buttons, inputs and topics, and which screen renders                                 |
+| `invites-schemas.ts`                                                  | The state and button schemas of the scene and the view that every screen renders from               |
+| `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry               |
+| `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, HTML lines, the message with its keyboard |
+| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts`        | Events, errors, texts                                                                               |
