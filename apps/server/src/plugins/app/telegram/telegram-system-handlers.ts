@@ -1,6 +1,5 @@
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { text } from "./telegram-filters.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 
@@ -24,10 +23,6 @@ export default fp(
             },
             { description: (t) => t("telegram:cancelCommand") },
         );
-
-        router.on(text("ping"), async (ctx) => {
-            await ctx.reply("pong");
-        });
     },
     {
         name: "telegram-system-handlers",

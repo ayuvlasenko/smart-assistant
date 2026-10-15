@@ -11,6 +11,7 @@ import { Translate } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { anyOf, callbackQuery, command, message } from "./telegram-filters.js";
+import { pageButtons, TelegramPage } from "./telegram-pagination.js";
 import {
     cancel,
     next,
@@ -54,11 +55,6 @@ export interface TelegramChoice {
     value: string;
 }
 
-export interface TelegramChoicePage {
-    items: TelegramChoice[];
-    total: number;
-}
-
 export interface TelegramChoiceStepOptions<
     TPayload,
 > extends TelegramStepPromptOptions<TPayload, string> {
@@ -66,7 +62,7 @@ export interface TelegramChoiceStepOptions<
         ctx: TelegramContext,
         input: TelegramInputControl<TPayload>,
         page: { offset: number; limit: number },
-    ) => Promise<TelegramChoicePage>;
+    ) => Promise<TelegramPage<TelegramChoice>>;
     pageSize?: number;
 }
 
@@ -204,19 +200,17 @@ export function choiceStep<TPayload>(
         ctx: TelegramContext,
         input: TelegramInputControl<TPayload>,
         pageIndex: number,
-    ): Promise<InlineKeyboardButton.CallbackButton[][]> => {
+    ): Promise<InlineKeyboardButton[][]> => {
         const page = await options.load(ctx, input, {
             offset: pageIndex * pageSize,
             limit: pageSize,
         });
-        const navigation = [
-            ...(pageIndex > 0
-                ? [input.button("‹", { page: pageIndex - 1 })]
-                : []),
-            ...(page.total > (pageIndex + 1) * pageSize
-                ? [input.button("›", { page: pageIndex + 1 })]
-                : []),
-        ];
+        const navigation = pageButtons(
+            pageIndex,
+            page.total,
+            pageSize,
+            (text, target) => input.button(text, { page: target }),
+        );
 
         return [
             ...page.items.map(({ label, value }) => [

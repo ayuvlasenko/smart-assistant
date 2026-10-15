@@ -27,6 +27,7 @@ import { Language } from "../i18n-service.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { text } from "./telegram-filters.js";
 import { telegramLocales } from "./telegram-locales.js";
+import { TelegramRouter } from "./telegram-router.js";
 import { defineScene } from "./telegram-scene.js";
 
 let databaseName!: string;
@@ -83,6 +84,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await telegramUpdateHandler.handle(
@@ -105,6 +107,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await usersRepository.findOneByTelegramIdOrCreate({
@@ -142,6 +145,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await usersRepository.findOneByTelegramIdOrCreate({
@@ -172,6 +176,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await usersRepository.findOneByTelegramIdOrCreate({
@@ -200,6 +205,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await usersRepository.findOneByTelegramIdOrCreate({
@@ -230,6 +236,7 @@ void describe("TelegramUpdateHandler", () => {
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: registerPing,
             });
 
         await usersRepository.findOneByTelegramIdOrCreate({
@@ -561,6 +568,55 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(user?.languageCode, "uk");
     });
 
+    void it("stores and follows the Telegram name and username", async (t) => {
+        const { telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+            });
+
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                update_id: 1,
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654342 }),
+                    from: buildTelegramUser({
+                        id: 987654342,
+                        first_name: "Ada",
+                        username: "ada",
+                    }),
+                    text: "hello",
+                },
+            }),
+        );
+
+        const created = await usersRepository.findOneByTelegramId("987654342");
+
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                update_id: 2,
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654342 }),
+                    from: buildTelegramUser({
+                        id: 987654342,
+                        first_name: "Grace",
+                        username: undefined,
+                    }),
+                    text: "hello",
+                },
+            }),
+        );
+
+        const updated = await usersRepository.findOneByTelegramId("987654342");
+
+        assert.equal(created?.firstName, "Ada");
+        assert.equal(created.username, "ada");
+        assert.equal(updated?.firstName, "Grace");
+        assert.ok(updated);
+        assert.equal("username" in updated, false);
+    });
+
     void it("greets a user with access on /start", async (t) => {
         const { telegramApiService, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
@@ -581,39 +637,62 @@ void describe("TelegramUpdateHandler", () => {
     });
 });
 
-void describe("TelegramUpdateHandler invites", () => {
-    void it("gives access to a banned user with a valid invite token", async (t) => {
-        const { telegramApiService, telegramUpdateHandler, usersRepository } =
+void describe("TelegramUpdateHandler deep links", () => {
+    void it("routes /start with a named payload of a banned user to a deep link that allows banned users", async (t) => {
+        const values: string[] = [];
+        const { telegramApiService, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
                 t,
-                env: { INVITE_TOKEN: "invite-secret" },
+                registerRoutes: (router) => {
+                    router.deepLink(
+                        "invite",
+                        async (ctx, value) => {
+                            values.push(value);
+                            await ctx.reply("welcome");
+                        },
+                        { allowBanned: true },
+                    );
+                },
             });
 
         await telegramUpdateHandler.handle(
-            buildStartUpdate(987654338, "/start invite-secret"),
+            buildStartUpdate(987654338, "/start invite_secret_A-1"),
         );
 
-        const user = await usersRepository.findOneByTelegramId("987654338");
-
-        assert.equal(user?.isBanned, false);
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.en.welcome,
-        ]);
+        assert.deepEqual(values, ["secret_A-1"]);
+        assert.deepEqual(readSentTexts(telegramApiService), ["welcome"]);
     });
 
-    void it("keeps a user banned with a wrong invite token", async (t) => {
+    void it("keeps a banned user silent for a deep link without allowBanned or with an unknown name", async (t) => {
         const { telegramApiService, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
                 t,
-                env: { INVITE_TOKEN: "invite-secret" },
+                registerRoutes: (router) => {
+                    router.deepLink("poker", async (ctx) => {
+                        await ctx.reply("poker");
+                    });
+                    router.deepLink(
+                        "invite",
+                        async (ctx) => {
+                            await ctx.reply("welcome");
+                        },
+                        { allowBanned: true },
+                    );
+                },
             });
 
         await telegramUpdateHandler.handle(
-            buildStartUpdate(987654339, "/start wrong-secret"),
+            buildStartUpdate(987654339, "/start poker_42", 1),
+        );
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654339, "/start unknown_42", 2),
+        );
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654339, "/start invite", 3),
         );
 
         const user = await usersRepository.findOneByTelegramId("987654339");
@@ -622,22 +701,89 @@ void describe("TelegramUpdateHandler invites", () => {
         assert.deepEqual(readSentTexts(telegramApiService), []);
     });
 
-    void it("keeps a user banned when invites are not configured", async (t) => {
-        const { telegramApiService, telegramUpdateHandler, usersRepository } =
+    void it("keeps a banned user silent on /start without a payload", async (t) => {
+        const { telegramApiService, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
                 t,
+                registerRoutes: (router) => {
+                    router.deepLink(
+                        "invite",
+                        async (ctx) => {
+                            await ctx.reply("welcome");
+                        },
+                        { allowBanned: true },
+                    );
+                },
             });
 
         await telegramUpdateHandler.handle(
             buildStartUpdate(987654340, "/start"),
         );
 
-        const user = await usersRepository.findOneByTelegramId("987654340");
-
-        assert.equal(user?.isBanned, true);
         assert.deepEqual(readSentTexts(telegramApiService), []);
+    });
+
+    void it("routes each name to its own deep link and greets on an unknown name", async (t) => {
+        const { telegramApiService, telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink("invite", async (ctx, value) => {
+                        await ctx.reply(`invite ${value}`);
+                    });
+                    router.deepLink("poker", async (ctx, value) => {
+                        await ctx.reply(`poker ${value}`);
+                    });
+                },
+            });
+
+        await createUser(usersRepository, "987654341");
+
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654341, "/start invite_abc", 1),
+        );
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654341, "/start poker_42", 2),
+        );
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654341, "/start other_1", 3),
+        );
+
+        assert.deepEqual(readSentTexts(telegramApiService), [
+            "invite abc",
+            "poker 42",
+            telegramLocales.en.welcome,
+        ]);
+    });
+
+    void it("refuses a deep link name twice or with characters outside a-z and 0-9", async (t) => {
+        await assert.rejects(
+            buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink("invite", async () => undefined);
+                    router.deepLink("invite", async () => undefined);
+                },
+            }),
+            /Telegram deep link "invite" is already registered/,
+        );
+        await assert.rejects(
+            buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink("join_poker", async () => undefined);
+                },
+            }),
+            /Telegram deep link name "join_poker" must match/,
+        );
     });
 });
 
@@ -659,8 +805,19 @@ async function createUser(
     });
 }
 
-function buildStartUpdate(telegramId: number, messageText: string) {
+function registerPing(router: TelegramRouter): void {
+    router.on(text("ping"), async (ctx) => {
+        await ctx.reply("pong");
+    });
+}
+
+function buildStartUpdate(
+    telegramId: number,
+    messageText: string,
+    updateId?: number,
+) {
     return buildTelegramTextMessageUpdate({
+        update_id: updateId,
         message: {
             chat: buildTelegramPrivateChat({ id: telegramId }),
             entities: [{ length: 6, offset: 0, type: "bot_command" }],

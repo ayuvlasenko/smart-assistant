@@ -1,7 +1,6 @@
 import { Update, User } from "@grammyjs/types";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Env } from "../../../schemas/env.js";
 import { AppLogger } from "../app-logger.js";
 import {
     defaultLanguage,
@@ -11,9 +10,10 @@ import {
     Translate,
 } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
-import { UserEntity } from "../users/user-entity.js";
+import { UserEntity, UserProfile } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { TelegramApiClient } from "./telegram-api-service.js";
+import { TelegramBotService } from "./telegram-bot-service.js";
 import { TelegramChats } from "./telegram-chats.js";
 import {
     BannedTelegramUserError,
@@ -24,15 +24,12 @@ import {
 } from "./telegram-errors.js";
 import {
     extractTelegramChat,
-    extractTelegramCommand,
     extractTelegramUpdateType,
     extractTelegramUser,
 } from "./telegram-extractors.js";
 import { TelegramMetrics, TelegramUpdateResult } from "./telegram-metrics.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramRouter } from "./telegram-router.js";
-
-type TelegramUpdateHandlerConfig = Pick<Env, "INVITE_TOKEN">;
 
 interface TelegramUpdateRun {
     update: Update;
@@ -52,7 +49,7 @@ export class TelegramUpdateHandler {
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly config: TelegramUpdateHandlerConfig;
+    private readonly telegramBotService: TelegramBotService;
 
     constructor(
         log: FastifyBaseLogger,
@@ -63,7 +60,7 @@ export class TelegramUpdateHandler {
         lockService: LockService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
-        config: TelegramUpdateHandlerConfig,
+        telegramBotService: TelegramBotService,
     ) {
         this.log = log;
         this.telegramApiService = telegramApiService;
@@ -73,7 +70,7 @@ export class TelegramUpdateHandler {
         this.lockService = lockService;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
-        this.config = config;
+        this.telegramBotService = telegramBotService;
     }
 
     async handle(update: Update): Promise<void> {
@@ -125,12 +122,8 @@ export class TelegramUpdateHandler {
 
         run.language = user.languageCode;
 
-        if (user.isBanned) {
-            await this.acceptInvite(run, user);
-        } else {
-            await this.dispatch(run, user, telegramUser.id);
-        }
-
+        await this.telegramBotService.syncCommands(user);
+        await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
     }
 
@@ -150,36 +143,24 @@ export class TelegramUpdateHandler {
         const user = await this.usersRepository.findOneByTelegramIdOrCreate({
             telegramId: String(telegramUser.id),
             isBanned: true,
-            languageCode: languageCode ?? defaultLanguage,
+            ...readProfile(telegramUser, languageCode ?? defaultLanguage),
         });
 
-        this.log.info({ user }, "User for update");
+        this.log.info(
+            { userId: user._id, isBanned: user.isBanned },
+            "User for update",
+        );
 
-        if (!languageCode || user.languageCode === languageCode) {
+        const profile = readProfile(
+            telegramUser,
+            languageCode ?? user.languageCode,
+        );
+
+        if (isSameProfile(user, profile)) {
             return user;
         }
 
-        return this.usersRepository.updateLanguage(user._id, languageCode);
-    }
-
-    private async acceptInvite(
-        run: TelegramUpdateRun,
-        user: UserEntity,
-    ): Promise<void> {
-        const command = extractTelegramCommand(run.update);
-        const isInvite =
-            !!this.config.INVITE_TOKEN &&
-            command?.name === "start" &&
-            command.payload === this.config.INVITE_TOKEN;
-
-        if (!isInvite) {
-            throw new BannedTelegramUserError();
-        }
-
-        await this.usersRepository.unban(user._id);
-        run.log.info("User is unbanned by invite");
-
-        await run.responder.reply(this.translate(run)("telegram:welcome"));
+        return this.usersRepository.updateProfile(user._id, profile);
     }
 
     private async dispatch(
@@ -275,6 +256,22 @@ export class TelegramUpdateHandler {
     }
 }
 
+function readProfile(telegramUser: User, languageCode: Language): UserProfile {
+    return {
+        languageCode,
+        firstName: telegramUser.first_name,
+        username: telegramUser.username,
+    };
+}
+
+function isSameProfile(user: UserEntity, profile: UserProfile): boolean {
+    return (
+        user.languageCode === profile.languageCode &&
+        user.firstName === profile.firstName &&
+        user.username === profile.username
+    );
+}
+
 function assertPrivateChat(update: Update): void {
     const chat = extractTelegramChat(update);
 
@@ -298,18 +295,18 @@ export default fp(
                 fastify.getDecorator<LockService>("lockService"),
                 fastify.getDecorator<I18nService>("i18nService"),
                 fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-                fastify.config,
+                fastify.getDecorator<TelegramBotService>("telegramBotService"),
             ),
         );
     },
     {
         name: "telegram-update-handler",
         dependencies: [
-            "@fastify/env",
             "app-logger",
             "lock-service",
             "i18n-service",
             "telegram-api-service",
+            "telegram-bot-service",
             "telegram-chats",
             "telegram-metrics",
             "telegram-router",

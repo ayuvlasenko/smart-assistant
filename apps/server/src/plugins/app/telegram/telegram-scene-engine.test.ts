@@ -698,15 +698,15 @@ void describe("TelegramSceneEngine scenes", () => {
     });
 
     void it("expires a scene after its time to live", async (t) => {
-        const bot = await buildCounterBot(t, { ttl: 200 });
+        const bot = await buildCounterBot(t, { ttl: 800 });
         const chat = buildTelegramPrivateChat({ id: 987654420 });
 
         await bot.sendText(chat, "/counter");
-        await setTimeout(100);
+        await setTimeout(400);
         await bot.pressButton(chat, "+1");
-        await setTimeout(150);
+        await setTimeout(600);
         await bot.pressButton(chat, "+1");
-        await setTimeout(250);
+        await setTimeout(1000);
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), [
@@ -722,13 +722,13 @@ void describe("TelegramSceneEngine scenes", () => {
     });
 
     void it("ends a scene after its maximum age even while it is used", async (t) => {
-        const bot = await buildCounterBot(t, { ttl: 60_000, maxAge: 300 });
+        const bot = await buildCounterBot(t, { ttl: 60_000, maxAge: 1200 });
         const chat = buildTelegramPrivateChat({ id: 987654421 });
 
         await bot.sendText(chat, "/counter");
-        await setTimeout(150);
+        await setTimeout(600);
         await bot.pressButton(chat, "+1");
-        await setTimeout(250);
+        await setTimeout(1000);
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Counter main", "Count 1"]);

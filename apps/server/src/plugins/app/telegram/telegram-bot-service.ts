@@ -1,17 +1,28 @@
+import { BotCommand } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+import { createHash } from "node:crypto";
 import { Env } from "../../../schemas/env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
 import {
     defaultLanguage,
     I18nService,
-    Language,
     languages,
+    Translate,
 } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
-import { TelegramApiClient } from "./telegram-api-service.js";
+import { UserEntity } from "../users/user-entity.js";
+import {
+    TelegramApiClient,
+    TelegramMethodArgs,
+} from "./telegram-api-service.js";
+import {
+    buildTelegramDeepLink,
+    TelegramDeepLink,
+} from "./telegram-deep-links.js";
+import { isAllowed } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
 
@@ -28,6 +39,7 @@ const telegramWebhookClaimKey = "telegram:webhook:set";
 const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
 const telegramBotUsernameCacheKey = "telegram:bot:username";
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
+const telegramChatCommandsCacheTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
@@ -117,21 +129,79 @@ export class TelegramBotService {
         return `https://t.me/${await this.resolveUsername()}`;
     }
 
+    async resolveDeepLinkUrl(link: TelegramDeepLink): Promise<string> {
+        const payload = buildTelegramDeepLink(link);
+
+        return `${await this.resolveBotUrl()}?start=${payload}`;
+    }
+
     async setCommandsOnStart(): Promise<void> {
         if (this.config.ENVIRONMENT === "preview") {
             return;
         }
 
-        const commands = this.telegramRouter.listCommands();
+        const commands = this.telegramRouter
+            .listCommands()
+            .filter(({ guard }) => !guard);
 
         for (const languageCode of [undefined, ...languages]) {
-            await this.applyCommands(commands, languageCode);
+            await this.setCommands({
+                commands: describeCommands(
+                    commands,
+                    this.i18nService.getT(languageCode ?? defaultLanguage),
+                ),
+                ...(languageCode ? { language_code: languageCode } : {}),
+            });
         }
 
         this.log.info(
             { commands: commands.map(({ name }) => name) },
             "Telegram commands set successfully",
         );
+    }
+
+    async syncCommands(user: UserEntity): Promise<void> {
+        if (this.config.ENVIRONMENT === "preview" || user.isBanned) {
+            return;
+        }
+
+        const commands = describeCommands(
+            this.telegramRouter
+                .listCommands()
+                .filter(({ guard }) => isAllowed(guard, user)),
+            this.i18nService.getT(user.languageCode),
+        );
+        const key = `telegram:commands:${user.telegramId}`;
+        const hash = createHash("sha256")
+            .update(JSON.stringify(commands))
+            .digest("base64url");
+
+        try {
+            if ((await this.cache.get(key, Type.String())) === hash) {
+                return;
+            }
+
+            await this.setCommands({
+                commands,
+                scope: { type: "chat", chat_id: Number(user.telegramId) },
+            });
+            await this.cache.set(key, hash, {
+                ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
+            });
+
+            this.log.info(
+                {
+                    userId: user._id,
+                    commands: commands.map(({ command }) => command),
+                },
+                "Telegram chat commands set successfully",
+            );
+        } catch (err) {
+            this.log.error(
+                { err, userId: user._id },
+                "Failed to set telegram chat commands",
+            );
+        }
     }
 
     private resolveUsername(): Promise<string> {
@@ -155,18 +225,10 @@ export class TelegramBotService {
         return result.result.username;
     }
 
-    private async applyCommands(
-        commands: TelegramCommandInfo[],
-        languageCode: Language | undefined,
+    private async setCommands(
+        ...args: TelegramMethodArgs<"setMyCommands">
     ): Promise<void> {
-        const t = this.i18nService.getT(languageCode ?? defaultLanguage);
-        const result = await this.telegramApiService.setMyCommands({
-            commands: commands.map(({ name, description }) => ({
-                command: name,
-                description: description(t),
-            })),
-            ...(languageCode ? { language_code: languageCode } : {}),
-        });
+        const result = await this.telegramApiService.setMyCommands(...args);
 
         if (!result.ok) {
             throw new Error(
@@ -174,6 +236,16 @@ export class TelegramBotService {
             );
         }
     }
+}
+
+function describeCommands(
+    commands: TelegramCommandInfo[],
+    t: Translate,
+): BotCommand[] {
+    return commands.map(({ name, description }) => ({
+        command: name,
+        description: description(t),
+    }));
 }
 
 export default fp(

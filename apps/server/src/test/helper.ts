@@ -1,7 +1,8 @@
-import Fastify, { FastifyServerOptions } from "fastify";
+import Fastify, { FastifyInstance, FastifyServerOptions } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
 import { TestContext } from "node:test";
+import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
 import { requestIdOptions } from "../constants/options.js";
 import { Env } from "../schemas/env.js";
@@ -36,9 +37,11 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
         {
             ENVIRONMENT: opts.environment ?? "production",
             RESOURCE_NAME: keyPrefix.slice("smart-assistant:".length, -1),
+            INVITE_TOKEN: undefined,
         },
         () => app.ready(),
     );
+    await waitUntilNotUnderPressure(app);
 
     t.after(async () => {
         try {
@@ -54,24 +57,37 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
     return { app, telegramApiService };
 }
 
+async function waitUntilNotUnderPressure(app: FastifyInstance): Promise<void> {
+    while (app.isUnderPressure()) {
+        await setTimeout(50);
+    }
+}
+
 async function withEnv(
-    overrides: Record<string, string>,
+    overrides: Record<string, string | undefined>,
     fn: () => PromiseLike<unknown>,
 ): Promise<void> {
     const previous = Object.keys(overrides).map(
         (key) => [key, process.env[key]] as const,
     );
-    Object.assign(process.env, overrides);
+
+    applyEnv(Object.entries(overrides));
 
     try {
         await fn();
     } finally {
-        for (const [key, value] of previous) {
-            if (value === undefined) {
-                delete process.env[key];
-            } else {
-                process.env[key] = value;
-            }
+        applyEnv(previous);
+    }
+}
+
+function applyEnv(
+    values: Iterable<readonly [string, string | undefined]>,
+): void {
+    for (const [key, value] of values) {
+        if (value === undefined) {
+            delete process.env[key];
+        } else {
+            process.env[key] = value;
         }
     }
 }

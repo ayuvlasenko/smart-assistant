@@ -28,9 +28,10 @@ export type TelegramSceneEvent =
     | "cancel"
     | "error"
     | "unexpected_input"
-    | "blocked";
+    | "blocked"
+    | "forbidden";
 
-export type TelegramButtonResult = "handled" | "expired";
+export type TelegramButtonResult = "handled" | "expired" | "forbidden";
 
 export type TelegramApiResult = "ok" | "error" | "network_error";
 

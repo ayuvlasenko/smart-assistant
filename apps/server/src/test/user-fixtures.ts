@@ -11,6 +11,7 @@ export function buildUserEntity(
         updatedAt: new Date(),
         telegramId: "1",
         isBanned: false,
+        grants: [],
         languageCode: "en",
         ...overrides,
     };

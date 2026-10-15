@@ -18,7 +18,9 @@ export const envSchema = Type.Object({
     S3_BUCKET: Type.String(),
     S3_ENDPOINT: Type.String(),
     TELEGRAM_BOT_TOKEN: Type.String(),
-    INVITE_TOKEN: Type.Optional(Type.String({ minLength: 1 })),
+    INVITE_TOKEN: Type.Optional(
+        Type.String({ pattern: "^[A-Za-z0-9_-]{1,57}$" }),
+    ),
     TIME_ZONE: Type.String({ default: "UTC" }),
     TELEGRAM_WEBHOOK_SECRET_TOKEN: Type.String(),
     TELEGRAM_WEBHOOK_URL: Type.Optional(Type.String()),
