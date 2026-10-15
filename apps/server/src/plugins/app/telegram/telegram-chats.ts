@@ -290,7 +290,7 @@ export default fp(
             fastify.getDecorator<TelegramApiClient>("telegramApiService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
             appLogger.child({ module: "telegram" }),
-            fastify.config,
+            fastify.getDecorator<Env>("config"),
         );
 
         fastify.decorate("telegramChats", telegramChats);

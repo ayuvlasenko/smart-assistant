@@ -5,7 +5,7 @@ import { Env } from "../../schemas/env.js";
 
 export default fp(
     async function valkeyPlugin(fastify: FastifyInstance) {
-        const client = buildValkeyClient(fastify.config);
+        const client = buildValkeyClient(fastify.getDecorator<Env>("config"));
 
         fastify.decorate("valkey", client);
 
