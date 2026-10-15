@@ -22,5 +22,5 @@ export default {
     migrationFileExtension: ".js",
     useFileHash: false,
     lockCollectionName: "migrations_lock",
-    lockTtl: 0,
+    lockTtl: 300,
 };
