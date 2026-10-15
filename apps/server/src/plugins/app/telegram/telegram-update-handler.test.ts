@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { requestLogSerializers } from "../../../constants/options.js";
+import { requestLogSerializers } from "../../../request-logging.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { TelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";

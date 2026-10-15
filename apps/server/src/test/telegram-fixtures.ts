@@ -25,8 +25,8 @@ import {
     User,
     UserFromGetMe,
 } from "@grammyjs/types";
-import { TELEGRAM_SECRET_HEADER } from "../constants/headers.js";
 import { TelegramMethodResult } from "../plugins/app/telegram/telegram-api-service.js";
+import { TELEGRAM_SECRET_HEADER } from "../routes/api/telegram/telegram.js";
 
 export type TelegramTextMessage = Message.TextMessage & Update.NonChannel;
 export type TelegramChannelTextMessage = Message.TextMessage & Update.Channel;

@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { requestIdOptions } from "../../constants/options.js";
+import { requestIdOptions } from "../../request-logging.js";
 import { createLogCollector } from "../../test/log-collector.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,

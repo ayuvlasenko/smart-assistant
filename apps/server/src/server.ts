@@ -2,10 +2,7 @@ import closeWithGrace from "close-with-grace";
 import Fastify, { FastifyServerOptions } from "fastify";
 import fp from "fastify-plugin";
 import serviceApp, { options } from "./app.js";
-import {
-    requestIdOptions,
-    requestLogSerializers,
-} from "./constants/options.js";
+import { requestIdOptions, requestLogSerializers } from "./request-logging.js";
 
 type LoggerOptions = Exclude<
     FastifyServerOptions["logger"],

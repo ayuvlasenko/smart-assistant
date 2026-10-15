@@ -6,7 +6,7 @@ import {
     isTimeZone,
     parseDate,
     parseNumber,
-} from "./parsers.js";
+} from "./telegram-parsers.js";
 
 const today = "2026-10-02";
 

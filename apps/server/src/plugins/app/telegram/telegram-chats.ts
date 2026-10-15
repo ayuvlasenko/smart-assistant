@@ -3,7 +3,6 @@ import { type Static, type TObject } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Env } from "../../../schemas/env.js";
-import { isTimeZone } from "../../../utils/parsers.js";
 import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
@@ -11,6 +10,7 @@ import { UsersRepository } from "../users/users-repository.js";
 import { TelegramApiClient } from "./telegram-api-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
+import { isTimeZone } from "./telegram-parsers.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import {

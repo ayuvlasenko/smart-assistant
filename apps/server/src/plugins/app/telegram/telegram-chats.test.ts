@@ -11,7 +11,7 @@ import {
     TestContext,
 } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { requestLogSerializers } from "../../../constants/options.js";
+import { requestLogSerializers } from "../../../request-logging.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";

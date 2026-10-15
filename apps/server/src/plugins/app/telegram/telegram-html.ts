@@ -1,4 +1,4 @@
-import { formatDate } from "../../../utils/parsers.js";
+import { formatDate } from "./telegram-parsers.js";
 
 export function escapeTelegramHtml(text: string): string {
     return text

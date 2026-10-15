@@ -4,7 +4,7 @@ import { Redis } from "ioredis";
 import { TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
-import { requestIdOptions } from "../constants/options.js";
+import { requestIdOptions } from "../request-logging.js";
 import { Env } from "../schemas/env.js";
 import {
     buildTelegramApiServiceMock,

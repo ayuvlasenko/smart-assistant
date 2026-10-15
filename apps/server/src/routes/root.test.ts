@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { REQUEST_ID_HEADER } from "../constants/headers.js";
-import { requestLogSerializers } from "../constants/options.js";
+import {
+    REQUEST_ID_HEADER,
+    requestLogSerializers,
+} from "../request-logging.js";
 import { buildTestApp } from "../test/helper.js";
 import { createLogCollector } from "../test/log-collector.js";
 

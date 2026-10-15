@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-    REQUEST_ID_HEADER,
-    TELEGRAM_SECRET_HEADER,
-} from "../../../constants/headers.js";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
+import { REQUEST_ID_HEADER } from "../../../request-logging.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -14,6 +11,7 @@ import {
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
 } from "../../../test/telegram-fixtures.js";
+import { TELEGRAM_SECRET_HEADER } from "./telegram.js";
 
 interface ErrorResponse {
     code?: string;
