@@ -2,7 +2,7 @@ import { Update } from "@grammyjs/types";
 import { Value } from "@sinclair/typebox/value";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { TelegramContext, TelegramMessageChange } from "./telegram-context.js";
+import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
@@ -20,6 +20,7 @@ import {
     TelegramSceneInstance,
     TelegramSceneStorage,
 } from "./telegram-scene-storage.js";
+import { TelegramSceneUpdate } from "./telegram-scene-update.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSession } from "./telegram-session.js";
 
@@ -28,17 +29,13 @@ type SceneControl = TelegramSceneControl<SceneState>;
 
 export class TelegramSceneEngine {
     private readonly scenes = new Map<string, TelegramScene>();
-    private readonly storages = new WeakMap<
+    private readonly updates = new WeakMap<
         TelegramSession,
-        TelegramSceneStorage
+        TelegramSceneUpdate
     >();
     private readonly buttons = new TelegramSceneButtons();
     private readonly inputs: TelegramSceneInputs;
     private readonly slots = new TelegramSceneSlots();
-    private readonly touched = new WeakMap<
-        TelegramSession,
-        Map<TelegramSceneInstance, { reshow: boolean }>
-    >();
     private readonly telegramMetrics: TelegramMetrics;
 
     constructor(telegramMetrics: TelegramMetrics) {
@@ -88,7 +85,7 @@ export class TelegramSceneEngine {
             return false;
         }
 
-        const storage = this.storageFor(ctx);
+        const storage = this.updateFor(ctx).storage;
         const id = await this.instanceIdFor(storage, scene, state);
 
         if (!(await this.canStart(ctx, scene, id))) {
@@ -98,7 +95,7 @@ export class TelegramSceneEngine {
         const existing = await storage.load(id);
 
         if (existing) {
-            this.touch(ctx, existing, { reshow: true });
+            this.updateFor(ctx).touch(existing, { reshow: true });
             return true;
         }
 
@@ -116,7 +113,7 @@ export class TelegramSceneEngine {
     }
 
     async cancel(ctx: TelegramContext): Promise<boolean> {
-        const blocker = await this.storageFor(ctx).blocking();
+        const blocker = await this.updateFor(ctx).storage.blocking();
 
         if (blocker) {
             await this.cancelScene(ctx, blocker);
@@ -161,7 +158,7 @@ export class TelegramSceneEngine {
         }
 
         if (instance && isUnexpectedInput(ctx.update)) {
-            this.touch(ctx, instance);
+            this.updateFor(ctx).touch(instance);
             return this.inputs.replyUnexpected(ctx, instance);
         }
 
@@ -174,7 +171,7 @@ export class TelegramSceneEngine {
         key: string,
         handle: (scene: SceneControl) => Promise<unknown>,
     ): Promise<boolean> {
-        const storage = this.storageFor(ctx);
+        const storage = this.updateFor(ctx).storage;
         const instance = await storage.load(storage.idForKey(scene, key));
 
         if (instance?.scene !== scene || !isAllowed(scene.guard, ctx.user)) {
@@ -192,7 +189,7 @@ export class TelegramSceneEngine {
         sceneId: string,
         topics: readonly string[],
     ): Promise<boolean> {
-        const instance = await this.storageFor(ctx).load(sceneId);
+        const instance = await this.updateFor(ctx).storage.load(sceneId);
 
         if (
             !instance?.record.topics.some((topic) => topics.includes(topic)) ||
@@ -202,7 +199,7 @@ export class TelegramSceneEngine {
         }
 
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "delivered");
-        this.touch(ctx, instance);
+        this.updateFor(ctx).touch(instance);
 
         return true;
     }
@@ -211,22 +208,25 @@ export class TelegramSceneEngine {
         ctx: TelegramContext,
         action: () => Promise<T>,
     ): Promise<T> {
+        const update = this.updateFor(ctx);
         const stopRecording = ctx.events.on(
             ["messageSent", "messageEdited", "messageRemoved"],
             ({ data }) => {
-                this.recordButtons(ctx, data);
+                update.rememberButtons(this.buttons, data);
             },
         );
 
         try {
             const result = await action();
 
-            await this.renderTouched(ctx);
+            await update.render(ctx, this.slots, (instance, slotMessageId) =>
+                this.sceneControl(ctx, instance, slotMessageId),
+            );
 
             return result;
         } finally {
             stopRecording();
-            this.saveTouched(ctx);
+            update.save();
         }
     }
 
@@ -247,7 +247,7 @@ export class TelegramSceneEngine {
         scene: TelegramScene,
         id: string,
     ): Promise<boolean> {
-        const blocker = await this.storageFor(ctx).blocking();
+        const blocker = await this.updateFor(ctx).storage.blocking();
 
         if (blocker && blocker.id !== id) {
             await this.rejectBlocked(ctx, scene, blocker, scene.title?.(ctx.t));
@@ -311,7 +311,7 @@ export class TelegramSceneEngine {
             instance,
         );
 
-        if (this.storageFor(ctx).has(instance)) {
+        if (this.updateFor(ctx).storage.has(instance)) {
             await this.end(ctx, instance, "removeButtons");
         }
 
@@ -324,7 +324,7 @@ export class TelegramSceneEngine {
         ctx: TelegramContext<Update>,
         press: TelegramButtonPress,
     ): Promise<void> {
-        const instance = await this.storageFor(ctx).load(press.sceneId);
+        const instance = await this.updateFor(ctx).storage.load(press.sceneId);
         const button = instance && this.buttons.find(instance, press);
 
         if (!instance || !button) {
@@ -380,71 +380,13 @@ export class TelegramSceneEngine {
         this.recordPress(instance, button.name);
     }
 
-    private async renderTouched(ctx: TelegramContext): Promise<void> {
-        const storage = this.storageFor(ctx);
-
-        for (const [instance, { reshow }] of this.touchedIn(ctx)) {
-            if (storage.has(instance)) {
-                await this.slots.render(
-                    ctx,
-                    instance,
-                    (slotMessageId) =>
-                        this.sceneControl(ctx, instance, slotMessageId),
-                    { reshow },
-                );
-            }
-        }
-    }
-
-    private recordButtons(
-        ctx: TelegramContext,
-        change: TelegramMessageChange,
-    ): void {
-        for (const instance of this.storageFor(ctx).loaded) {
-            this.buttons.remember(instance, change.messageId, change.markup);
-        }
-    }
-
-    private saveTouched(ctx: TelegramContext): void {
-        const storage = this.storageFor(ctx);
-
-        for (const instance of this.touchedIn(ctx).keys()) {
-            storage.save(instance);
-        }
-    }
-
-    private touch(
-        ctx: TelegramContext,
-        instance: TelegramSceneInstance,
-        { reshow = false }: { reshow?: boolean } = {},
-    ): void {
-        const touched = this.touchedIn(ctx);
-
-        touched.set(instance, {
-            reshow: reshow || !!touched.get(instance)?.reshow,
-        });
-    }
-
-    private touchedIn(
-        ctx: TelegramContext,
-    ): Map<TelegramSceneInstance, { reshow: boolean }> {
-        let touched = this.touched.get(ctx.session);
-
-        if (!touched) {
-            touched = new Map();
-            this.touched.set(ctx.session, touched);
-        }
-
-        return touched;
-    }
-
     private async end(
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
         messages: TelegramSlotMessages,
     ): Promise<void> {
         await this.slots.release(ctx, instance, messages);
-        this.storageFor(ctx).remove(instance);
+        this.updateFor(ctx).storage.remove(instance);
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "end");
         ctx.log.info(
             { scene: instance.scene.name, sceneId: instance.id },
@@ -455,7 +397,7 @@ export class TelegramSceneEngine {
     private async focusedInput(
         ctx: TelegramContext,
     ): Promise<TelegramSceneInstance | undefined> {
-        const instance = await this.storageFor(ctx).focused();
+        const instance = await this.updateFor(ctx).storage.focused();
 
         if (!instance || this.inputs.isActive(instance)) {
             return instance;
@@ -470,7 +412,7 @@ export class TelegramSceneEngine {
             "Telegram scene input is no longer registered, dropping it",
         );
         this.inputs.abort(instance);
-        this.touch(ctx, instance);
+        this.updateFor(ctx).touch(instance);
     }
 
     private async ask(
@@ -487,7 +429,7 @@ export class TelegramSceneEngine {
             return;
         }
 
-        const blocker = await this.storageFor(ctx).blocking();
+        const blocker = await this.updateFor(ctx).storage.blocking();
 
         if (blocker && blocker.id !== instance.id) {
             await this.rejectBlocked(ctx, instance.scene, blocker);
@@ -533,7 +475,7 @@ export class TelegramSceneEngine {
         instance: TelegramSceneInstance,
         slotMessageId?: number,
     ): SceneControl {
-        this.touch(ctx, instance);
+        this.updateFor(ctx).touch(instance);
 
         return {
             id: instance.id,
@@ -579,19 +521,21 @@ export class TelegramSceneEngine {
         );
     }
 
-    private storageFor(ctx: TelegramContext): TelegramSceneStorage {
-        let storage = this.storages.get(ctx.session);
+    private updateFor(ctx: TelegramContext): TelegramSceneUpdate {
+        let update = this.updates.get(ctx.session);
 
-        if (!storage) {
-            storage = new TelegramSceneStorage(
-                ctx.session,
-                (name) => this.scenes.get(name),
-                ctx.log,
+        if (!update) {
+            update = new TelegramSceneUpdate(
+                new TelegramSceneStorage(
+                    ctx.session,
+                    (name) => this.scenes.get(name),
+                    ctx.log,
+                ),
             );
-            this.storages.set(ctx.session, storage);
+            this.updates.set(ctx.session, update);
         }
 
-        return storage;
+        return update;
     }
 }
 
