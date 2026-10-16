@@ -90,10 +90,7 @@ export async function renderInvite(
                       ),
                   ]
                 : [],
-            [
-                scene.button(t("invites:backButton"), "show", "list"),
-                scene.button(t("invites:refreshButton"), "refresh", null),
-            ],
+            [scene.button(t("invites:backButton"), "show", "list")],
             isActive && canRevoke ? [revokeButton(t, scene)] : [],
         ],
     );
@@ -127,10 +124,7 @@ export async function renderInviteUsers(
                 usersPageSize,
                 pageButtonOf(scene),
             ),
-            [
-                scene.button(t("invites:backButton"), "show", "invite"),
-                scene.button(t("invites:refreshButton"), "refresh", null),
-            ],
+            [scene.button(t("invites:backButton"), "show", "invite")],
         ],
     );
 }
