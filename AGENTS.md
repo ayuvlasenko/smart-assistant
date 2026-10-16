@@ -53,7 +53,7 @@ Keep a README in line with the code you change. A README explains how a mechanis
 - Each domain lives in `plugins/app/<domain>/` with its services, repositories, entities, schemas, scenes, steps and tests. Keep exactly one level: no subdirectories inside a domain and no `index.ts`.
 - A service or repository file exports its class and registers it as a plugin with `export default fp(...)`. Only plugin files use `export default`; every other file uses named exports, because autoload loads any default-exported plugin.
 - `plugins/app/telegram/` holds the Telegram transport and the scene engine. It does not import feature domains; a domain registers its own scenes and commands through the Telegram router.
-- Shared infrastructure (`cache-service.ts`, `lock-service.ts` with `lock-errors.ts`, `app-logger.ts`, `metrics-service.ts`, `unhandled-rejection-reporter.ts`) stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
+- Shared infrastructure (`cache-service.ts`, `lock-service.ts` with `lock-errors.ts`, `rate-limiter.ts` with `rate-limit-queue.ts`, `app-logger.ts`, `metrics-service.ts`, `unhandled-rejection-reporter.ts`) stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
 - The env schema and its `Env` type stay in `src/env.ts`. Any other schema stays in the single file that uses it, or in `<domain>-schemas.ts` when several files of a domain use it.
 
 ### Files
@@ -76,6 +76,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Check the `false` that `sceneEngine.start` returns: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.
 - Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, never by hand.
+- When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
 - Name a command in snake case, such as `new_invite`.
 - Declare the access subjects of a domain next to its entity and take a typed view with `accessService.subjects<M>()`; do not augment a shared interface with `declare module`. Put a `guard` on every entry point, read lists through `access.accessibleBy` in the query, and check every write in the service with `access.assert` on the loaded document wrapped in `subject(name, document)`, never on the subject name. `plugins/app/access/README.md` explains why.

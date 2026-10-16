@@ -3,6 +3,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Counter, Histogram } from "prom-client";
 import { MetricsService } from "../metrics-service.js";
+import { type TelegramApiPriority } from "./telegram-api-service.js";
 import { extractTelegramUpdateType } from "./telegram-extractors.js";
 
 export type TelegramUpdateResult =
@@ -13,7 +14,8 @@ export type TelegramUpdateResult =
     | "handled"
     | "unhandled"
     | "blocked"
-    | "rate_limited"
+    | "lock_lost"
+    | "lock_hold_timeout"
     | "error";
 
 export type TelegramSceneEvent =
@@ -35,7 +37,8 @@ export type TelegramSceneEvent =
 
 export type TelegramButtonResult = "handled" | "expired" | "forbidden";
 
-export type TelegramApiResult = "ok" | "error" | "network_error";
+export type TelegramApiResult =
+    "ok" | "error" | "rate_limited" | "network_error" | "aborted";
 
 export class TelegramMetrics {
     private readonly updates: Counter<"type" | "result">;
@@ -44,6 +47,8 @@ export class TelegramMetrics {
     private readonly buttonPresses: Counter<"action" | "result">;
     private readonly apiRequests: Counter<"method" | "result">;
     private readonly apiRequestDuration: Histogram<"method">;
+    private readonly rateLimitWait: Histogram<"method" | "priority">;
+    private readonly retryAfter: Histogram<"method">;
 
     constructor(metrics: MetricsService) {
         this.updates = metrics.counter({
@@ -76,6 +81,18 @@ export class TelegramMetrics {
             help: "Telegram Bot API request duration",
             labelNames: ["method"],
         });
+        this.rateLimitWait = metrics.histogram({
+            name: "telegram_rate_limit_wait_seconds",
+            help: "Time a Telegram Bot API request waited for the rate limiter",
+            labelNames: ["method", "priority"],
+            buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60],
+        });
+        this.retryAfter = metrics.histogram({
+            name: "telegram_api_retry_after_seconds",
+            help: "retry_after of Telegram Bot API responses with error 429",
+            labelNames: ["method"],
+            buckets: [1, 2, 5, 10, 30, 60, 300, 3600],
+        });
     }
 
     startUpdate(update: Update): (result: TelegramUpdateResult) => void {
@@ -103,6 +120,18 @@ export class TelegramMetrics {
             stopTimer();
             this.apiRequests.inc({ method, result });
         };
+    }
+
+    recordRateLimitWait(
+        method: string,
+        priority: TelegramApiPriority,
+        seconds: number,
+    ): void {
+        this.rateLimitWait.observe({ method, priority }, seconds);
+    }
+
+    recordRetryAfter(method: string, seconds: number): void {
+        this.retryAfter.observe({ method }, seconds);
     }
 }
 

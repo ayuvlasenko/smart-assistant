@@ -9,6 +9,7 @@ import {
     resolveLanguage,
     Translate,
 } from "../i18n-service.js";
+import { LockHoldTimeoutError, LockLostError } from "../lock-errors.js";
 import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
@@ -218,17 +219,8 @@ export class TelegramUpdateHandler {
             return "blocked";
         }
 
-        if (err instanceof TelegramApiError && err.errorCode === 429) {
-            run.log.warn(
-                { method: err.method, retryAfter: err.retryAfter },
-                "Telegram rate limit reached, skipping update",
-            );
-            await run.responder.answerPendingCallback();
-            return "rate_limited";
-        }
-
         await this.reportError(run, err);
-        return "error";
+        return resultOfError(err);
     }
 
     private async replyUnknown(
@@ -296,6 +288,20 @@ function assertPrivateChat(update: Update): void {
     if (chat && chat.type !== "private") {
         throw new NonPrivateChatError();
     }
+}
+
+function resultOfError(err: unknown): TelegramUpdateResult {
+    const errors = err instanceof AggregateError ? err.errors : [err];
+
+    if (errors.some((cause) => cause instanceof LockHoldTimeoutError)) {
+        return "lock_hold_timeout";
+    }
+
+    if (errors.some((cause) => cause instanceof LockLostError)) {
+        return "lock_lost";
+    }
+
+    return "error";
 }
 
 export default fp(

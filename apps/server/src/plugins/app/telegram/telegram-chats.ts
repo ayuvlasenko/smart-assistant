@@ -7,7 +7,7 @@ import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
-import { TelegramApiClient } from "./telegram-api-service.js";
+import { TelegramApiClient, telegramApiScope } from "./telegram-api-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
@@ -263,7 +263,7 @@ export class TelegramChats {
         responder: TelegramResponder,
         handle: (ctx: TelegramContext<TUpdate>) => Promise<T>,
     ): Promise<T> {
-        return this.sessionStore.withSession(userId, (session) => {
+        return this.sessionStore.withSession(userId, (session, signal) => {
             const ctx = new TelegramContext({
                 update,
                 user,
@@ -274,7 +274,14 @@ export class TelegramChats {
                 responder,
             });
 
-            return this.sceneEngine.withScenes(ctx, () => handle(ctx));
+            return telegramApiScope.run(
+                {
+                    signal,
+                    priority:
+                        update === undefined ? "background" : "interactive",
+                },
+                () => this.sceneEngine.withScenes(ctx, () => handle(ctx)),
+            );
         });
     }
 }

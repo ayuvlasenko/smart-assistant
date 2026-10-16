@@ -16,6 +16,7 @@ import lockPlugin from "../plugins/app/lock-service.js";
 import metricsPlugin, {
     MetricsService,
 } from "../plugins/app/metrics-service.js";
+import rateLimiterPlugin from "../plugins/app/rate-limiter.js";
 import telegramApiPlugin from "../plugins/app/telegram/telegram-api-service.js";
 import telegramPlugin, {
     TelegramBotService,
@@ -128,6 +129,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(i18nPlugin);
     app.register(metricsPlugin);
     app.register(lockPlugin);
+    app.register(rateLimiterPlugin);
     app.register(telegramMetricsPlugin);
     app.register(telegramApiPlugin, { telegramApiService });
     app.register(telegramSessionStorePlugin, {

@@ -1,11 +1,11 @@
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { randomUUID } from "node:crypto";
-import { setTimeout } from "node:timers/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { Histogram } from "prom-client";
 import { AppLogger } from "./app-logger.js";
 import { CacheCondition, CacheService } from "./cache-service.js";
-import { LockTimeoutError } from "./lock-errors.js";
+import { LockHoldTimeoutError, LockLostError } from "./lock-errors.js";
 import { MetricsService } from "./metrics-service.js";
 
 export interface Lock {
@@ -16,16 +16,23 @@ export interface Lock {
 export interface LockOptions {
     name: string;
     ttlMilliseconds: number;
-    waitMilliseconds: number;
+    maxHoldMilliseconds: number;
 }
 
-export interface HeldLock extends Lock, AsyncDisposable {}
+export interface HeldLock extends Lock, AsyncDisposable {
+    signal: AbortSignal;
+}
+
+interface LockHold extends AsyncDisposable {
+    signal: AbortSignal;
+}
 
 const retryMilliseconds = 50;
 const slowWaitSeconds = 1;
 
 export class LockService {
     private readonly waitDuration: Histogram<"name">;
+    private readonly holdDuration: Histogram<"name">;
     private readonly cache: CacheService;
     private readonly log: FastifyBaseLogger;
 
@@ -41,19 +48,28 @@ export class LockService {
             name: "lock_wait_seconds",
             help: "Time spent waiting for a lock",
             labelNames: ["name"],
-            buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10],
+            buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60],
+        });
+        this.holdDuration = metrics.histogram({
+            name: "lock_hold_seconds",
+            help: "Time a lock was held",
+            labelNames: ["name"],
+            buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60],
         });
     }
 
     async acquire(key: string, options: LockOptions): Promise<HeldLock> {
         const lock = await this.waitForLock(key, options);
-        const renewal = this.renew(lock, options);
+        const stopTimer = this.holdDuration.startTimer({ name: options.name });
+        const hold = this.hold(lock, options);
 
         return {
             ...lock,
+            signal: hold.signal,
             [Symbol.asyncDispose]: async () => {
-                await renewal[Symbol.asyncDispose]();
+                await hold[Symbol.asyncDispose]();
                 await this.release(lock);
+                stopTimer();
             },
         };
     }
@@ -83,22 +99,18 @@ export class LockService {
 
     private async waitForLock(
         key: string,
-        { name, ttlMilliseconds, waitMilliseconds }: LockOptions,
+        { name, ttlMilliseconds }: LockOptions,
     ): Promise<Lock> {
         const startedAt = performance.now();
         let lock = await this.tryAcquire(key, ttlMilliseconds);
 
-        while (!lock && performance.now() - startedAt < waitMilliseconds) {
-            await setTimeout(retryMilliseconds);
+        while (!lock) {
+            await delay(retryMilliseconds);
             lock = await this.tryAcquire(key, ttlMilliseconds);
         }
 
         const waitedSeconds = (performance.now() - startedAt) / 1000;
         this.waitDuration.observe({ name }, waitedSeconds);
-
-        if (!lock) {
-            throw new LockTimeoutError(name, waitedSeconds);
-        }
 
         if (waitedSeconds >= slowWaitSeconds) {
             this.log.warn({ lock: name, waitedSeconds }, "Lock wait was slow");
@@ -107,26 +119,47 @@ export class LockService {
         return lock;
     }
 
-    private renew(
+    private hold(
         lock: Lock,
-        { name, ttlMilliseconds }: LockOptions,
-    ): AsyncDisposable {
+        { name, ttlMilliseconds, maxHoldMilliseconds }: LockOptions,
+    ): LockHold {
+        const controller = new AbortController();
         let renewal: Promise<unknown> = Promise.resolve();
-        const timer = setInterval(() => {
+        const renewTimer = setInterval(() => {
             renewal = this.extend(lock, ttlMilliseconds)
                 .then((isExtended) => {
                     if (!isExtended) {
-                        this.log.warn({ lock: name }, "Lock was not extended");
+                        this.log.warn({ lock: name }, "Lock was lost");
+                        controller.abort(new LockLostError(name));
                     }
                 })
                 .catch((err: unknown) => {
                     this.log.warn({ err, lock: name }, "Lock extension failed");
                 });
         }, ttlMilliseconds / 3);
+        const holdTimer = setTimeout(() => {
+            this.log.warn(
+                { lock: name, maxHoldMilliseconds },
+                "Lock was held too long",
+            );
+            controller.abort(
+                new LockHoldTimeoutError(name, maxHoldMilliseconds),
+            );
+        }, maxHoldMilliseconds);
+
+        controller.signal.addEventListener(
+            "abort",
+            () => {
+                clearInterval(renewTimer);
+            },
+            { once: true },
+        );
 
         return {
+            signal: controller.signal,
             [Symbol.asyncDispose]: async () => {
-                clearInterval(timer);
+                clearInterval(renewTimer);
+                clearTimeout(holdTimer);
                 await renewal;
             },
         };

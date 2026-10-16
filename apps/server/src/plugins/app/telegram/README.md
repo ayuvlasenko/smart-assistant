@@ -10,6 +10,7 @@ The first part of this file says how to write bot code in a domain: commands, de
 - [Map](#map)
 - [An incoming update](#an-incoming-update)
 - [Session and lock](#session-and-lock)
+- [Rate limits](#rate-limits)
 - [Scene instances](#scene-instances)
 - [Buttons](#buttons)
 - [Slots](#slots)
@@ -32,6 +33,7 @@ Most of the code below exists because of these limits of the Bot API:
 - The bot can delete its own message only during 48 hours after it sent it.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
 - The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
+- The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method.
 
 ## Writing bot code
 
@@ -244,7 +246,7 @@ sequenceDiagram
 
 **Duplicates.** Before anything else, the handler sets `telegram:update:<update_id>` with `SET NX` for 24 hours. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice.
 
-**Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and a 429 as `rate_limited`, and sends no error reply for them, because that reply would fail the same way. An unexpected error is logged and gets the `telegram:error` reply. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
+**Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
 ## Session and lock
 
@@ -267,14 +269,67 @@ A hash keeps all the state of a user under one key, so one Lua call writes it at
 
 **Walk-through.**
 
-1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. It tries again every 50 ms and gives up after 10 s with `LockTimeoutError`. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait.
-2. While the update runs, the lock extends itself every 10 s, so a long update does not lose it.
+1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. It tries again every 50 ms until it gets the lock. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait.
+2. While the update runs, the lock extends itself every 10 s, so a long update does not lose it. The lock gives the handler an `AbortSignal`, and `TelegramChats` puts it into the scope of the Bot API calls, see [Rate limits](#rate-limits).
 3. `TelegramSession.read` loads a field the first time somebody asks for it and keeps it in memory. A handler that touches one scene reads one field.
 4. `write`, `remove`, `index` and `unindex` only record the change.
 5. At the end, `save` sends every change in one Lua script. The script first compares the lock key with the token of this update. When it differs, the script writes nothing and the update fails with `LockLostError`. Otherwise it runs `HSET` and `HPEXPIRE` for every written field, `HDEL` for every removed field, and updates the index sets.
 6. The lock is released with a `DEL` under the same token check.
 
-**Edge cases.** The session is saved also when the handler throws, so the changes made before the error stay. When the save fails too, the update throws an `AggregateError` with both errors. A pod that stops for longer than the lock TTL loses the lock, and its later save writes nothing. Every write with the bot's own context goes through this lock, also an update for another user, so a delivery and the user's own update never mix.
+**Edge cases.** A waiter has no time limit: a limit on the waiter does not stop the holder, it only turns a wait into an error. The holder has the limit instead. After 60 s (`lockMaxHoldMilliseconds`) the lock stops its extension and aborts its signal with `LockHoldTimeoutError`; when an extension finds another token, it aborts the signal with `LockLostError`. Our code is fast, and only the external calls wait: the rate limiter and the Bot API request. Both listen to the signal, so the handler stops and the next update gets the lock after the TTL at most. `lock_hold_seconds` measures every hold.
+
+The session is saved also when the handler throws, so the changes made before the error stay. When the save fails too, the update throws an `AggregateError` with both errors. A pod that stops for longer than the lock TTL loses the lock, and its later save writes nothing. Every write with the bot's own context goes through this lock, also an update for another user, so a delivery and the user's own update never mix.
+
+## Rate limits
+
+**Problem.** Telegram answers `429` when the bot sends too fast, and a bot that ignores `retry_after` gets longer bans. Two kinds of traffic share the limit of the bot: the replies to the user's own updates, and the background deliveries of `publish` and `deliver`. One `publish` can start a delivery for hundreds of users at once. Without a limiter it fills the limit, and the user who presses a button waits behind it. Several pods share one bot token, so a limit in the memory of one pod does not hold.
+
+**Idea.** Every Bot API call takes a token from token buckets in Valkey before the request. A token is taken at the moment of the request, never reserved for the future, so the next token always goes to the call that should get it now. The global bucket splits its rate between two classes: `interactive` for an update and `background` for a delivery. While both classes wait, `interactive` gets 80% and `background` 20%; a class that waits alone gets the whole rate. The limits stay a little under the limits of Telegram, so a `429` means that our numbers are wrong.
+
+**Data.** The prefix of the resource is left out.
+
+```text
+rate-limit:telegram:<botId>:chat:42                    hash: tokens, updatedAt (ms)
+rate-limit:telegram:<botId>:global                     hash: tokens, updatedAt
+rate-limit:telegram:<botId>:global:class:interactive   hash: tokens, updatedAt
+rate-limit:telegram:<botId>:global:class:background    hash: tokens, updatedAt
+rate-limit:telegram:<botId>:global:waiting:background  sorted set: pod id → expiry time (ms)
+```
+
+`<botId>` is the number before `:` in `TELEGRAM_BOT_TOKEN`, so every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again.
+
+`telegram-rate-limits.ts` maps a method to its limits:
+
+| Limit                                    | Rate         | Burst | Methods                                                       |
+| ---------------------------------------- | ------------ | ----- | ------------------------------------------------------------- |
+| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`, `deleteMessage(s)`                          |
+| `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                                              |
+| none                                     |              |       | `answerCallbackQuery`, `getMe`, `setMyCommands`, `setWebhook` |
+
+We do not know whether Telegram counts edits in the global limit, so edits take a global token too.
+
+**Walk-through.** A user presses a button, and the handler edits a slot.
+
+1. `TelegramChats.withContext` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call outside a session, such as `setMyCommands` before the lock, gets the class `interactive` and its own 60 s timeout signal.
+2. `TelegramApiService.call` reads the scope and asks `telegramRateLimitBuckets` for the buckets of `editMessageText`: the chat bucket, then the global one.
+3. `RateLimiter.acquire` takes a chat token. When the bucket is empty, the script returns the time to the next token, and the call sleeps and tries again. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one.
+4. For the global bucket the call joins the queue of its class in `RateLimitQueue`, one queue per bucket in the pod. A single loop serves the queues. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
+5. The call sends the request with `AbortSignal.any([signal, timeout])`.
+6. On `429` the call records `retry_after`, empties the chat bucket for `retry_after` seconds, so every call of that chat waits, and goes back to step 3. A method without buckets just sleeps `retry_after`. There is no retry limit: the signal of the scope ends the wait.
+
+**Edge cases.**
+
+- The signal aborts a wait and a request with its reason, such as `LockHoldTimeoutError`. The call leaves its queue, and the update ends as `lock_hold_timeout`. A delivery counts as `delivery_failed`.
+- A network error or a timeout of the request is not repeated: a repeated `sendMessage` can send the message twice.
+- When Valkey fails, the call fails, and so do the session and the lock.
+- With several pods the global limit and the shares stay exact, because the buckets and the `waiting:*` sets are shared. A pod only picks which of its own calls to release.
+- A call that joins while the loop waits for Valkey wakes the loop, so the next take includes its class at once.
+- A class bucket needs a burst above 1. With a burst of 1 the bucket loses every token that the late timer of the loop could not take: in a test at 100 tokens per second, the rate dropped by a fifth.
+- A pod that dies leaves its marks for up to 2 s, and the other class keeps its share for that time.
+
+**Metrics.** `telegram_rate_limit_wait_seconds{method, priority}` measures the wait for the tokens; its p95 for `interactive` shows a limit that is too tight. `telegram_api_requests_total{result="rate_limited"}` counts every `429`, and any growth means the numbers are above the real limits. `telegram_api_retry_after_seconds{method}` shows the `retry_after` values. `result="aborted"` counts the requests that the signal of the scope stopped.
+
+**A new Bot API method.** A method that sends, edits or deletes a message gets a line in `telegramRateLimits` with the limits it counts against. A method without a line has no limits, and only its `429` makes it wait. A new kind of limit is a new `TelegramRateLimit`: its rate, burst, optional `shares`, and `scopeOf`, which turns the params of the call into the key of the bucket or skips the bucket.
 
 ## Scene instances
 
@@ -562,7 +617,8 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                           | [Session and lock](#session-and-lock)                       |
 | `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events          | [Buttons](#buttons)                                         |
 | `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists             | [Slots](#slots)                                             |
-| `telegram-api-service.ts`                                          | HTTP calls to the Bot API with a timeout, logs and metrics           |                                                             |
+| `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, timeout, logs  | [Rate limits](#rate-limits)                                 |
+| `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                    | [Rate limits](#rate-limits)                                 |
 | `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                           | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-deep-links.ts`                                           | The deep link payload                                                | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                       | [Access and the command menu](#access-and-the-command-menu) |
