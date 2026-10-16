@@ -162,6 +162,12 @@ export class TelegramSceneInputs {
             return false;
         }
 
+        const commandId = ctx.update?.message?.message_id;
+
+        if (!active.state.messageIds.includes(commandId ?? -1)) {
+            this.track(active, commandId);
+        }
+
         await this.finish(ctx, instance, active);
         this.recordEvent(instance, "cancel");
         ctx.log.info(
@@ -180,7 +186,7 @@ export class TelegramSceneInputs {
 
         if (active.input.cancel) {
             await active.input.cancel(ctx, scene);
-        } else {
+        } else if (!active.input.cleanup) {
             await ctx.reply(ctx.t("telegram:sceneCancelled"));
         }
 
