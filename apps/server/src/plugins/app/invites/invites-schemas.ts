@@ -36,7 +36,6 @@ export const invitesButtonValues = {
     open: Type.String({ pattern: "^[0-9a-f]{24}$" }),
     listPage: Type.Integer({ minimum: 0 }),
     page: Type.Integer({ minimum: 0 }),
-    refresh: Type.Null(),
     revoke: Type.Null(),
     create: Type.Null(),
     section: Type.String(),

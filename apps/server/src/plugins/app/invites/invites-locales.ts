@@ -45,7 +45,6 @@ const en = {
     usersButton: "👥 Users ({{count}})",
     usersTitle: "Invited users",
     unknownUser: "Unknown user",
-    refreshButton: "🔄 Refresh",
     revokeButton: "⛔ Revoke",
     confirmRevokeButton: "⛔ Revoke for sure?",
 } as const;
@@ -97,7 +96,6 @@ export const invitesLocales: Locales<typeof en> = {
         usersButton: "👥 Користувачі ({{count}})",
         usersTitle: "Запрошені користувачі",
         unknownUser: "Невідомий користувач",
-        refreshButton: "🔄 Оновити",
         revokeButton: "⛔ Відкликати",
         confirmRevokeButton: "⛔ Точно відкликати?",
     },
@@ -146,7 +144,6 @@ export const invitesLocales: Locales<typeof en> = {
         usersButton: "👥 Пользователи ({{count}})",
         usersTitle: "Приглашённые пользователи",
         unknownUser: "Неизвестный пользователь",
-        refreshButton: "🔄 Обновить",
         revokeButton: "⛔ Отозвать",
         confirmRevokeButton: "⛔ Точно отозвать?",
     },

@@ -323,7 +323,6 @@ void describe("Invites scenes", () => {
             bot.pressButton(reader, en.revokeButton),
             /Expected a/,
         );
-        await bot.pressButton(reader, en.refreshButton);
     });
 
     void it("navigates between the list and an invite in one message", async (t) => {

@@ -100,10 +100,6 @@ export function createInvitesScene(
                     scene.state.page = page;
                 },
             },
-            refresh: {
-                value: invitesButtonValues.refresh,
-                handle: async () => undefined,
-            },
             revoke: {
                 value: invitesButtonValues.revoke,
                 guard: canUpdate,
