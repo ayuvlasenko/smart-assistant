@@ -74,6 +74,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Build every interaction that keeps state between updates as a scene. Keep business data in its domain repository; a scene keeps only the user's view of it, such as an id or a page.
 - Call the domain and check the data before you change `scene.state`: a failed handler keeps the changes it made before the error.
 - Create every inline button with `scene.button` or `input.button`. Never write `callback_data` by hand.
+- Lay out every keyboard by [Button layout](apps/server/src/plugins/app/telegram/README.md#button-layout): navigation row last with `‹ Back` on the left, at most two buttons in a row, values in the text and not on the buttons.
 - Show a message that changes with the state as a slot. Never keep the message id of a slot in the state.
 - Check the `false` that `sceneEngine.start` returns: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.

@@ -20,37 +20,19 @@ const grantsPageSize = 6;
 export function renderInviteForm(view: InvitesView): TelegramMessageContent {
     const { ctx, scene } = view;
     const { t } = ctx;
-    const { draft } = scene.state;
 
     return buildInvitesMessage(describeDraft(view), [
         [
-            scene.button(
-                t("invites:accessButton", { count: draft.grants.length }),
-                "show",
-                "sections",
-            ),
+            scene.button(t("invites:accessButton"), "show", "sections"),
+            scene.button(t("invites:limitButton"), "askLimit", null),
         ],
-        [
-            scene.button(
-                t("invites:limitButton", {
-                    value: formatMaxUses(t, draft.maxUses),
-                }),
-                "askLimit",
-                null,
-            ),
-        ],
-        [
-            scene.button(
-                t("invites:validForButton", {
-                    value: formatValidFor(t, draft.validForDays),
-                }),
-                "show",
-                "validFor",
-            ),
-        ],
+        [scene.button(t("invites:validForButton"), "show", "validFor")],
         [
             scene.button(t("invites:backButton"), "show", "list"),
-            scene.button(t("invites:createButton"), "save", null),
+            {
+                ...scene.button(t("invites:createButton"), "save", null),
+                style: "success",
+            },
         ],
     ]);
 }

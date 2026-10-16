@@ -104,14 +104,14 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 | `list`     | Five invites per page, active first; a button opens each one; `➕ New invite` with `create Invite` | `invite`, `form`                           |
 | `invite`   | Status, uses, expiry, grants; `📋 Copy link` while active; revoke with `update Invite`             | `users`, `‹ Back` to `list`                |
 | `users`    | The users who came, ten per page                                                                   | `‹ Back` to `invite`                       |
-| `form`     | The draft: grants, user limit, valid days; `✅ Create invite`                                      | `sections`, `validFor`, `invite`, `‹ Back` |
+| `form`     | The draft: grants, user limit, valid days; `✅ Create`                                             | `sections`, `validFor`, `invite`, `‹ Back` |
 | `sections` | The sections that hold grants the admin has, with pages                                            | `section`, `‹ Back` to `form`              |
 | `section`  | The grants of one section as checkboxes, with pages                                                | `‹ Back` to `sections`                     |
 | `validFor` | 1, 7 or 30 days, another number, or no expiry                                                      | `form`                                     |
 
-Revoke needs two presses: the first one sets `isRevoking`, and the screen asks for a confirmation on the same button; the second one revokes. A move to the list or to another invite resets `isRevoking`.
+Revoke needs two presses: the first one sets `isRevoking`, and the red `⛔ Revoke` next to `‹ Back` turns into `⛔ Sure?`; the second one revokes. A move to the list or to another invite resets `isRevoking`.
 
-The form keeps the draft in the scene state and writes nothing until `✅ Create invite`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
+The form keeps the draft in the scene state and writes nothing until `✅ Create`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
 
 The scene redraws by itself when an invite changes. The scene watches `invites` on the list and `invites.invite:<id>` on the invite and its users, and nothing on the form. `InvitesService` emits `invites.inviteChanged` with the invite id after it creates, activates or revokes an invite, and the handler publishes both topics, so every admin who looks at the list or at that invite sees the change. The bootstrap on start emits nothing. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
 
