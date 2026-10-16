@@ -171,6 +171,17 @@ See [Updates for other users](#updates-for-other-users) for how the engine finds
 - Name a command in snake case: lowercase Latin letters, digits and underscores, such as `/new_invite`, at most 32 characters.
 - The bot works in private chats only. The update handler ignores groups and channels, so do not add group-specific behavior such as reply targets or forum topics.
 
+### Button layout
+
+Every inline keyboard follows the same layout, so a user finds the same kind of button in the same place on every screen.
+
+1. Order the rows from top to bottom: the options to pick from (items, cards, decks), the page row, the main action of the screen, the secondary actions, and the navigation row.
+2. Put the navigation row last. `‹ Back` stands on its left. The action that finishes the screen, such as `✅ Create`, `🔒 Close` or `⛔ Revoke`, stands on its right. A screen without `‹ Back` puts its dismiss button, such as `✖️ Hide`, in that row.
+3. Put at most two buttons in a row. A grid of options is the exception: up to six cards, or up to three choices of a period.
+4. Colour only two kinds of buttons through `style`: the main action gets `primary` or `success`, a destructive action gets `danger`. A client without `style` shows plain buttons, so the text of a button must make sense without the colour.
+5. Ask for a destructive action twice. The second label is short, such as `⛔ Sure?`, so it still fits next to `‹ Back`. Any other button of the scene cancels the confirmation.
+6. Name the action on a button and show the values in the text of the message. A form button reads `🃏 Deck`, not `🃏 Deck: Fibonacci`, so two field buttons fit in one row.
+
 ## Map
 
 ```mermaid

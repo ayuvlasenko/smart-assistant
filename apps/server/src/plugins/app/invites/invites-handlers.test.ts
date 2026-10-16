@@ -265,6 +265,13 @@ void describe("Invites scenes", () => {
             (await mongo.collection("invites").findOne())?.revokedAt,
             undefined,
         );
+        assert.deepEqual(
+            readLastEditedRow(bot).map(({ text, style }) => ({ text, style })),
+            [
+                { text: en.backButton, style: undefined },
+                { text: en.confirmRevokeButton, style: "danger" },
+            ],
+        );
 
         await bot.pressButton(admin, en.confirmRevokeButton);
         await sendAsStranger(
@@ -382,14 +389,14 @@ async function createInviteThroughForm(
 ): Promise<void> {
     await bot.sendText(admin, "/invites");
     await bot.pressButton(admin, en.newInviteButton);
-    await bot.pressButton(admin, "Access (0)");
+    await bot.pressButton(admin, en.accessButton);
     await bot.pressButton(admin, "Ping (0/1)");
     await bot.pressButton(admin, "⬜ Use /ping");
     await bot.pressButton(admin, en.backButton);
     await bot.pressButton(admin, en.backButton);
-    await bot.pressButton(admin, "Users: 1");
+    await bot.pressButton(admin, en.limitButton);
     await bot.sendText(admin, "3");
-    await bot.pressButton(admin, "Valid for: never");
+    await bot.pressButton(admin, en.validForButton);
     await bot.pressButton(admin, en.sevenDays);
     await bot.pressButton(admin, en.createButton);
 }
@@ -479,4 +486,16 @@ function readChatCommands(
         )
         .at(-1)
         ?.commands.map(({ command }) => command);
+}
+
+function readLastEditedRow(
+    bot: InvitesBot,
+): { text: string; style?: string }[] {
+    const markup =
+        bot.telegramApiService.editMessageText.mock.calls.at(-1)?.arguments[0]
+            .reply_markup;
+
+    return markup && "inline_keyboard" in markup
+        ? (markup.inline_keyboard.at(-1) ?? [])
+        : [];
 }

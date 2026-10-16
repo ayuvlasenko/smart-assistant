@@ -90,8 +90,10 @@ export async function renderInvite(
                       ),
                   ]
                 : [],
-            [scene.button(t("invites:backButton"), "show", "list")],
-            isActive && canRevoke ? [revokeButton(t, scene)] : [],
+            [
+                scene.button(t("invites:backButton"), "show", "list"),
+                ...(isActive && canRevoke ? [revokeButton(t, scene)] : []),
+            ],
         ],
     );
 }
@@ -155,12 +157,18 @@ function revokeButton(
     t: Translate,
     scene: InvitesSceneControl,
 ): InlineKeyboardButton {
-    return scene.state.isRevoking
-        ? {
-              ...scene.button(t("invites:confirmRevokeButton"), "revoke", null),
-              style: "danger",
-          }
-        : scene.button(t("invites:revokeButton"), "revoke", null);
+    return {
+        ...scene.button(
+            t(
+                scene.state.isRevoking
+                    ? "invites:confirmRevokeButton"
+                    : "invites:revokeButton",
+            ),
+            "revoke",
+            null,
+        ),
+        style: "danger",
+    };
 }
 
 function describeUser(

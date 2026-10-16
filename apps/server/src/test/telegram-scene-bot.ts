@@ -41,6 +41,7 @@ export interface TelegramSceneBot extends TelegramBotServiceTestApp {
         value: unknown,
     ): Promise<void>;
     readSentTexts(): string[];
+    readMessageTexts(chatId: number): Promise<string[]>;
     readLastKeyboard(): InlineKeyboardButton.CallbackButton[][];
     readLastEditedKeyboard(): InlineKeyboardButton.CallbackButton[][];
 }
@@ -130,6 +131,8 @@ export async function buildTelegramSceneBot(
             telegramApiService.sendMessage.mock.calls.map(
                 (call) => call.arguments[0].text,
             ),
+        readMessageTexts: (chatId) =>
+            readMessageTexts(telegramApiService, chatId),
         readLastKeyboard: () =>
             readCallbackButtons(
                 telegramApiService.sendMessage.mock.calls.at(-1)?.arguments[0]
@@ -211,6 +214,72 @@ function buildPhotoUpdate(chat: Chat.PrivateChat): Update {
             ],
         },
     };
+}
+
+async function readMessageTexts(
+    telegramApiService: TelegramApiServiceMock,
+    chatId: number,
+): Promise<string[]> {
+    const messages = new Map<number, string>();
+
+    for (const call of telegramApiService.sendMessage.mock.calls) {
+        const response = await call.result;
+        const args = call.arguments[0];
+
+        if (response?.ok && args.chat_id === chatId) {
+            messages.set(response.result.message_id, stripTags(args.text));
+        }
+    }
+
+    for (const call of telegramApiService.editMessageText.mock.calls) {
+        const args = call.arguments[0];
+
+        if (
+            args.chat_id === chatId &&
+            args.message_id !== undefined &&
+            "text" in args &&
+            typeof args.text === "string"
+        ) {
+            messages.set(args.message_id, stripTags(args.text));
+        }
+    }
+
+    for (const messageId of readDeletedMessageIds(telegramApiService, chatId)) {
+        messages.delete(messageId);
+    }
+
+    return [...messages.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, text]) => text);
+}
+
+function readDeletedMessageIds(
+    telegramApiService: TelegramApiServiceMock,
+    chatId: number,
+): number[] {
+    return [
+        ...telegramApiService.deleteMessage.mock.calls.map(
+            (call) => call.arguments[0],
+        ),
+        ...telegramApiService.deleteMessages.mock.calls.flatMap((call) =>
+            call.arguments[0].message_ids.map((messageId) => ({
+                chat_id: call.arguments[0].chat_id,
+                message_id: messageId,
+            })),
+        ),
+    ]
+        .filter(({ chat_id: messageChatId }) => messageChatId === chatId)
+        .map(({ message_id: messageId }) => messageId);
+}
+
+function stripTags(html: string): string {
+    const [first = "", ...rest] = html.split("<");
+
+    return first + rest.map(dropTag).join("");
+}
+
+function dropTag(part: string): string {
+    return part.slice(part.indexOf(">") + 1);
 }
 
 async function readKeyboardsByMessage(
