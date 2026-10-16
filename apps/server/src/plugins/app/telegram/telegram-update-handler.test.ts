@@ -28,6 +28,7 @@ import {
 } from "../../../test/telegram-scene-bot.js";
 import { Language } from "../i18n-service.js";
 import { UsersRepository } from "../users/users-repository.js";
+import { telegramApiScope } from "./telegram-api-service.js";
 import { text } from "./telegram-filters.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramRouter } from "./telegram-router.js";
@@ -142,48 +143,77 @@ void describe("TelegramUpdateHandler", () => {
         );
     });
 
-    void it("skips the error reply when the user blocked the bot or Telegram limits the rate", async (t) => {
-        for (const [errorCode, result] of [
-            [403, "blocked"],
-            [429, "rate_limited"],
-        ] as const) {
-            const telegramApiService = buildTelegramApiServiceMock({
+    void it("skips the error reply when the user blocked the bot", async (t) => {
+        const telegramApiService = buildTelegramApiServiceMock({
+            t,
+            sendMessageResponse: {
+                ok: false,
+                error_code: 403,
+                description: "Forbidden: bot was blocked by the user",
+            },
+        });
+        const { metrics, telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
                 t,
-                sendMessageResponse: {
-                    ok: false,
-                    error_code: errorCode,
-                    description: "Telegram refused",
-                    parameters: { retry_after: 3 },
-                },
+                telegramApiService,
+                registerRoutes: registerPing,
             });
-            const { metrics, telegramUpdateHandler, usersRepository } =
-                await buildTelegramBotServiceTestApp({
-                    databaseName,
-                    mongoClient,
-                    t,
-                    telegramApiService,
-                    registerRoutes: registerPing,
-                });
 
-            await createUser(usersRepository, "987654324");
-            await telegramUpdateHandler.handle(
-                buildTelegramTextMessageUpdate({
-                    message: {
-                        chat: buildTelegramPrivateChat({ id: 987654324 }),
-                        text: "ping",
-                    },
-                }),
-            );
+        await createUser(usersRepository, "987654324");
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654324 }),
+                    text: "ping",
+                },
+            }),
+        );
 
-            assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
-            assert.match(
-                await metrics.metrics(),
-                new RegExp(
-                    `^telegram_updates_total\\{type="message",result="${result}"\\} 1$`,
-                    "m",
-                ),
-            );
-        }
+        assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_updates_total\{type="message",result="blocked"\} 1$/m,
+        );
+    });
+
+    void it("stops an update that holds the session lock too long", async (t) => {
+        const {
+            metrics,
+            telegramApiService,
+            telegramUpdateHandler,
+            usersRepository,
+        } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            sessionStoreOptions: { lockMaxHoldMilliseconds: 100 },
+            registerRoutes: (router) => {
+                router.on(text("slow"), () => waitForScopeAbort());
+            },
+        });
+
+        await createUser(usersRepository, "987654325");
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654325 }),
+                    text: "slow",
+                },
+            }),
+        );
+
+        assert.deepEqual(
+            telegramApiService.sendMessage.mock.calls.map(
+                (call) => call.arguments[0].text,
+            ),
+            [telegramLocales.en.error],
+        );
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_updates_total\{type="message",result="lock_hold_timeout"\} 1$/m,
+        );
     });
 
     void it("handles a repeated update only once", async (t) => {
@@ -850,6 +880,17 @@ async function createUser(
         isBanned: false,
         languageCode,
     });
+}
+
+async function waitForScopeAbort(): Promise<void> {
+    const signal = telegramApiScope.getStore()?.signal;
+
+    assert.ok(signal);
+
+    await new Promise((resolve) => {
+        signal.addEventListener("abort", resolve);
+    });
+    signal.throwIfAborted();
 }
 
 function registerPing(router: TelegramRouter): void {

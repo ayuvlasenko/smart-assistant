@@ -1068,17 +1068,19 @@ void describe("TelegramSceneEngine storage", () => {
         assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.unknown]);
     });
 
-    void it("replies with an error when the session stays locked", async (t) => {
-        const bot = await buildProfileBot(t, [], { lockWaitMilliseconds: 100 });
+    void it("waits for a stale session lock until its TTL runs out", async (t) => {
+        const bot = await buildProfileBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654368 });
 
         await bot.allowUser(chat.id);
         await bot.app
             .getDecorator<Redis>("valkey")
-            .set(`${buildSessionKey(chat.id)}:lock`, "other", "PX", 10_000);
+            .set(`${buildSessionKey(chat.id)}:lock`, "other", "PX", 300);
         await bot.sendText(chat, "/profile");
 
-        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.error]);
+        assert.deepEqual(bot.readSentTexts(), [
+            "Your name? Send /cancel to stop.",
+        ]);
     });
 });
 

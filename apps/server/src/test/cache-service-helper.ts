@@ -8,6 +8,7 @@ import lockPlugin, { LockService } from "../plugins/app/lock-service.js";
 import metricsPlugin, {
     MetricsService,
 } from "../plugins/app/metrics-service.js";
+import rateLimiterPlugin, { RateLimiter } from "../plugins/app/rate-limiter.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
 } from "../plugins/external/env.js";
@@ -27,6 +28,7 @@ export interface CacheServiceTestApp {
     client: Redis;
     lockService: LockService;
     metrics: MetricsService;
+    rateLimiter: RateLimiter;
     keyPrefix: string;
 }
 
@@ -54,6 +56,7 @@ export async function buildCacheServiceTestApp({
     app.register(cachePlugin);
     app.register(metricsPlugin);
     app.register(lockPlugin);
+    app.register(rateLimiterPlugin);
 
     await app.ready();
 
@@ -73,6 +76,7 @@ export async function buildCacheServiceTestApp({
         client,
         lockService: app.getDecorator<LockService>("lockService"),
         metrics: app.getDecorator<MetricsService>("metrics"),
+        rateLimiter: app.getDecorator<RateLimiter>("rateLimiter"),
         keyPrefix,
     };
 }

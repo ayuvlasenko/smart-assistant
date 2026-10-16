@@ -5,9 +5,13 @@ import {
     FastifyPluginOptions,
 } from "fastify";
 import fp from "fastify-plugin";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
+import { RateLimitBucket, RateLimiter } from "../rate-limiter.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
+import { telegramRateLimitBuckets } from "./telegram-rate-limits.js";
 
 export type TelegramMethod = keyof ApiMethods<never>;
 export type TelegramMethodArgs<
@@ -41,24 +45,40 @@ export interface TelegramApiPluginOptions extends FastifyPluginOptions {
     telegramApiService?: TelegramApiClient;
 }
 
+export type TelegramApiPriority = "interactive" | "background";
+
+export interface TelegramApiScope {
+    signal: AbortSignal;
+    priority: TelegramApiPriority;
+}
+
+export const telegramApiScope = new AsyncLocalStorage<TelegramApiScope>();
+
 const defaultRequestTimeoutMilliseconds = 10_000;
+const unscopedCallTimeoutMilliseconds = 60_000;
+const defaultRetryAfterSeconds = 1;
 
 export class TelegramApiService {
     private readonly baseUrl: string;
+    private readonly botId: string;
     private readonly log: FastifyBaseLogger;
     private readonly telegramMetrics: TelegramMetrics;
+    private readonly rateLimiter: RateLimiter;
     private readonly requestTimeoutMilliseconds: number;
 
     constructor(
         botToken: string,
         log: FastifyBaseLogger,
         telegramMetrics: TelegramMetrics,
+        rateLimiter: RateLimiter,
         requestTimeoutMilliseconds = defaultRequestTimeoutMilliseconds,
     ) {
         this.log = log;
         this.telegramMetrics = telegramMetrics;
+        this.rateLimiter = rateLimiter;
         this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
         this.baseUrl = `https://api.telegram.org/bot${botToken}`;
+        this.botId = botToken.split(":", 1).join("");
     }
 
     getMe() {
@@ -135,6 +155,62 @@ export class TelegramApiService {
         ...args: TelegramMethodArgs<TMethod, TFile>
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const [params] = args;
+        const scope = telegramApiScope.getStore() ?? {
+            signal: AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
+            priority: "interactive",
+        };
+        const buckets = telegramRateLimitBuckets(this.botId, method, params);
+
+        for (;;) {
+            await this.waitForSlot(method, buckets, scope);
+
+            const result = await this.send<TMethod>(
+                method,
+                params,
+                scope.signal,
+            );
+
+            if (result.ok || result.error_code !== 429) {
+                return result;
+            }
+
+            await this.pause(
+                method,
+                buckets,
+                result.parameters?.retry_after ?? defaultRetryAfterSeconds,
+                scope.signal,
+            );
+        }
+    }
+
+    private async waitForSlot(
+        method: TelegramMethod,
+        buckets: RateLimitBucket[],
+        { signal, priority }: TelegramApiScope,
+    ): Promise<void> {
+        let waitMilliseconds = 0;
+
+        for (const bucket of buckets) {
+            waitMilliseconds += await this.rateLimiter.acquire(bucket, {
+                className: priority,
+                signal,
+            });
+        }
+
+        if (buckets.length > 0) {
+            this.telegramMetrics.recordRateLimitWait(
+                method,
+                priority,
+                waitMilliseconds / 1000,
+            );
+        }
+    }
+
+    private async send<TMethod extends TelegramMethod>(
+        method: TMethod,
+        params: unknown,
+        signal: AbortSignal,
+    ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const stopRequest = this.telegramMetrics.startApiRequest(method);
         let result: ApiResponse<TelegramMethodResult<TMethod>>;
 
@@ -142,7 +218,10 @@ export class TelegramApiService {
             const response = await fetch(`${this.baseUrl}/${method}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                signal: AbortSignal.timeout(this.requestTimeoutMilliseconds),
+                signal: AbortSignal.any([
+                    signal,
+                    AbortSignal.timeout(this.requestTimeoutMilliseconds),
+                ]),
                 body: params === undefined ? undefined : JSON.stringify(params),
             });
 
@@ -150,24 +229,51 @@ export class TelegramApiService {
                 TelegramMethodResult<TMethod>
             >;
         } catch (err) {
-            stopRequest("network_error");
+            stopRequest(signal.aborted ? "aborted" : "network_error");
             throw err;
         }
 
-        stopRequest(result.ok ? "ok" : "error");
-
-        if (!result.ok) {
-            this.log.warn(
-                {
-                    method,
-                    errorCode: result.error_code,
-                    description: result.description,
-                },
-                "Telegram API request failed",
-            );
+        if (result.ok) {
+            stopRequest("ok");
+            return result;
         }
 
+        stopRequest(result.error_code === 429 ? "rate_limited" : "error");
+        this.log.warn(
+            {
+                method,
+                errorCode: result.error_code,
+                description: result.description,
+                retryAfter: result.parameters?.retry_after,
+            },
+            "Telegram API request failed",
+        );
+
         return result;
+    }
+
+    private async pause(
+        method: TelegramMethod,
+        buckets: RateLimitBucket[],
+        retryAfterSeconds: number,
+        signal: AbortSignal,
+    ): Promise<void> {
+        const [narrowestBucket] = buckets;
+        const delayMilliseconds = retryAfterSeconds * 1000;
+
+        this.telegramMetrics.recordRetryAfter(method, retryAfterSeconds);
+
+        if (narrowestBucket) {
+            await this.rateLimiter.pause(narrowestBucket, delayMilliseconds);
+            return;
+        }
+
+        try {
+            await delay(delayMilliseconds, undefined, { signal });
+        } catch (err) {
+            signal.throwIfAborted();
+            throw err;
+        }
     }
 }
 
@@ -182,11 +288,17 @@ export default fp(
                     fastify.getDecorator<Env>("config").TELEGRAM_BOT_TOKEN,
                     appLogger.child({ module: "telegram-api" }),
                     fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
+                    fastify.getDecorator<RateLimiter>("rateLimiter"),
                 ),
         );
     },
     {
         name: "telegram-api-service",
-        dependencies: ["@fastify/env", "app-logger", "telegram-metrics"],
+        dependencies: [
+            "@fastify/env",
+            "app-logger",
+            "rate-limiter",
+            "telegram-metrics",
+        ],
     },
 );

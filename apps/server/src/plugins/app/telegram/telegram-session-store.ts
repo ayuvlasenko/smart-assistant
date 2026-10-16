@@ -10,8 +10,8 @@ export interface TelegramSessionStorePluginOptions extends FastifyPluginOptions 
 }
 
 export interface TelegramSessionStoreOptions {
-    lockWaitMilliseconds?: number;
     lockTtlMilliseconds?: number;
+    lockMaxHoldMilliseconds?: number;
 }
 
 export interface TelegramSessionIndexMatch {
@@ -37,13 +37,13 @@ export class TelegramSessionStore {
         this.lockOptions = {
             name: lockName,
             ttlMilliseconds: options.lockTtlMilliseconds ?? 30_000,
-            waitMilliseconds: options.lockWaitMilliseconds ?? 10_000,
+            maxHoldMilliseconds: options.lockMaxHoldMilliseconds ?? 60_000,
         };
     }
 
     async withSession<T>(
         userId: number,
-        handle: (session: TelegramSession) => Promise<T>,
+        handle: (session: TelegramSession, signal: AbortSignal) => Promise<T>,
     ): Promise<T> {
         const sessionKey = sessionKeyOf(userId);
         await using lock = await this.lockService.acquire(
@@ -54,7 +54,7 @@ export class TelegramSessionStore {
         let result: T;
 
         try {
-            result = await handle(session);
+            result = await handle(session, lock.signal);
         } catch (err) {
             await this.save(lock, userId, session).catch((saveErr: unknown) => {
                 throw new AggregateError(

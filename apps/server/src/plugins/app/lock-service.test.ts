@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { describe, it } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { buildCacheServiceTestApp } from "../../test/cache-service-helper.js";
-import { LockTimeoutError } from "./lock-errors.js";
+import { LockHoldTimeoutError, LockLostError } from "./lock-errors.js";
 import { LockOptions } from "./lock-service.js";
 
 const lockOptions: LockOptions = {
     name: "test",
     ttlMilliseconds: 10_000,
-    waitMilliseconds: 1_000,
+    maxHoldMilliseconds: 10_000,
 };
 
 void describe("LockService", () => {
@@ -32,19 +33,58 @@ void describe("LockService", () => {
         assert.deepEqual(events, ["first", "second"]);
     });
 
-    void it("throws a timeout error when the lock stays taken", async (t) => {
+    void it("waits for a taken lock until its TTL runs out", async (t) => {
         const { client, lockService } = await buildCacheServiceTestApp({ t });
 
-        await client.set("lock:2", "other", "PX", 10_000);
+        await client.set("lock:2", "other", "PX", 300);
+        const lock = await lockService.acquire("lock:2", lockOptions);
+        await lock[Symbol.asyncDispose]();
 
-        await assert.rejects(
-            () =>
-                lockService.acquire("lock:2", {
-                    ...lockOptions,
-                    waitMilliseconds: 100,
-                }),
-            LockTimeoutError,
-        );
+        assert.notEqual(lock.token, "other");
+    });
+
+    void it("aborts the signal and stops the renewal after the maximum hold time", async (t) => {
+        const { client, lockService } = await buildCacheServiceTestApp({ t });
+
+        const lock = await lockService.acquire("lock:7", {
+            ...lockOptions,
+            ttlMilliseconds: 150,
+            maxHoldMilliseconds: 100,
+        });
+        await once(lock.signal, "abort");
+        await setTimeout(300);
+        const heldToken = await client.get("lock:7");
+        await lock[Symbol.asyncDispose]();
+
+        assert.ok(lock.signal.reason instanceof LockHoldTimeoutError);
+        assert.equal(heldToken, null);
+    });
+
+    void it("aborts the signal when another owner takes the lock", async (t) => {
+        const { client, lockService } = await buildCacheServiceTestApp({ t });
+
+        const lock = await lockService.acquire("lock:8", {
+            ...lockOptions,
+            ttlMilliseconds: 150,
+        });
+        await client.set("lock:8", "other", "PX", 10_000);
+        await once(lock.signal, "abort");
+        await lock[Symbol.asyncDispose]();
+
+        assert.ok(lock.signal.reason instanceof LockLostError);
+    });
+
+    void it("keeps the signal after the lock is released", async (t) => {
+        const { lockService } = await buildCacheServiceTestApp({ t });
+
+        const lock = await lockService.acquire("lock:9", {
+            ...lockOptions,
+            maxHoldMilliseconds: 100,
+        });
+        await lock[Symbol.asyncDispose]();
+        await setTimeout(200);
+
+        assert.equal(lock.signal.aborted, false);
     });
 
     void it("keeps the lock past its TTL while it is held", async (t) => {
@@ -101,15 +141,14 @@ void describe("LockService", () => {
         assert.ok(await lockService.tryAcquire("claim:1", 10_000));
     });
 
-    void it("records the wait time by lock name", async (t) => {
+    void it("records the wait and hold times by lock name", async (t) => {
         const { lockService, metrics } = await buildCacheServiceTestApp({ t });
 
         const lock = await lockService.acquire("lock:4", lockOptions);
         await lock[Symbol.asyncDispose]();
+        const output = await metrics.metrics();
 
-        assert.match(
-            await metrics.metrics(),
-            /^lock_wait_seconds_count\{name="test"\} 1$/m,
-        );
+        assert.match(output, /^lock_wait_seconds_count\{name="test"\} 1$/m);
+        assert.match(output, /^lock_hold_seconds_count\{name="test"\} 1$/m);
     });
 });
