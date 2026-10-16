@@ -70,7 +70,7 @@ const sharedRules = {
     "space-unary-ops": "error",
     "switch-colon-spacing": "error",
     "template-curly-spacing": "error",
-    "prettier/prettier": "warn",
+    "prettier/prettier": "error",
     "sonarjs/no-commented-code": "warn",
     "sonarjs/cognitive-complexity": "warn",
 };
