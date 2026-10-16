@@ -469,26 +469,30 @@ void describe("TelegramSceneEngine scenes", () => {
         );
     });
 
-    void it("cancels only the answer of a scene on /cancel", async (t) => {
+    void it("cancels only the answer of a scene on /cancel and cleans up silently", async (t) => {
         const bot = await buildCounterBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654415 });
 
         await bot.sendText(chat, "/counter");
         await bot.pressButton(chat, "Rename");
-        await bot.sendText(chat, "/cancel");
+        const cancel = await bot.sendText(chat, "/cancel");
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), [
             "Counter main",
             "New label?",
-            telegramLocales.en.sceneCancelled,
             "Count 1",
         ]);
         assert.deepEqual(
             bot.telegramApiService.deleteMessages.mock.calls.map(
                 (call) => call.arguments[0].message_ids,
             ),
-            [[await readSentMessageId(bot, "New label?")]],
+            [
+                [
+                    await readSentMessageId(bot, "New label?"),
+                    cancel.message?.message_id,
+                ],
+            ],
         );
     });
 

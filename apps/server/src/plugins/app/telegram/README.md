@@ -144,7 +144,7 @@ events.on("reports.reportChanged", ({ data }) => {
 
 **Pagination.** Keep the page in the state and draw it in a slot, with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one.
 
-**Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a reply that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. See [Inputs](#inputs).
+**Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a reply that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
 
 **Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, replies with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene. See [Blocking scenes](#blocking-scenes).
 
@@ -453,7 +453,7 @@ A second `start` of a running scene sets `reshow`: the engine skips the hash che
 
 **Edge cases.**
 
-- `cleanup: true` collects the ids of the user's answers and of the bot's messages during a step, and deletes them when the step ends.
+- `cleanup: true` collects the ids of the user's answers and of the bot's messages during a step, and deletes them when the step ends. A cancel adds the message of the `/cancel` command to them and skips the `telegram:sceneCancelled` reply; the `cancel` hook of the input still runs.
 - A step that throws drops the whole input and its buttons. The scene stays.
 - A second `ask` in the same scene replaces its input. An `ask` while another scene holds the focus gets `telegram:inputBusy`.
 - `focus` repairs itself. When it points to a scene that has no input any more, or to an input that a deploy removed, the engine clears it.
