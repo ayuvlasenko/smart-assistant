@@ -25,7 +25,7 @@ The first part of this file says how to write bot code in a domain: commands, de
 
 Most of the code below exists because of these limits of the Bot API:
 
-- The webhook can deliver several updates of one user at the same time, and it sends an update again when the bot does not answer `2xx`.
+- The webhook sends the next update of a chat only after the bot answers the current one, so the updates of one user arrive one by one. Updates of different chats arrive in parallel, up to `max_connections` of `setWebhook`, 40 by default. grammY documents the order per chat; the Bot API docs do not. Telegram sends an update again when the bot does not answer `2xx`.
 - A message does not say which question it answers. The bot gets free text and must decide itself where it goes.
 - `callback_data` of an inline button holds 1 to 64 bytes. A press brings back only this string and the id of the message with the button.
 - Old messages with buttons stay in the chat. The user can press a button of a message that the bot drew an hour ago.
@@ -250,7 +250,7 @@ sequenceDiagram
 
 ## Session and lock
 
-**Problem.** A scene keeps its state between updates, so the state must live outside the process. Two updates of one user can run at the same time on two pods. When both read a scene, change it and write it back, the second write loses the change of the first one.
+**Problem.** A scene keeps its state between updates, so the state must live outside the process. An update and a delivery for the same user can run at the same time on two pods, and Telegram can send an update again while the first copy still runs. When both read a scene, change it and write it back, the second write loses the change of the first one.
 
 **Idea.** Every user has one session in Valkey, and only the holder of the session lock reads and writes it. An update collects its changes in memory and writes all of them in one atomic call, and only while it still holds the lock.
 
