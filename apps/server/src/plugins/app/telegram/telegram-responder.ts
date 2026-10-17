@@ -201,6 +201,10 @@ export class TelegramResponder {
         this.isCallbackAnswered = true;
     }
 
+    hasPendingCallback(): boolean {
+        return Boolean(this.callbackQuery) && !this.isCallbackAnswered;
+    }
+
     async answerPendingCallback(): Promise<void> {
         if (!this.callbackQuery || this.isCallbackAnswered) {
             return;

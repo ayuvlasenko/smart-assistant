@@ -433,9 +433,9 @@ void describe("TelegramSceneEngine scenes", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Your name? Send /cancel to stop.",
             "Counter main",
-            telegramLocales.en.inputBusy,
             "Your age?",
         ]);
+        assert.deepEqual(readAnswerTexts(bot), [telegramLocales.en.inputBusy]);
     });
 
     void it("deletes the question and the answer after the step when cleanup is on", async (t) => {
@@ -578,9 +578,9 @@ void describe("TelegramSceneEngine scenes", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Counter main",
             "New label?",
-            telegramLocales.en.inputBusy,
             "Renamed to Neo",
         ]);
+        assert.deepEqual(readAnswerTexts(bot), [telegramLocales.en.inputBusy]);
     });
 
     void it("keeps the new answer when a handler fails after it asks", async (t) => {
@@ -889,10 +889,14 @@ void describe("TelegramSceneEngine blocking scenes", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Counter main",
             "Survey",
-            blockedText("Survey"),
             "Your survey answer?",
             "Survey done with Ada",
             "New label?",
+        ]);
+        assert.deepEqual(readAnswerTexts(bot), [
+            blockedText("Survey"),
+            undefined,
+            undefined,
         ]);
     });
 

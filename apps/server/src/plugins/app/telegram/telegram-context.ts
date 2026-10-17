@@ -157,6 +157,15 @@ export class TelegramContext<
         return this.responder.answerCallback(text);
     }
 
+    async notify(text: string): Promise<void> {
+        if (this.responder.hasPendingCallback()) {
+            await this.responder.answerCallback(text);
+            return;
+        }
+
+        await this.reply(text);
+    }
+
     editReplyMarkup(markup: InlineKeyboardMarkup): Promise<void> {
         const messageId = this.update?.callback_query?.message?.message_id;
 

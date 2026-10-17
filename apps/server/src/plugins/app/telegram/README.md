@@ -144,9 +144,9 @@ events.on("reports.reportChanged", ({ data }) => {
 
 **Pagination.** Keep the page in the state and draw it in a slot, with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one.
 
-**Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a reply that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
+**Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a notice that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
 
-**Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, replies with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene. See [Blocking scenes](#blocking-scenes).
+**Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, gives a notice with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene. See [Blocking scenes](#blocking-scenes).
 
 **Access.** Put `guard: access.guard(action, subject)` on every command, deep link, scene, scene button and scene input that needs a permission. The guard only shapes the chat; the service still checks every read and write. `plugins/app/access/README.md` explains the model.
 
@@ -165,6 +165,7 @@ See [Updates for other users](#updates-for-other-users) for how the engine finds
 ## Bot UX
 
 - Keep the chat free of service buttons. Mention `/cancel` once, in the first question of an input, instead of a cancel button on every message.
+- Answer a refused button press in the answer to the callback, not with a message: the notice shows over the chat and leaves no trace in it. `ctx.notify(text)` answers the pending callback of the update, or replies when the update is a message. The engine refuses `ask` and a scene start this way.
 - Mention step commands such as `/skip` in the prompt text of the step that accepts them.
 - Use inline buttons only when the user picks from a set of options, such as an account or a date. Accept typed text for free-form input.
 - Update the existing message for pagination and similar controls instead of sending a new one: show it as a slot and keep the page in the state.
@@ -483,13 +484,13 @@ A second `start` of a running scene sets `reshow`: the engine skips the hash che
 ```mermaid
 flowchart TD
     start["sceneEngine.start(ctx, scene, state)"] --> blocker{"another blocking<br/>scene runs?"}
-    blocker -->|yes| refuse["reply sceneBlocked / sceneBlockedStart<br/>return false"]
+    blocker -->|yes| refuse["notify sceneBlocked / sceneBlockedStart<br/>return false"]
     blocker -->|no| own{"scene is blocking and<br/>another input waits?"}
-    own -->|yes| busy["reply inputBusy<br/>return false"]
+    own -->|yes| busy["notify inputBusy<br/>return false"]
     own -->|no| run["start or show again<br/>return true"]
 
     ask["scene.ask(name)"] --> askBlocker{"another blocking<br/>scene runs?"}
-    askBlocker -->|yes| askRefuse["reply sceneBlocked"]
+    askBlocker -->|yes| askRefuse["notify sceneBlocked"]
     askBlocker -->|no| askFocus["focus check as before"]
 
     cancel["/cancel"] --> hasBlocker{"blocking scene runs?"}
@@ -611,7 +612,7 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 | deep link             | while the router looks for a route                 | the `/start` command answers                                                    |
 | scene                 | `start`, button press, input, `deliver`, `publish` | `start` returns `false`, a press gets `forbidden`, `deliver` and `publish` skip |
 | scene button          | button press                                       | the callback gets `forbidden`, the handler does not run                         |
-| scene input           | `ask`, input text, input button                    | `ask` replies `forbidden`, the text goes to the routes                          |
+| scene input           | `ask`, input text, input button                    | `ask` notifies `forbidden`, the text goes to the routes                         |
 
 `isBanned` is not a guard: it is the gate before the router. A banned user gets only the deep links registered with `allowBanned`, such as an invite link.
 
