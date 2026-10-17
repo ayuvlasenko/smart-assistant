@@ -100,7 +100,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         ...inEvenRows(deck.cards.map(cardButton)),
         [voted && voted >= total ? { ...reveal, style: "success" } : reveal],
         [
-            readInviteButton(view),
+            readCopyLinkButton(view),
             scene.button(t("poker:moreButton"), "show", "menu"),
         ],
     ];
@@ -126,7 +126,7 @@ function readRevealedKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
             },
         ],
         [
-            readInviteButton(view),
+            readCopyLinkButton(view),
             scene.button(t("poker:moreButton"), "show", "menu"),
         ],
     ];
@@ -171,14 +171,14 @@ function readMenuKeyboard({
     ];
 }
 
-function readInviteButton({
+function readCopyLinkButton({
     ctx,
     roomUrl,
 }: PokerRoomView): InlineKeyboardButton {
-    const { t } = ctx;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(roomUrl)}&text=${encodeURIComponent(t("poker:inviteText"))}`;
-
-    return { text: t("poker:inviteButton"), url: shareUrl };
+    return {
+        text: ctx.t("poker:copyLinkButton"),
+        copy_text: { text: roomUrl },
+    };
 }
 
 function describeRoom({ ctx, room }: PokerRoomView, status: string): string[] {
