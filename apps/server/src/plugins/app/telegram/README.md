@@ -30,7 +30,7 @@ Most of the code below exists because of these limits of the Bot API:
 - `callback_data` of an inline button holds 1 to 64 bytes. A press brings back only this string and the id of the message with the button.
 - Old messages with buttons stay in the chat. The user can press a button of a message that the bot drew an hour ago.
 - The bot changes a message only by its id. An edit to the same content fails with `message is not modified`, and a text message cannot become a photo.
-- The bot can delete its own message only during 48 hours after it sent it.
+- The bot can delete a message only during 48 hours after it was sent. In a private chat this covers the messages of the user too.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
 - The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
 - The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method.
@@ -44,6 +44,7 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 - `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
 - `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
 - `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl({ name, value })`, never by hand. See [Deep links](#deep-links).
+- When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
 - Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
 
@@ -375,10 +376,10 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its slot messages move to the bottom of the chat, and the state stays as it is.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
 4. Every call that gives a handler the scene object marks the instance as touched in `TelegramSceneUpdate`.
-5. After the update, the engine draws the slots of the touched instances, but only when the handler succeeded. It saves the touched instances always.
+5. After the update, the engine draws the slots of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
-**Edge cases.** The engine reads a record through the current TypeBox schema of the scene. After a deploy that removed the scene or changed the schema of its state, the record does not match. The engine then removes the record and logs `Telegram scene is not registered or its state is outdated`. The user's next press on its buttons gets `buttonExpired`. Business data stays in the domain repository. The state keeps only the view of it, such as an id and a page, so a lost record loses nothing important.
+**Edge cases.** A command whose start is refused stays in the chat. The guard of the scene refuses silently, and a command that vanishes without an answer looks like a fault; a blocking scene answers with a notice that needs the command above it. A command whose handler fails stays above the error message too. Only a message with a command counts: a text answer that leads to a `start` stays. The engine reads a record through the current TypeBox schema of the scene. After a deploy that removed the scene or changed the schema of its state, the record does not match. The engine then removes the record and logs `Telegram scene is not registered or its state is outdated`. The user's next press on its buttons gets `buttonExpired`. Business data stays in the domain repository. The state keeps only the view of it, such as an id and a page, so a lost record loses nothing important.
 
 ## Buttons
 

@@ -1,4 +1,6 @@
+import { Update } from "@grammyjs/types";
 import { TelegramContext, TelegramMessageChange } from "./telegram-context.js";
+import { extractTelegramCommand } from "./telegram-extractors.js";
 import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
 import { TelegramSceneSlots } from "./telegram-scene-slots.js";
 import {
@@ -18,6 +20,7 @@ export class TelegramSceneUpdate {
         TelegramSceneInstance,
         { reshow: boolean }
     >();
+    private commandMessageId?: number;
 
     constructor(storage: TelegramSceneStorage) {
         this.storage = storage;
@@ -30,6 +33,12 @@ export class TelegramSceneUpdate {
         this.touched.set(instance, {
             reshow: reshow || !!this.touched.get(instance)?.reshow,
         });
+    }
+
+    removeCommandMessage(update: Update | undefined): void {
+        if (update?.message && extractTelegramCommand(update)) {
+            this.commandMessageId = update.message.message_id;
+        }
     }
 
     rememberButtons(
@@ -55,6 +64,10 @@ export class TelegramSceneUpdate {
                     { reshow },
                 );
             }
+        }
+
+        if (this.commandMessageId !== undefined) {
+            await ctx.deleteMessage(this.commandMessageId);
         }
     }
 

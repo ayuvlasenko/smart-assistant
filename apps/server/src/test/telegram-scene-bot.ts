@@ -47,6 +47,7 @@ export interface TelegramSceneBot extends TelegramBotServiceTestApp {
 }
 
 let updateId = 0;
+const userMessageIdOffset = 1_000_000;
 
 export async function buildTelegramSceneBot(
     options: BuildTelegramBotServiceTestAppOptions,
@@ -157,7 +158,7 @@ function buildTextUpdate(chat: Chat.PrivateChat, text: string): Update {
     return buildTelegramTextMessageUpdate({
         update_id: updateId,
         message: {
-            message_id: updateId,
+            message_id: userMessageIdOffset + updateId,
             chat,
             from: buildTelegramUser({ id: chat.id }),
             text,
@@ -200,7 +201,7 @@ function buildPhotoUpdate(chat: Chat.PrivateChat): Update {
     return {
         update_id: updateId,
         message: {
-            message_id: updateId,
+            message_id: userMessageIdOffset + updateId,
             date: 1776076800,
             chat,
             from: buildTelegramUser({ id: chat.id }),

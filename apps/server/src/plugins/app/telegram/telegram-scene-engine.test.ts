@@ -946,6 +946,94 @@ void describe("TelegramSceneEngine blocking scenes", () => {
     });
 });
 
+void describe("TelegramSceneEngine command messages", () => {
+    void it("deletes the command that starts a scene", async (t) => {
+        const bot = await buildCounterBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654470 });
+
+        const counter = await bot.sendText(chat, "/counter");
+
+        assert.deepEqual(bot.readSentTexts(), ["Counter main"]);
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            counter.message?.message_id,
+        ]);
+    });
+
+    void it("deletes the command that shows a running scene again", async (t) => {
+        const bot = await buildCounterBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654471 });
+
+        const first = await bot.sendText(chat, "/counter");
+        const second = await bot.sendText(chat, "/counter");
+
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            first.message?.message_id,
+            second.message?.message_id,
+        ]);
+    });
+
+    void it("keeps a command and an answer that start no scene", async (t) => {
+        const bot = await buildCounterBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654472 });
+
+        await bot.sendText(chat, "/help");
+        const profile = await bot.sendText(chat, "/profile");
+        await bot.sendText(chat, "Ada");
+
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            profile.message?.message_id,
+        ]);
+    });
+
+    void it("keeps the command that a blocking scene refuses", async (t) => {
+        const bot = await buildWizardBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654473 });
+
+        const wizard = await bot.sendText(chat, "/wizard");
+        await bot.sendText(chat, "/counter");
+
+        assert.deepEqual(bot.readSentTexts().at(-1), blockedText("Wizard"));
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            wizard.message?.message_id,
+        ]);
+    });
+
+    void it("keeps the command that the guard of the scene refuses", async (t) => {
+        const bot = await buildNotesBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654474 });
+
+        await bot.sendText(chat, "/vault");
+
+        assert.deepEqual(bot.readSentTexts(), []);
+        assert.deepEqual(readDeletedMessageIds(bot), []);
+    });
+
+    void it("keeps the command when its handler fails after the start", async (t) => {
+        const bot = await buildNotesBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654475 });
+
+        await bot.sendText(chat, "/broken");
+
+        assert.deepEqual(bot.readSentTexts(), [
+            "Notes",
+            telegramLocales.en.error,
+        ]);
+        assert.deepEqual(readDeletedMessageIds(bot), []);
+    });
+
+    void it("deletes the message of a deep link that starts a scene", async (t) => {
+        const bot = await buildNotesBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654476 });
+
+        const link = await bot.sendText(chat, "/start notes_main");
+
+        assert.deepEqual(bot.readSentTexts(), ["Notes"]);
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            link.message?.message_id,
+        ]);
+    });
+});
+
 void describe("TelegramSceneEngine storage", () => {
     void it("keeps the session lock while a slow update runs", async (t) => {
         const calls: string[] = [];
@@ -1411,6 +1499,42 @@ async function buildWizardBot(
     });
 }
 
+async function buildNotesBot(t: TestContext): Promise<TelegramSceneBot> {
+    return buildTelegramSceneBot({
+        databaseName,
+        mongoClient,
+        t,
+        registerRoutes: (router, sceneEngine) => {
+            const notesScene = defineScene({
+                name: "notes",
+                state: Type.Object({}),
+                ttl: 60_000,
+                start: (ctx) => ctx.reply("Notes"),
+            });
+            const vaultScene = defineScene({
+                name: "vault",
+                state: Type.Object({}),
+                ttl: 60_000,
+                guard: (user) => user.grants.includes("vip"),
+                start: (ctx) => ctx.reply("Vault"),
+            });
+
+            router.scene(notesScene);
+            router.scene(vaultScene);
+            router.command("vault", (ctx) =>
+                sceneEngine.start(ctx, vaultScene, {}),
+            );
+            router.command("broken", async (ctx) => {
+                await sceneEngine.start(ctx, notesScene, {});
+                throw new Error("Command failed");
+            });
+            router.deepLink("notes", (ctx) =>
+                sceneEngine.start(ctx, notesScene, {}),
+            );
+        },
+    });
+}
+
 function defineWizardScene(lifetime: SceneLifetime) {
     return defineScene({
         name: "wizard",
@@ -1506,6 +1630,12 @@ function blockedText(currentTitle: string, nextTitle?: string): string {
         : telegramLocales.en.sceneBlockedStart
               .replace("{{current}}", currentTitle)
               .replace("{{next}}", nextTitle);
+}
+
+function readDeletedMessageIds(bot: TelegramSceneBot): number[] {
+    return bot.telegramApiService.deleteMessage.mock.calls.map(
+        (call) => call.arguments[0].message_id,
+    );
 }
 
 function readAnswerTexts(bot: TelegramSceneBot): (string | undefined)[] {

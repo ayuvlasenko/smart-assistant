@@ -96,6 +96,7 @@ export class TelegramSceneEngine {
 
         if (existing) {
             this.updateFor(ctx).touch(existing, { reshow: true });
+            this.updateFor(ctx).removeCommandMessage(ctx.update);
             return true;
         }
 
@@ -108,6 +109,7 @@ export class TelegramSceneEngine {
         );
 
         await scene.start(ctx, this.sceneControl(ctx, instance));
+        this.updateFor(ctx).removeCommandMessage(ctx.update);
 
         return true;
     }

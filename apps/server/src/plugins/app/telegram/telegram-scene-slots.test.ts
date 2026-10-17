@@ -132,7 +132,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "Text");
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readDeletedMessageIds(bot), [1]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 0"]);
         assert.deepEqual(
             bot.telegramApiService.editMessageText.mock.calls.map((call) => [
@@ -160,7 +160,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 1"]);
-        assert.deepEqual(readDeletedMessageIds(bot), [1]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
         assert.deepEqual(
             bot.telegramApiService.editMessageText.mock.calls.map((call) => [
                 call.arguments[0].message_id,
@@ -194,7 +194,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "+1");
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readDeletedMessageIds(bot), []);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), []);
         assert.deepEqual(
             bot.telegramApiService.editMessageText.mock.calls.map((call) => [
                 call.arguments[0].message_id,
@@ -223,7 +223,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Count 0"]);
-        assert.deepEqual(readDeletedMessageIds(bot), []);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), []);
     });
 
     void it("removes the buttons of an old message that can't be deleted", async (t) => {
@@ -258,7 +258,7 @@ void describe("Telegram scene slots", () => {
         await bot.sendText(chat, "/card");
         await bot.pressButton(chat, "Hide");
 
-        assert.deepEqual(readDeletedMessageIds(bot), [1]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
     });
 
     void it("moves the slot message down when a keyed scene starts again", async (t) => {
@@ -269,7 +269,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "+1");
         await bot.sendText(chat, "/card");
 
-        assert.deepEqual(readDeletedMessageIds(bot), [1]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 1"]);
     });
 
@@ -304,7 +304,7 @@ void describe("Telegram scene slots", () => {
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 0"]);
-        assert.deepEqual(readDeletedMessageIds(bot), [1]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
         assert.deepEqual(
             bot.telegramApiService.editMessageText.mock.calls.map((call) => ({
                 messageId: call.arguments[0].message_id,
@@ -332,7 +332,7 @@ void describe("Telegram scene slots", () => {
             "Details",
             telegramLocales.en.error,
         ]);
-        assert.deepEqual(readDeletedMessageIds(bot), [2]);
+        assert.deepEqual(await readDeletedBotMessageIds(bot), [2]);
     });
 
     void it("doesn't render a scene that waits for an answer when another command runs", async (t) => {
@@ -542,10 +542,27 @@ function defineCardScene(
     return cardScene;
 }
 
-function readDeletedMessageIds(bot: TelegramSceneBot): number[] {
-    return bot.telegramApiService.deleteMessage.mock.calls.map(
-        (call) => call.arguments[0].message_id,
-    );
+async function readDeletedBotMessageIds(
+    bot: TelegramSceneBot,
+): Promise<number[]> {
+    const sentMessageIds = new Set<number>();
+    const sendCalls = [
+        ...bot.telegramApiService.sendMessage.mock.calls,
+        ...bot.telegramApiService.sendRichMessage.mock.calls,
+        ...bot.telegramApiService.sendPhoto.mock.calls,
+    ];
+
+    for (const call of sendCalls) {
+        const response = await call.result;
+
+        if (response?.ok) {
+            sentMessageIds.add(response.result.message_id);
+        }
+    }
+
+    return bot.telegramApiService.deleteMessage.mock.calls
+        .map((call) => call.arguments[0].message_id)
+        .filter((messageId) => sentMessageIds.has(messageId));
 }
 
 function readFirstCallbackData(bot: TelegramSceneBot): string {
