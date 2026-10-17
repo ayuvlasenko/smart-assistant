@@ -37,7 +37,7 @@ void describe("UsersService", () => {
                     router.command("secret", async () => undefined, {
                         guard: (user) => user.grants.includes("vip"),
                         description: (translate) =>
-                            translate("telegram:unknown"),
+                            translate("telegram:nothingToCancel"),
                     });
                 },
             });

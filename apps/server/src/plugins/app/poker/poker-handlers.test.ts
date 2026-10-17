@@ -19,7 +19,6 @@ import {
     measureTelegramHtml,
     telegramMessageTextLimit,
 } from "../telegram/telegram-html.js";
-import { telegramLocales } from "../telegram/telegram-locales.js";
 import { formatPokerRoomTime } from "./poker-format.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import { pokerLocales } from "./poker-locales.js";
@@ -67,10 +66,7 @@ void describe("Poker access", () => {
         await bot.sendText(stranger, "/poker");
         await bot.sendText(stranger, `/start poker_${await readToken()}`);
 
-        assert.deepEqual(await bot.readMessageTexts(stranger.id), [
-            telegramLocales.en.unknown,
-            telegramLocales.en.welcome,
-        ]);
+        assert.deepEqual(await bot.readMessageTexts(stranger.id), []);
         assert.equal((await readRoom()).participants.length, 1);
     });
 

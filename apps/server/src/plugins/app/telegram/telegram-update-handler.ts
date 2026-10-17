@@ -219,7 +219,8 @@ export class TelegramUpdateHandler {
         }
 
         if (err instanceof UnhandledTelegramUpdateError) {
-            return this.replyUnknown(run);
+            await run.responder.answerPendingCallback();
+            return "unhandled";
         }
 
         if (err instanceof TelegramApiError && err.errorCode === 403) {
@@ -232,24 +233,6 @@ export class TelegramUpdateHandler {
 
         await this.reportError(run, err);
         return resultOfError(err);
-    }
-
-    private async replyUnknown(
-        run: TelegramUpdateRun,
-    ): Promise<TelegramUpdateResult> {
-        await run.responder.answerPendingCallback();
-
-        if (!run.update.message) {
-            return "unhandled";
-        }
-
-        try {
-            await run.responder.reply(this.translate(run)("telegram:unknown"));
-            return "unhandled";
-        } catch (err) {
-            await this.reportError(run, err);
-            return "error";
-        }
     }
 
     private async reportError(

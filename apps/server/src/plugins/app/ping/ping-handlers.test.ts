@@ -4,7 +4,6 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import { buildInvitesBot } from "../../../test/invites-bot.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
-import { telegramLocales } from "../telegram/telegram-locales.js";
 import { pingGrant } from "./ping-handlers.js";
 
 let databaseName!: string;
@@ -42,9 +41,6 @@ void describe("/ping", () => {
             );
         await bot.sendText(chat, "/ping");
 
-        assert.deepEqual(bot.readSentTexts(), [
-            telegramLocales.en.unknown,
-            "pong",
-        ]);
+        assert.deepEqual(bot.readSentTexts(), ["pong"]);
     });
 });

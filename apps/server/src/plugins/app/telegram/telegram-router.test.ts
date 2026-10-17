@@ -254,7 +254,7 @@ void describe("TelegramRouter", () => {
         await bot.sendText(buildTelegramPrivateChat({ id: 987654348 }), "hi");
 
         assert.deepEqual(calls, ["987654347"]);
-        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.unknown]);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("doesn't ask a predicate while a scene step handles the update", async (t) => {

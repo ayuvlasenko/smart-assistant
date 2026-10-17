@@ -7,6 +7,7 @@ import { TelegramContext } from "./telegram-context.js";
 import {
     assertTelegramDeepLinkName,
     parseTelegramDeepLink,
+    TelegramDeepLink,
 } from "./telegram-deep-links.js";
 import {
     BannedTelegramUserError,
@@ -82,6 +83,11 @@ interface TelegramDeepLinkRoute {
     handler: TelegramDeepLinkHandler;
     guard?: TelegramGuard;
     allowBanned: boolean;
+}
+
+interface TelegramDeepLinkMatch {
+    link: TelegramDeepLink;
+    route: TelegramDeepLinkRoute;
 }
 
 export class TelegramRouter {
@@ -222,13 +228,16 @@ export class TelegramRouter {
     }
 
     private async dispatchBanned(ctx: TelegramContext<Update>): Promise<void> {
-        const route = this.findDeepLink(ctx, { bannedOnly: true });
+        const deepLink = this.findDeepLink(ctx);
 
-        if (!route) {
+        if (
+            !deepLink?.route.allowBanned ||
+            !isAllowed(deepLink.route.guard, ctx.user)
+        ) {
             throw new BannedTelegramUserError();
         }
 
-        await runRoute(ctx, route);
+        await runRoute(ctx, deepLinkRouteOf(deepLink));
     }
 
     private async route(
@@ -247,10 +256,12 @@ export class TelegramRouter {
     private async findRoute(
         ctx: TelegramContext<Update>,
     ): Promise<TelegramRoute | undefined> {
-        const deepLink = this.findDeepLink(ctx, { bannedOnly: false });
+        const deepLink = this.findDeepLink(ctx);
 
         if (deepLink) {
-            return deepLink;
+            return isAllowed(deepLink.route.guard, ctx.user)
+                ? deepLinkRouteOf(deepLink)
+                : undefined;
         }
 
         const command = extractTelegramCommand(ctx.update);
@@ -272,33 +283,15 @@ export class TelegramRouter {
 
     private findDeepLink(
         ctx: TelegramContext<Update>,
-        { bannedOnly }: { bannedOnly: boolean },
-    ): TelegramRoute | undefined {
+    ): TelegramDeepLinkMatch | undefined {
         const command = extractTelegramCommand(ctx.update);
-
         const link =
             command?.name === "start"
                 ? parseTelegramDeepLink(command.payload)
                 : undefined;
         const route = link && this.deepLinkRoutes.get(link.name);
 
-        if (
-            !link ||
-            !route ||
-            (bannedOnly && !route.allowBanned) ||
-            !isAllowed(route.guard, ctx.user)
-        ) {
-            return;
-        }
-
-        return {
-            middlewares: route.middlewares,
-            handler: (routeCtx) =>
-                route.handler(
-                    routeCtx as TelegramContext<TelegramCommandMessageUpdate>,
-                    link.value,
-                ),
-        };
+        return link && route ? { link, route } : undefined;
     }
 
     private assertUnlocked(): void {
@@ -308,6 +301,20 @@ export class TelegramRouter {
             );
         }
     }
+}
+
+function deepLinkRouteOf({
+    link,
+    route,
+}: TelegramDeepLinkMatch): TelegramRoute {
+    return {
+        middlewares: route.middlewares,
+        handler: (ctx) =>
+            route.handler(
+                ctx as TelegramContext<TelegramCommandMessageUpdate>,
+                link.value,
+            ),
+    };
 }
 
 async function runRoute(

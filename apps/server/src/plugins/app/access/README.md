@@ -60,11 +60,11 @@ The `admin` grant is registered by this domain and gives `manage all`.
 
 All three answer from the same ability, at different boundaries.
 
-| Boundary                   | Call                                                                | On refusal                                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Telegram entry point       | `access.guard(action, "Report")`                                    | The command leaves the menu and answers like an unknown message; a button answers `telegram:forbidden`; a scene does not start. |
-| Service method that reads  | `access.accessibleBy(actor, action, "Report")` in the MongoDB query | The query returns only the documents the user may see, and nothing when the user has no rule for the subject.                   |
-| Service method that writes | `access.assert(actor, action, subject("Report", report))`           | CASL throws `ForbiddenError`; the update ends with an error reply.                                                              |
+| Boundary                   | Call                                                                | On refusal                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram entry point       | `access.guard(action, "Report")`                                    | The command leaves the menu and the bot stays silent on it, like on an unknown message; a button press gets an empty callback answer; a scene does not start. |
+| Service method that reads  | `access.accessibleBy(actor, action, "Report")` in the MongoDB query | The query returns only the documents the user may see, and nothing when the user has no rule for the subject.                                                 |
+| Service method that writes | `access.assert(actor, action, subject("Report", report))`           | CASL throws `ForbiddenError`; the update ends with an error reply.                                                                                            |
 
 A guard only shapes what the user can reach in the chat, so it checks the subject name: "may this user do the action on some reports". The service checks again, so the business logic stays safe when it is called from somewhere other than the bot, and it checks the documents themselves.
 

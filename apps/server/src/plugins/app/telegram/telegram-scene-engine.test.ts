@@ -101,7 +101,6 @@ void describe("TelegramSceneEngine inputs", () => {
             "Your age?",
             "Your nickname? Send /skip to leave it empty.",
             "Profile saved for Ada",
-            telegramLocales.en.unknown,
         ]);
     });
 
@@ -161,7 +160,6 @@ void describe("TelegramSceneEngine inputs", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Your name? Send /cancel to stop.",
             telegramLocales.en.sceneCancelled,
-            telegramLocales.en.unknown,
         ]);
     });
 
@@ -226,7 +224,6 @@ void describe("TelegramSceneEngine inputs", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Your name? Send /cancel to stop.",
             telegramLocales.en.error,
-            telegramLocales.en.unknown,
         ]);
     });
 
@@ -525,7 +522,6 @@ void describe("TelegramSceneEngine scenes", () => {
             "Counter main",
             "New label?",
             telegramLocales.en.error,
-            telegramLocales.en.unknown,
             "Count 1",
         ]);
     });
@@ -544,7 +540,6 @@ void describe("TelegramSceneEngine scenes", () => {
             "Counter main",
             "New label?",
             telegramLocales.en.error,
-            telegramLocales.en.unknown,
             "Count 101",
         ]);
     });
@@ -625,7 +620,6 @@ void describe("TelegramSceneEngine scenes", () => {
 
         assert.deepEqual(bot.readSentTexts(), [
             telegramLocales.en.nothingToCancel,
-            telegramLocales.en.unknown,
         ]);
         assert.equal(
             await bot.readSessionField(chat.id, "focus", focusSchema),
@@ -643,11 +637,7 @@ void describe("TelegramSceneEngine scenes", () => {
         await bot.pressButton(chat, "+1");
         await bot.sendText(chat, "Neo");
 
-        assert.deepEqual(bot.readSentTexts(), [
-            "Counter main",
-            "New label?",
-            telegramLocales.en.unknown,
-        ]);
+        assert.deepEqual(bot.readSentTexts(), ["Counter main", "New label?"]);
         assert.deepEqual(readAnswerTexts(bot), [
             undefined,
             undefined,
@@ -807,7 +797,6 @@ void describe("TelegramSceneEngine blocking scenes", () => {
             "Wizard 0",
             telegramLocales.en.sceneCancelled,
             "Counter main",
-            telegramLocales.en.unknown,
         ]);
         assert.deepEqual(
             bot.telegramApiService.editMessageReplyMarkup.mock.calls.map(
@@ -1073,7 +1062,7 @@ void describe("TelegramSceneEngine storage", () => {
             await bot.readSessionField(chat.id, "focus", focusSchema),
             undefined,
         );
-        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.unknown]);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("waits for a stale session lock until its TTL runs out", async (t) => {

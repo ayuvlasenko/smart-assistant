@@ -222,7 +222,7 @@ void describe("TelegramBotService commands on start", () => {
                 registerRoutes: (router) => {
                     router.command("help", async () => undefined, {
                         description: (translate) =>
-                            translate("telegram:unknown"),
+                            translate("telegram:nothingToCancel"),
                     });
                 },
             });
@@ -476,7 +476,8 @@ function buildMenuAppOptions(
         t,
         registerRoutes: (router) => {
             router.command("help", async () => undefined, {
-                description: (translate) => translate("telegram:unknown"),
+                description: (translate) =>
+                    translate("telegram:nothingToCancel"),
             });
             router.command("secret", async () => undefined, {
                 description: (translate) => translate("telegram:error"),
@@ -494,7 +495,7 @@ function buildExpectedCommands(language: Language) {
         },
         {
             command: "help",
-            description: telegramLocales[language].unknown,
+            description: telegramLocales[language].nothingToCancel,
         },
     ];
 }

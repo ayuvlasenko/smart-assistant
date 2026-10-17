@@ -89,7 +89,7 @@ void describe("Invites scenes", () => {
 
         await bot.sendText(chat, "/invites");
 
-        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.unknown]);
+        assert.deepEqual(bot.readSentTexts(), []);
         assert.equal(
             bot.telegramApiService.sendRichMessage.mock.callCount(),
             0,
@@ -162,9 +162,7 @@ void describe("Invites scenes", () => {
             telegramLocales.en.welcome,
             "pong",
         ]);
-        assert.deepEqual(readSentTextsTo(bot, outsider), [
-            telegramLocales.en.unknown,
-        ]);
+        assert.deepEqual(readSentTextsTo(bot, outsider), []);
         assert.ok(
             (await bot.readMessageTexts(admin.id)).at(-1)?.includes("1/3"),
         );

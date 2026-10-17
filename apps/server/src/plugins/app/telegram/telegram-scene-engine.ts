@@ -425,7 +425,6 @@ export class TelegramSceneEngine {
             !isAllowed(instance.scene.inputs[name]?.guard, ctx.user)
         ) {
             this.recordForbidden(ctx, instance.scene);
-            await ctx.notify(ctx.t("telegram:forbidden"));
             return;
         }
 
@@ -511,7 +510,7 @@ export class TelegramSceneEngine {
         this.telegramMetrics.recordButtonPress(action, "forbidden");
         ctx.log.info({ action }, "Telegram button is forbidden");
 
-        await ctx.answerCallbackQuery(ctx.t("telegram:forbidden"));
+        await ctx.answerCallbackQuery();
     }
 
     private recordPress(instance: TelegramSceneInstance, button: string): void {
