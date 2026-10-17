@@ -173,6 +173,40 @@ void describe("Telegram scene slots", () => {
         );
     });
 
+    void it("keeps the old message when Telegram refuses both the edit and the new message", async (t) => {
+        const bot = await buildCardBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654442 });
+        const tooLong = {
+            ok: false as const,
+            error_code: 400,
+            description: "Bad Request: message is too long",
+        };
+
+        await bot.sendText(chat, "/card");
+
+        bot.telegramApiService.editMessageText.mock.mockImplementationOnce(
+            async () => tooLong,
+        );
+        bot.telegramApiService.sendMessage.mock.mockImplementationOnce(
+            async () => tooLong,
+        );
+
+        await bot.pressButton(chat, "+1");
+        await bot.pressButton(chat, "+1");
+
+        assert.deepEqual(readDeletedMessageIds(bot), []);
+        assert.deepEqual(
+            bot.telegramApiService.editMessageText.mock.calls.map((call) => [
+                call.arguments[0].message_id,
+                call.arguments[0].text,
+            ]),
+            [
+                [1, "Count 1"],
+                [1, "Count 2"],
+            ],
+        );
+    });
+
     void it("treats an unchanged message as edited", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654436 });

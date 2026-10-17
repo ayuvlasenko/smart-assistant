@@ -432,7 +432,7 @@ A `scene` button runs a handler from `buttons` of the scene. An `input` button b
 2. With `undefined`, it deletes the old message and forgets the slot.
 3. With the same hash as before, it does nothing.
 4. Otherwise it edits the old message. `message is not modified` counts as a success.
-5. When the edit is not possible or fails, for example because the user deleted the message, it deletes the old message and sends a new one. A `media` message is never edited into text; a text message is edited into media only when Telegram accepts it.
+5. When the edit is not possible or fails, for example because the user deleted the message, it sends a new message and only then deletes the old one. When Telegram refuses the new message too, for example because the text is too long, the old message stays with its old content and the update fails. A `media` message is never edited into text; a text message is edited into media only when Telegram accepts it.
 
 A second `start` of a running scene sets `reshow`: the engine skips the hash check and sends the slot again as a new message at the bottom of the chat. Messages that a handler sends with `ctx.reply` come before the slot messages, because the slots render at the end.
 
