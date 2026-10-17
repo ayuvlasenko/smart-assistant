@@ -6,6 +6,7 @@ import { Env } from "../../env.js";
 export const autoConfig = (fastify: FastifyInstance): FastifyMongodbOptions => {
     return {
         forceClose: true,
+        monitorCommands: true,
         url: fastify.getDecorator<Env>("config").DATABASE_URL,
     };
 };

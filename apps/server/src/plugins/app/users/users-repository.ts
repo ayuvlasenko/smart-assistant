@@ -10,6 +10,11 @@ import { UserEntity, UserProfile } from "./user-entity.js";
 
 const optionalProfileFields = ["firstName", "username"] as const;
 
+export interface UserLookup {
+    user: UserEntity;
+    isCreated: boolean;
+}
+
 export class UsersRepository {
     readonly mongo: Required<FastifyMongoObject>;
 
@@ -59,8 +64,8 @@ export class UsersRepository {
     async findOneByTelegramIdOrCreate(
         data: Pick<UserEntity, "telegramId" | "isBanned"> & UserProfile,
         session?: ClientSession,
-    ): Promise<UserEntity> {
-        return (await this.mongo.db
+    ): Promise<UserLookup> {
+        const result = await this.mongo.db
             .collection<UserEntity>("users")
             .findOneAndUpdate(
                 { telegramId: data.telegramId },
@@ -78,8 +83,14 @@ export class UsersRepository {
                     session,
                     upsert: true,
                     returnDocument: "after",
+                    includeResultMetadata: true,
                 },
-            )) as UserEntity;
+            );
+
+        return {
+            user: result.value as UserEntity,
+            isCreated: !result.lastErrorObject?.updatedExisting,
+        };
     }
 
     async updateProfile(

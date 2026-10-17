@@ -162,6 +162,35 @@ void describe("Poker rooms", () => {
         );
     });
 
+    void it("counts the changes of a room and its size after a join", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655123 });
+        const member = buildTelegramPrivateChat({ id: 987655124 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.pressButton(member, "13");
+        await bot.telegramChats.idle();
+
+        const output = await bot.metrics.metrics();
+
+        for (const change of ["created", "joined", "voted"]) {
+            assert.match(
+                output,
+                new RegExp(
+                    `^poker_room_changes_total\\{change="${change}"\\} 1$`,
+                    "m",
+                ),
+            );
+        }
+
+        assert.match(output, /^poker_room_participants_sum 2$/m);
+        assert.match(
+            output,
+            /^telegram_delivery_duration_seconds_count\{kind="publish"\} [1-9]\d*$/m,
+        );
+    });
+
     void it("lets any participant reveal the cards and start the next round", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655131 });

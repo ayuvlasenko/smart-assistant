@@ -4,6 +4,8 @@ import {
     collectDefaultMetrics,
     Counter,
     type CounterConfiguration,
+    Gauge,
+    type GaugeConfiguration,
     Histogram,
     type HistogramConfiguration,
     Registry,
@@ -29,6 +31,12 @@ export class MetricsService {
         config: Omit<CounterConfiguration<TLabel>, "registers">,
     ): Counter<TLabel> {
         return new Counter({ ...config, registers: [this.registry] });
+    }
+
+    gauge<TLabel extends string>(
+        config: Omit<GaugeConfiguration<TLabel>, "registers">,
+    ): Gauge<TLabel> {
+        return new Gauge({ ...config, registers: [this.registry] });
     }
 
     histogram<TLabel extends string>(

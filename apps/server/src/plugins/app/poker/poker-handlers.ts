@@ -7,6 +7,7 @@ import {
     AccessSubjectName,
 } from "../access/access-service.js";
 import { I18nService } from "../i18n-service.js";
+import { MetricsService } from "../metrics-service.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
 import { TelegramChats } from "../telegram/telegram-chats.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
@@ -50,6 +51,17 @@ export default fp(
         );
         const events =
             fastify.getDecorator<Emittery<PokerEvents>>("eventEmitter");
+        const metrics = fastify.getDecorator<MetricsService>("metrics");
+        const roomChanges = metrics.counter({
+            name: "poker_room_changes_total",
+            help: "Changes of poker rooms by kind",
+            labelNames: ["change"],
+        });
+        const roomParticipants = metrics.histogram({
+            name: "poker_room_participants",
+            help: "Participants of a poker room right after a user joins it",
+            buckets: [2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 100],
+        });
 
         fastify
             .getDecorator<I18nService>("i18nService")
@@ -141,6 +153,12 @@ export default fp(
         );
 
         events.on("poker.roomChanged", ({ data }) => {
+            roomChanges.inc({ change: data.change });
+
+            if (data.change === "joined") {
+                roomParticipants.observe(data.userIds.length);
+            }
+
             telegramChats.publish([
                 pokerRoomTopic(data.roomId.toHexString()),
                 ...data.userIds.map((userId) =>
@@ -155,6 +173,7 @@ export default fp(
             "access-service",
             "emittery",
             "i18n-service",
+            "metrics",
             "poker-rooms-service",
             "telegram-bot-service",
             "telegram-chats",

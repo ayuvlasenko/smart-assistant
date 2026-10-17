@@ -274,6 +274,26 @@ void describe("TelegramBotService chat commands", () => {
         );
     });
 
+    void it("counts a set menu and an unchanged one", async (t) => {
+        const { metrics, telegramBotService } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+        const user = buildUserEntity({ telegramId: "987654609" });
+
+        await telegramBotService.syncCommands(user);
+        await telegramBotService.syncCommands(user);
+
+        const output = await metrics.metrics();
+
+        assert.match(
+            output,
+            /^telegram_command_menu_syncs_total\{result="set"\} 1$/m,
+        );
+        assert.match(
+            output,
+            /^telegram_command_menu_syncs_total\{result="unchanged"\} 1$/m,
+        );
+    });
+
     void it("sets the commands that the user's grants allow in the user's language for the chat", async (t) => {
         const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));

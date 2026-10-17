@@ -238,7 +238,10 @@ export class TelegramApiService {
             return result;
         }
 
-        stopRequest(result.error_code === 429 ? "rate_limited" : "error");
+        stopRequest(
+            result.error_code === 429 ? "rate_limited" : "error",
+            result.error_code,
+        );
         this.log.warn(
             {
                 method,

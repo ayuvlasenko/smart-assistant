@@ -556,7 +556,7 @@ async function createUser(
     grants: string[],
     isBanned = false,
 ): Promise<UserEntity> {
-    const user = await bot.usersRepository.findOneByTelegramIdOrCreate({
+    const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
         telegramId,
         isBanned,
         languageCode: "en",

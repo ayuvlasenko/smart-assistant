@@ -108,6 +108,30 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(entry?.updateId, 4242);
     });
 
+    void it("counts a user once, on the first update", async (t) => {
+        const { metrics, telegramUpdateHandler } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+            });
+        const chat = buildTelegramPrivateChat({ id: 987654324 });
+
+        for (const updateId of [1, 2]) {
+            await telegramUpdateHandler.handle(
+                buildTelegramTextMessageUpdate({
+                    update_id: updateId,
+                    message: { chat, text: "hello" },
+                }),
+            );
+        }
+
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_users_created_total 1$/m,
+        );
+    });
+
     void it("doesn't send pong for a newly created banned user", async (t) => {
         const { telegramApiService, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({

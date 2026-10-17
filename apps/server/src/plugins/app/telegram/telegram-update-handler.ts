@@ -145,11 +145,16 @@ export class TelegramUpdateHandler {
         telegramUser: User,
     ): Promise<UserEntity> {
         const languageCode = resolveLanguage(telegramUser.language_code);
-        const user = await this.usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: String(telegramUser.id),
-            isBanned: true,
-            ...readProfile(telegramUser, languageCode ?? defaultLanguage),
-        });
+        const { user, isCreated } =
+            await this.usersRepository.findOneByTelegramIdOrCreate({
+                telegramId: String(telegramUser.id),
+                isBanned: true,
+                ...readProfile(telegramUser, languageCode ?? defaultLanguage),
+            });
+
+        if (isCreated) {
+            this.telegramMetrics.recordUserCreated();
+        }
 
         run.log.info(
             { userId: user._id, isBanned: user.isBanned },
