@@ -36,7 +36,7 @@ export function renderSettingsList(view: SettingsView): TelegramMessageContent {
                 ),
             ]),
         ],
-        [...buttons, [scene.button(t("settings:hideButton"), "hide", null)]],
+        buttons,
     );
 }
 

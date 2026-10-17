@@ -87,10 +87,6 @@ export function createSettingsScene(
                     scene.state.setting = null;
                 },
             },
-            hide: {
-                value: settingsButtonValues.hide,
-                handle: (ctx, scene) => scene.end({ messages: "delete" }),
-            },
         },
         inputs: {
             number: {

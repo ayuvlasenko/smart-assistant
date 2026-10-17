@@ -12,7 +12,6 @@ export const settingsButtonValues = {
     open: Type.String(),
     choose: Type.String(),
     back: Type.Null(),
-    hide: Type.Null(),
 };
 
 export type SettingsState = Static<typeof settingsStateSchema>;
