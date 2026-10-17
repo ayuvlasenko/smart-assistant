@@ -1,5 +1,5 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient } from "mongodb";
+import { Db, MongoClient, ObjectId } from "mongodb";
 import assert from "node:assert/strict";
 import {
     after,
@@ -13,11 +13,15 @@ import { Env } from "../../../env.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    measureTelegramHtml,
+    telegramMessageTextLimit,
+} from "../telegram/telegram-html.js";
 import { telegramLocales } from "../telegram/telegram-locales.js";
 import { formatPokerRoomTime } from "./poker-format.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import { pokerLocales } from "./poker-locales.js";
-import { PokerRoomEntity } from "./poker-room-entity.js";
+import { PokerRoomEntity, PokerRound } from "./poker-room-entity.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
@@ -352,6 +356,31 @@ void describe("Poker rooms", () => {
         );
     });
 
+    void it("puts only the rounds that fit into one history message on a page", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655152 });
+
+        await createRoomThroughForm(bot, creator);
+        await seedHistory(30, 5);
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.historyButton);
+
+        const firstPage = await readRoomMessage(bot, creator);
+
+        assert.ok(measureTelegramHtml(firstPage) <= telegramMessageTextLimit);
+        assert.ok(firstPage.includes("#5"));
+        assert.ok(firstPage.includes("#4"));
+        assert.ok(!firstPage.includes("#3"));
+        assert.ok((await readCallbackTexts(bot, creator)).includes("1/3"));
+
+        await bot.pressButton(creator, "›");
+
+        const secondPage = await readRoomMessage(bot, creator);
+
+        assert.ok(secondPage.includes("#3"));
+        assert.ok(secondPage.includes("#2"));
+    });
+
     void it("shows a closed room to its creator as history only", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655161 });
@@ -435,6 +464,64 @@ async function readRoom(): Promise<PokerRoomEntity> {
     assert.ok(room);
 
     return room;
+}
+
+async function seedHistory(voters: number, rounds: number): Promise<void> {
+    const room = await readRoom();
+    const users = Array.from({ length: voters }, (_, index) => ({
+        _id: new ObjectId(),
+        version: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        telegramId: String(987656000 + index),
+        isBanned: false,
+        grants: [pokerJoinGrant],
+        languageCode: "en",
+        firstName: "Bartholomew Longname",
+        username: `participant_with_long_name_${String(index).padStart(3, "0")}`,
+    }));
+    const cards = ["1", "2", "3", "5", "8", "13"];
+    const votes = Object.fromEntries(
+        users.map((user, index) => [
+            user._id.toHexString(),
+            cards[index % cards.length] ?? "1",
+        ]),
+    );
+    const history: PokerRound[] = Array.from(
+        { length: rounds },
+        (_, index) => ({
+            number: index + 1,
+            status: "revealed",
+            votes,
+            startedAt: room.createdAt,
+            revealedAt: room.createdAt,
+        }),
+    );
+
+    await mongo.collection("users").insertMany(users);
+    await mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
+        { _id: room._id },
+        {
+            $push: {
+                participants: {
+                    $each: users.map((user, index) => ({
+                        userId: user._id,
+                        emoji: `${index}`,
+                        joinedAt: room.createdAt,
+                    })),
+                },
+            },
+            $set: {
+                rounds: history,
+                round: {
+                    number: rounds + 1,
+                    status: "voting",
+                    votes: {},
+                    startedAt: room.createdAt,
+                },
+            },
+        },
+    );
 }
 
 async function readToken(): Promise<string> {
