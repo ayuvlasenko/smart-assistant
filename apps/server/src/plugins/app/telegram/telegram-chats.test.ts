@@ -84,6 +84,36 @@ void describe("TelegramChats", () => {
         ]);
     });
 
+    void it("measures the recipients of a delivery and the time to update each of them", async (t) => {
+        const room = buildRoom([987654454, 987654455]);
+        const bot = await buildRoomBot(t, room);
+        const [ada, bob] = room.participantIds.map((id) =>
+            buildTelegramPrivateChat({ id }),
+        );
+
+        assert.ok(ada && bob);
+
+        await bot.sendText(ada, "/room");
+        await bot.sendText(bob, "/room");
+        await bot.pressButton(ada, "Vote");
+        await bot.telegramChats.idle();
+
+        const output = await bot.metrics.metrics();
+
+        assert.match(
+            output,
+            /^telegram_delivery_recipients_sum\{kind="deliver"\} 2$/m,
+        );
+        assert.match(
+            output,
+            /^telegram_delivery_duration_seconds_count\{kind="deliver"\} 2$/m,
+        );
+        assert.match(
+            output,
+            /^telegram_delivery_recipients_in_flight\{kind="deliver"\} 0$/m,
+        );
+    });
+
     void it("skips a participant without the scene", async (t) => {
         const room = buildRoom([987654452, 987654453]);
         const bot = await buildRoomBot(t, room);

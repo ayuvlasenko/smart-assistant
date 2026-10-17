@@ -469,7 +469,7 @@ async function createUser(
 ): Promise<UserEntity> {
     nextTelegramId += 1;
 
-    const user = await bot.usersRepository.findOneByTelegramIdOrCreate({
+    const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
         telegramId: String(nextTelegramId),
         isBanned: false,
         languageCode: "en",

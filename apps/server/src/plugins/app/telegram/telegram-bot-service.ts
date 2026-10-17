@@ -27,6 +27,7 @@ import {
 import { TelegramApiError } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
+import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
 
 type TelegramBotConfig = Pick<
@@ -66,6 +67,7 @@ export class TelegramBotService {
     private readonly cache: CacheService;
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
+    private readonly telegramMetrics: TelegramMetrics;
     private readonly config: TelegramBotConfig;
 
     constructor(
@@ -75,6 +77,7 @@ export class TelegramBotService {
         cache: CacheService,
         lockService: LockService,
         i18nService: I18nService,
+        telegramMetrics: TelegramMetrics,
         config: TelegramBotConfig,
     ) {
         this.log = log;
@@ -83,6 +86,7 @@ export class TelegramBotService {
         this.cache = cache;
         this.lockService = lockService;
         this.i18nService = i18nService;
+        this.telegramMetrics = telegramMetrics;
         this.config = config;
     }
 
@@ -180,6 +184,7 @@ export class TelegramBotService {
                 .digest("base64url");
 
             if ((await this.cache.get(key, Type.String())) === hash) {
+                this.telegramMetrics.recordCommandMenuSync("unchanged");
                 return;
             }
 
@@ -190,6 +195,7 @@ export class TelegramBotService {
             await this.cache.set(key, hash, {
                 ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
             });
+            this.telegramMetrics.recordCommandMenuSync("set");
 
             this.log.info(
                 {
@@ -199,6 +205,7 @@ export class TelegramBotService {
                 "Telegram chat commands set successfully",
             );
         } catch (err) {
+            this.telegramMetrics.recordCommandMenuSync("failed");
             this.log.error(
                 { err, userId: user._id },
                 "Failed to set telegram chat commands",
@@ -278,6 +285,7 @@ export default fp(
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<LockService>("lockService"),
             i18nService,
+            fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
             fastify.getDecorator<Env>("config"),
         );
 
@@ -306,6 +314,7 @@ export default fp(
             "i18n-service",
             "lock-service",
             "telegram-api-service",
+            "telegram-metrics",
             "telegram-router",
         ],
     },

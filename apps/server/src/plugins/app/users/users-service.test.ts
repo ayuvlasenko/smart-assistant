@@ -42,11 +42,12 @@ void describe("UsersService", () => {
                 },
             });
         const usersService = app.getDecorator<UsersService>("usersService");
-        const banned = await usersRepository.findOneByTelegramIdOrCreate({
-            telegramId: "987654901",
-            isBanned: true,
-            languageCode: "en",
-        });
+        const { user: banned } =
+            await usersRepository.findOneByTelegramIdOrCreate({
+                telegramId: "987654901",
+                isBanned: true,
+                languageCode: "en",
+            });
 
         const user = await usersService.grantAccess(banned._id, ["vip"]);
 

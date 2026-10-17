@@ -173,7 +173,7 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 
 **Problem.** A vote of one participant must redraw the room message of every other participant, and a closed or new room must redraw their room lists. A handler may not write to the sessions of other users.
 
-**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id and the ids of the creator and the participants, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the slot of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
+**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the slot of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
 
 **Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB:
 
@@ -195,6 +195,8 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 4. The background run takes the session lock of each of the other two participants, loads the room again and edits their slots.
 
 **Edge cases.** The redraw reads the room under the session lock of each participant, after the lock is free. When several votes come while an edit waits for the rate limiter, the next redraw already shows all of them, and the redraws after it find the same content hash and call no API. So each chat gets at most about one edit per second, whatever the number of votes. Two large active rooms can still reach the limit of the bot, see `docs/backlog/background-delivery-waits-for-rate-limit-under-session-lock.md`.
+
+**Metrics.** `poker-handlers.ts` counts every event in `poker_room_changes_total{change}`, such as `created`, `joined` or `voted`, and observes the number of participants after each join in `poker_room_participants`.
 
 ## The round summary
 

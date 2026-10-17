@@ -1,7 +1,7 @@
 import { Update } from "@grammyjs/types";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Counter, Histogram } from "prom-client";
+import { Counter, Gauge, Histogram } from "prom-client";
 import { MetricsService } from "../metrics-service.js";
 import { type TelegramApiPriority } from "./telegram-api-service.js";
 import { extractTelegramUpdateType } from "./telegram-extractors.js";
@@ -40,15 +40,24 @@ export type TelegramButtonResult = "handled" | "expired" | "forbidden";
 export type TelegramApiResult =
     "ok" | "error" | "rate_limited" | "network_error" | "aborted";
 
+export type TelegramDeliveryKind = "publish" | "deliver";
+
+export type TelegramCommandMenuSync = "unchanged" | "set" | "failed";
+
 export class TelegramMetrics {
     private readonly updates: Counter<"type" | "result">;
     private readonly updateDuration: Histogram<"type">;
     private readonly sceneEvents: Counter<"scene" | "event">;
     private readonly buttonPresses: Counter<"action" | "result">;
-    private readonly apiRequests: Counter<"method" | "result">;
+    private readonly apiRequests: Counter<"method" | "result" | "error_code">;
     private readonly apiRequestDuration: Histogram<"method">;
     private readonly rateLimitWait: Histogram<"method" | "priority">;
     private readonly retryAfter: Histogram<"method">;
+    private readonly recipientsInFlight: Gauge<"kind">;
+    private readonly deliveryRecipients: Histogram<"kind">;
+    private readonly deliveryDuration: Histogram<"kind">;
+    private readonly commandMenuSyncs: Counter<"result">;
+    private readonly usersCreated: Counter;
 
     constructor(metrics: MetricsService) {
         this.updates = metrics.counter({
@@ -73,8 +82,8 @@ export class TelegramMetrics {
         });
         this.apiRequests = metrics.counter({
             name: "telegram_api_requests_total",
-            help: "Telegram Bot API requests by method and result",
-            labelNames: ["method", "result"],
+            help: "Telegram Bot API requests by method, result and Bot API error code",
+            labelNames: ["method", "result", "error_code"],
         });
         this.apiRequestDuration = metrics.histogram({
             name: "telegram_api_request_duration_seconds",
@@ -92,6 +101,32 @@ export class TelegramMetrics {
             help: "retry_after of Telegram Bot API responses with error 429",
             labelNames: ["method"],
             buckets: [1, 2, 5, 10, 30, 60, 300, 3600],
+        });
+        this.recipientsInFlight = metrics.gauge({
+            name: "telegram_delivery_recipients_in_flight",
+            help: "Users whose background update has started and not finished",
+            labelNames: ["kind"],
+        });
+        this.deliveryRecipients = metrics.histogram({
+            name: "telegram_delivery_recipients",
+            help: "Users that one publish or deliver run updates",
+            labelNames: ["kind"],
+            buckets: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+        });
+        this.deliveryDuration = metrics.histogram({
+            name: "telegram_delivery_duration_seconds",
+            help: "Time to update one user in a background run, with the wait for the session lock",
+            labelNames: ["kind"],
+            buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60],
+        });
+        this.commandMenuSyncs = metrics.counter({
+            name: "telegram_command_menu_syncs_total",
+            help: "Chat command menu syncs by result",
+            labelNames: ["result"],
+        });
+        this.usersCreated = metrics.counter({
+            name: "telegram_users_created_total",
+            help: "Users created by their first Telegram update",
         });
     }
 
@@ -113,12 +148,18 @@ export class TelegramMetrics {
         this.buttonPresses.inc({ action, result });
     }
 
-    startApiRequest(method: string): (result: TelegramApiResult) => void {
+    startApiRequest(
+        method: string,
+    ): (result: TelegramApiResult, errorCode?: number) => void {
         const stopTimer = this.apiRequestDuration.startTimer({ method });
 
-        return (result) => {
+        return (result, errorCode) => {
             stopTimer();
-            this.apiRequests.inc({ method, result });
+            this.apiRequests.inc({
+                method,
+                result,
+                error_code: errorCode === undefined ? "" : String(errorCode),
+            });
         };
     }
 
@@ -132,6 +173,32 @@ export class TelegramMetrics {
 
     recordRetryAfter(method: string, seconds: number): void {
         this.retryAfter.observe({ method }, seconds);
+    }
+
+    recordDeliveryRecipients(
+        kind: TelegramDeliveryKind,
+        recipients: number,
+    ): void {
+        this.deliveryRecipients.observe({ kind }, recipients);
+    }
+
+    startRecipientDelivery(kind: TelegramDeliveryKind): () => void {
+        const stopTimer = this.deliveryDuration.startTimer({ kind });
+
+        this.recipientsInFlight.inc({ kind });
+
+        return () => {
+            stopTimer();
+            this.recipientsInFlight.dec({ kind });
+        };
+    }
+
+    recordCommandMenuSync(result: TelegramCommandMenuSync): void {
+        this.commandMenuSyncs.inc({ result });
+    }
+
+    recordUserCreated(): void {
+        this.usersCreated.inc();
     }
 }
 

@@ -56,7 +56,7 @@ Keep a README in line with the code you change. A README explains how a mechanis
 - Each domain lives in `plugins/app/<domain>/` with its services, repositories, entities, schemas, scenes, steps and tests. Keep exactly one level: no subdirectories inside a domain and no `index.ts`.
 - A service or repository file exports its class and registers it as a plugin with `export default fp(...)`. Only plugin files use `export default`; every other file uses named exports, because autoload loads any default-exported plugin.
 - `plugins/app/telegram/` holds the Telegram transport and the scene engine. It does not import feature domains; a domain registers its own scenes and commands through the Telegram router.
-- Shared infrastructure (`cache-service.ts`, `lock-service.ts` with `lock-errors.ts`, `rate-limiter.ts` with `rate-limit-queue.ts`, `app-logger.ts`, `metrics-service.ts`, `unhandled-rejection-reporter.ts`) stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
+- Shared infrastructure (`cache-service.ts`, `lock-service.ts` with `lock-errors.ts`, `rate-limiter.ts` with `rate-limit-queue.ts`, `app-logger.ts`, `metrics-service.ts` with `http-metrics.ts` and `mongo-metrics.ts`, `unhandled-rejection-reporter.ts`) stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
 - The env schema and its `Env` type stay in `src/env.ts`. Any other schema stays in the single file that uses it, or in `<domain>-schemas.ts` when several files of a domain use it.
 
 ### Files

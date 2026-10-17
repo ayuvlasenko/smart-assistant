@@ -111,6 +111,11 @@ export class TelegramChats {
         targets: TelegramSceneTarget[],
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
+        this.telegramMetrics.recordDeliveryRecipients(
+            "deliver",
+            targets.length,
+        );
+
         const results = await Promise.allSettled(
             targets.map((target) => this.deliverTo(scene, target, handle)),
         );
@@ -138,23 +143,35 @@ export class TelegramChats {
         target: TelegramSceneTarget,
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
-        await this.withUser(target.userId, { scene: scene.name }, (ctx) =>
-            this.sceneEngine.deliver(ctx, scene, target.key, async (control) =>
-                handle?.(ctx, control),
-            ),
-        );
+        const finishRecipient =
+            this.telegramMetrics.startRecipientDelivery("deliver");
+
+        try {
+            await this.withUser(target.userId, { scene: scene.name }, (ctx) =>
+                this.sceneEngine.deliver(
+                    ctx,
+                    scene,
+                    target.key,
+                    async (control) => handle?.(ctx, control),
+                ),
+            );
+        } finally {
+            finishRecipient();
+        }
     }
 
     private async publishAll(topics: string[]): Promise<void> {
         try {
             const watchers = [...(await this.findWatchers(topics))];
+
+            this.telegramMetrics.recordDeliveryRecipients(
+                "publish",
+                watchers.length,
+            );
+
             const results = await Promise.allSettled(
                 watchers.map(([userId, scenes]) =>
-                    this.withUser(userId, { topics }, async (ctx) => {
-                        for (const { sceneId } of scenes) {
-                            await this.sceneEngine.redraw(ctx, sceneId, topics);
-                        }
-                    }),
+                    this.redrawFor(userId, scenes, topics),
                 ),
             );
 
@@ -197,6 +214,25 @@ export class TelegramChats {
                 ),
             ]),
         );
+    }
+
+    private async redrawFor(
+        userId: number,
+        scenes: TelegramSceneRef[],
+        topics: string[],
+    ): Promise<void> {
+        const finishRecipient =
+            this.telegramMetrics.startRecipientDelivery("publish");
+
+        try {
+            await this.withUser(userId, { topics }, async (ctx) => {
+                for (const { sceneId } of scenes) {
+                    await this.sceneEngine.redraw(ctx, sceneId, topics);
+                }
+            });
+        } finally {
+            finishRecipient();
+        }
     }
 
     private recordPublishFailure(

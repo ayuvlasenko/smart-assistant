@@ -8,7 +8,7 @@ import { AccessControl, AccessService } from "../access/access-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { PokerDeckName, readPokerDeck } from "./poker-decks.js";
-import { PokerEvents } from "./poker-events.js";
+import { PokerEvents, PokerRoomChange } from "./poker-events.js";
 import {
     listActivePokerParticipants,
     PokerParticipant,
@@ -127,7 +127,7 @@ export class PokerRoomsService {
 
         const room = await this.pokerRoomsRepository.create(data, now);
 
-        await this.emitChanged(room);
+        await this.emitChanged(room, "created");
 
         return room;
     }
@@ -169,7 +169,7 @@ export class PokerRoomsService {
             );
 
             if (joined) {
-                await this.emitChanged(joined);
+                await this.emitChanged(joined, "joined");
 
                 return { status: "joined", room: joined };
             }
@@ -240,7 +240,7 @@ export class PokerRoomsService {
             return (await this.reveal(actor, voted, round)) ?? voted;
         }
 
-        await this.emitChanged(voted);
+        await this.emitChanged(voted, "voted");
 
         return voted;
     }
@@ -255,7 +255,7 @@ export class PokerRoomsService {
         );
 
         if (revealed) {
-            await this.emitChanged(revealed);
+            await this.emitChanged(revealed, "revealed");
         }
 
         return revealed;
@@ -272,7 +272,7 @@ export class PokerRoomsService {
         );
 
         if (started) {
-            await this.emitChanged(started);
+            await this.emitChanged(started, "roundStarted");
         }
 
         return started;
@@ -289,7 +289,7 @@ export class PokerRoomsService {
         );
 
         if (renamed) {
-            await this.emitChanged(renamed);
+            await this.emitChanged(renamed, "roundRenamed");
         }
 
         return renamed;
@@ -308,7 +308,7 @@ export class PokerRoomsService {
         });
 
         if (closed) {
-            await this.emitChanged(closed);
+            await this.emitChanged(closed, "closed");
         }
 
         return closed;
@@ -329,9 +329,13 @@ export class PokerRoomsService {
         };
     }
 
-    private async emitChanged(room: PokerRoomEntity): Promise<void> {
+    private async emitChanged(
+        room: PokerRoomEntity,
+        change: PokerRoomChange,
+    ): Promise<void> {
         await this.eventEmitter.emit("poker.roomChanged", {
             roomId: room._id,
+            change,
             userIds: [
                 room.createdBy,
                 ...room.participants
