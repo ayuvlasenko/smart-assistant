@@ -40,7 +40,7 @@ interface TelegramUpdateRun {
     language: Language;
 }
 
-const updateClaimTtlMilliseconds = 24 * 60 * 60 * 1000;
+const updateClaimTtlMilliseconds = 60 * 60 * 1000;
 
 export class TelegramUpdateHandler {
     private readonly log: FastifyBaseLogger;
@@ -120,7 +120,7 @@ export class TelegramUpdateHandler {
             throw new TelegramUpdateWithoutUserError();
         }
 
-        const user = await this.resolveUser(telegramUser);
+        const user = await this.resolveUser(run, telegramUser);
 
         run.language = user.languageCode;
 
@@ -140,7 +140,10 @@ export class TelegramUpdateHandler {
         }
     }
 
-    private async resolveUser(telegramUser: User): Promise<UserEntity> {
+    private async resolveUser(
+        run: TelegramUpdateRun,
+        telegramUser: User,
+    ): Promise<UserEntity> {
         const languageCode = resolveLanguage(telegramUser.language_code);
         const user = await this.usersRepository.findOneByTelegramIdOrCreate({
             telegramId: String(telegramUser.id),
@@ -148,7 +151,7 @@ export class TelegramUpdateHandler {
             ...readProfile(telegramUser, languageCode ?? defaultLanguage),
         });
 
-        this.log.info(
+        run.log.info(
             { userId: user._id, isBanned: user.isBanned },
             "User for update",
         );

@@ -107,6 +107,19 @@ void describe("TelegramApiService", () => {
         );
     });
 
+    void it("records the rate limiter wait of setMyCommands", async (t) => {
+        const { metrics, telegramApiService } = await buildApiService(t, [
+            { ok: true, result: true },
+        ]);
+
+        await telegramApiService.setMyCommands({ commands: [] });
+
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_rate_limit_wait_seconds_count\{method="setMyCommands",priority="interactive"\} 1$/m,
+        );
+    });
+
     void it("waits for retry_after and repeats a request that got a 429", async (t) => {
         const { fetch, metrics, telegramApiService } = await buildApiService(
             t,
