@@ -39,6 +39,7 @@ After the first push of a pull request, wait for the CI `deploy` job with `gh pr
 - `apps/server/src/plugins/app/access/README.md`: the permission model and how to add a permission to a domain.
 - `apps/server/src/plugins/app/invites/README.md`: invites, their activation and the bootstrap of the first admin.
 - `apps/server/src/plugins/app/poker/README.md`: planning poker rooms, their conditional updates, idle participants and the round summary.
+- `apps/server/src/plugins/app/settings/README.md`: settings that an admin changes in `/settings`, how a domain registers one and how the pods read it.
 - `docs/backlog/`: known problems that are not being fixed now, one file per item.
 
 Keep a README in line with the code you change. A README explains how a mechanism works and why; this file keeps only the rules. Follow the `write-docs` skill in `.agents/skills/` when you write or restructure documentation; `.claude/skills` links to the same folder.

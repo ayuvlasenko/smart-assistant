@@ -1,6 +1,4 @@
-import accessPlugin, {
-    AccessService,
-} from "../plugins/app/access/access-service.js";
+import { AccessService } from "../plugins/app/access/access-service.js";
 import pokerHandlersPlugin from "../plugins/app/poker/poker-handlers.js";
 import pokerRoomsRepositoryPlugin, {
     PokerRoomsRepository,
@@ -26,7 +24,6 @@ export async function buildPokerBot(
     const bot = await buildTelegramSceneBot({
         ...options,
         plugins: [
-            accessPlugin,
             pokerRoomsRepositoryPlugin,
             pokerRoomsServicePlugin,
             pokerHandlersPlugin,

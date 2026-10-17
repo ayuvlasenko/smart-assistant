@@ -143,6 +143,11 @@ export default fp(
                     return;
                 }
 
+                if (result.status === "full") {
+                    await ctx.reply(ctx.t("poker:roomFull"));
+                    return;
+                }
+
                 await sceneEngine.start(
                     ctx,
                     roomScene,

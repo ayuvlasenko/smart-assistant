@@ -33,7 +33,7 @@ The `admin` grant is registered by this domain and gives `manage all`.
 
 1. On start, every domain plugin calls `access.register(section)`. The service keeps the sections in order for the invite form, and the grants in a map by name. A second section or grant with the same name stops the start.
 2. A call of `can`, `assert`, `accessibleBy` or a guard asks for the ability of the user object.
-3. For a user without a ban, the service creates one `AbilityBuilder` and calls `define(builder, user)` of every grant in `user.grants`. Each grant adds its `can` and `cannot` rules to the same builder. A banned user gets no rules at all.
+3. For a user without a ban, the service creates one `AbilityBuilder` and calls `define(builder, user)` of every grant in `user.grants` and in the [default grants](#default-grants). Each grant adds its `can` and `cannot` rules to the same builder. A banned user gets no rules at all.
 4. The service builds the ability and keeps it in a `WeakMap` by the user object.
 
 **Edge cases.** The update handler loads the user once per update, so one update builds one ability. A user whose grants changed gets a new ability on the next update, because the next update loads a new user object. A grant name that no domain registers any more is skipped, so a removed feature does not break the users who still hold its grant. `subjects<M>()` returns the same object for every domain: the type parameter only narrows what the compiler accepts, and the ability itself covers every subject.
@@ -41,6 +41,20 @@ The `admin` grant is registered by this domain and gives `manage all`.
 ## Bans and grants
 
 `isBanned` is not a grant. It is the gate in front of the bot: a banned user reaches only the deep links registered with `allowBanned`, such as an invite link. A banned user also gets an empty ability, even when the user still holds grants: a write on behalf of a banned user throws `ForbiddenError`, and a read through `accessibleBy` returns nothing. Lifting the ban keeps the grants the user had before.
+
+## Default grants
+
+**Problem.** An open bot gives every user some grants, such as `poker.create`, without an invite. Writing them into every user document would leave the old users without a grant added later, and a grant removed from the defaults would stay with everybody who came before.
+
+**Idea.** The default grants are not stored in the users. `access-default-grants.ts` registers the setting `access.defaultGrants`, and `AccessService` adds its value to the grants of every user without a ban when it builds the ability. An admin picks the grants in `/settings`, see [Settings](../settings/README.md).
+
+**Walk-through.**
+
+1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` a function that reads the setting.
+2. An update loads the user and asks a guard. The service builds the ability from `user.grants` together with the default grants, so the new defaults apply from the next update of every user.
+3. `admin` never comes from the defaults: the menu does not offer it, and the service drops it when it reads the setting.
+
+**Edge cases.** A banned user gets no default grants, like no other grant. `holds` looks only at `user.grants`, so a user cannot hand a default grant to somebody else through an invite and make it permanent. A grant that a deploy removed falls out of the setting when the setting is read.
 
 ## Guard, accessibleBy and assert
 

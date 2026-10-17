@@ -37,6 +37,11 @@ export interface PokerRoundTarget extends PokerRoomTarget {
     roundNumber: number;
 }
 
+export interface PokerJoinLimits {
+    isEmojiFree: boolean;
+    maxParticipants: number;
+}
+
 const bump = { $inc: { version: 1 } };
 
 export class PokerRoomsRepository {
@@ -91,7 +96,7 @@ export class PokerRoomsRepository {
     join(
         token: string,
         participant: PokerParticipant,
-        isEmojiFree: boolean,
+        { isEmojiFree, maxParticipants }: PokerJoinLimits,
     ): Promise<PokerRoomEntity | null> {
         const now = participant.joinedAt;
 
@@ -100,6 +105,7 @@ export class PokerRoomsRepository {
                 token,
                 ...statusFilter("open", now),
                 "participants.userId": { $ne: participant.userId },
+                [`participants.${maxParticipants - 1}`]: { $exists: false },
                 ...(isEmojiFree
                     ? { "participants.emoji": { $ne: participant.emoji } }
                     : {}),

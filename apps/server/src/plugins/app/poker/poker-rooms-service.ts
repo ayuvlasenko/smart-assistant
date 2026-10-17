@@ -3,12 +3,20 @@ import Emittery from "emittery";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { AccessControl, AccessService } from "../access/access-service.js";
+import {
+    NumberSetting,
+    SettingsService,
+} from "../settings/settings-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { PokerDeckName, readPokerDeck } from "./poker-decks.js";
 import { PokerEvents, PokerRoomChange } from "./poker-events.js";
+import {
+    pickPokerParticipantEmoji,
+    pokerParticipantEmojis,
+} from "./poker-participant-emojis.js";
 import {
     listActivePokerParticipants,
     PokerParticipant,
@@ -31,7 +39,8 @@ export interface PokerRoomDraft {
 export type PokerJoinResult =
     | { status: "joined" | "alreadyJoined"; room: PokerRoomEntity }
     | { status: "notFound" }
-    | { status: "closed" };
+    | { status: "closed" }
+    | { status: "full" };
 
 export interface PokerRoomsPageRequest {
     status: PokerRoomStatus;
@@ -46,64 +55,34 @@ export interface PokerRoomsPage {
 
 const roomTokenBytes = 16;
 
-const participantEmojis = [
-    "🦊",
-    "🐼",
-    "🐙",
-    "🐻",
-    "🐸",
-    "🦉",
-    "🐨",
-    "🐧",
-    "🐯",
-    "🦁",
-    "🐮",
-    "🐷",
-    "🐵",
-    "🐰",
-    "🐹",
-    "🐶",
-    "🐱",
-    "🐭",
-    "🦄",
-    "🐝",
-    "🦋",
-    "🐢",
-    "🦖",
-    "🐳",
-    "🐬",
-    "🦀",
-    "🦔",
-    "🦦",
-    "🦥",
-    "🦩",
-    "🦜",
-    "🐿️",
-    "🦘",
-    "🦒",
-    "🦓",
-    "🐘",
-    "🦛",
-    "🐊",
-    "🦭",
-    "🐌",
-];
+export const pokerMaxParticipantsSetting: NumberSetting = {
+    kind: "number",
+    name: "poker.maxParticipants",
+    title: (t) => t("poker:maxParticipantsSetting"),
+    emoji: "👥",
+    defaultValue: 40,
+    min: 2,
+    max: 100,
+};
 
 export class PokerRoomsService {
     private readonly pokerRoomsRepository: PokerRoomsRepository;
     private readonly usersRepository: UsersRepository;
     private readonly access: AccessControl<PokerSubjects>;
+    private readonly settingsService: SettingsService;
     private readonly eventEmitter: Emittery<PokerEvents>;
 
     constructor(
         pokerRoomsRepository: PokerRoomsRepository,
         usersRepository: UsersRepository,
         access: AccessControl<PokerSubjects>,
+        settingsService: SettingsService,
         eventEmitter: Emittery<PokerEvents>,
     ) {
         this.pokerRoomsRepository = pokerRoomsRepository;
         this.usersRepository = usersRepository;
         this.access = access;
+        this.settingsService = settingsService;
         this.eventEmitter = eventEmitter;
     }
 
@@ -119,7 +98,11 @@ export class PokerRoomsService {
             deck: draft.deck,
             autoReveal: draft.autoReveal,
             participants: [
-                { userId: actor._id, emoji: pickEmoji([]), joinedAt: now },
+                {
+                    userId: actor._id,
+                    emoji: pickPokerParticipantEmoji([]),
+                    joinedAt: now,
+                },
             ],
         };
 
@@ -135,7 +118,7 @@ export class PokerRoomsService {
     async join(actor: UserEntity, token: string): Promise<PokerJoinResult> {
         for (
             let attempt = 0;
-            attempt <= participantEmojis.length;
+            attempt <= pokerParticipantEmojis.length;
             attempt += 1
         ) {
             const room = await this.pokerRoomsRepository.findOneByToken(token);
@@ -156,16 +139,27 @@ export class PokerRoomsService {
                 return { status: "closed" };
             }
 
+            const maxParticipants = this.settingsService.read(
+                pokerMaxParticipantsSetting,
+            );
+
+            if (room.participants.length >= maxParticipants) {
+                return { status: "full" };
+            }
+
             const taken = room.participants.map(({ emoji }) => emoji);
             const participant: PokerParticipant = {
                 userId: actor._id,
-                emoji: pickEmoji(taken),
+                emoji: pickPokerParticipantEmoji(taken),
                 joinedAt: now,
             };
             const joined = await this.pokerRoomsRepository.join(
                 token,
                 participant,
-                taken.length < participantEmojis.length,
+                {
+                    isEmojiFree: taken.length < pokerParticipantEmojis.length,
+                    maxParticipants,
+                },
             );
 
             if (joined) {
@@ -346,13 +340,6 @@ export class PokerRoomsService {
     }
 }
 
-function pickEmoji(taken: string[]): string {
-    const free = participantEmojis.filter((emoji) => !taken.includes(emoji));
-    const pool = free.length ? free : participantEmojis;
-
-    return pool[randomInt(pool.length)] ?? "🙂";
-}
-
 function findParticipant(
     room: PokerRoomEntity,
     userId: ObjectId,
@@ -373,6 +360,15 @@ function hasEveryoneVoted(room: PokerRoomEntity): boolean {
 
 export default fp(
     async function (fastify: FastifyInstance) {
+        const settingsService =
+            fastify.getDecorator<SettingsService>("settingsService");
+
+        settingsService.register({
+            name: "poker",
+            title: (t) => t("poker:section"),
+            settings: [pokerMaxParticipantsSetting],
+        });
+
         fastify.decorate(
             "pokerRoomsService",
             new PokerRoomsService(
@@ -383,6 +379,7 @@ export default fp(
                 fastify
                     .getDecorator<AccessService>("accessService")
                     .subjects<PokerSubjects>(),
+                settingsService,
                 fastify.getDecorator<Emittery<PokerEvents>>("eventEmitter"),
             ),
         );
@@ -393,6 +390,7 @@ export default fp(
             "access-service",
             "emittery",
             "poker-rooms-repository",
+            "settings-service",
             "users-repository",
         ],
     },

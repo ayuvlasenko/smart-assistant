@@ -26,8 +26,11 @@ import {
     buildTelegramSceneBot,
     TelegramSceneBot,
 } from "../../../test/telegram-scene-bot.js";
+import { buildUserEntity } from "../../../test/user-fixtures.js";
+import { adminGrant } from "../access/access-service.js";
 import { Language } from "../i18n-service.js";
 import { UsersRepository } from "../users/users-repository.js";
+import { autoBanSetting } from "../users/users-service.js";
 import { telegramApiScope } from "./telegram-api-service.js";
 import { text } from "./telegram-filters.js";
 import { telegramLocales } from "./telegram-locales.js";
@@ -48,6 +51,7 @@ before(async () => {
 
 beforeEach(async () => {
     await mongo.collection("users").deleteMany({});
+    await mongo.collection("settings").deleteMany({});
 });
 
 after(async () => {
@@ -130,6 +134,33 @@ void describe("TelegramUpdateHandler", () => {
             await metrics.metrics(),
             /^telegram_users_created_total 1$/m,
         );
+    });
+
+    void it("creates a user without a ban when the auto ban is off", async (t) => {
+        const { settingsService, telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+            });
+
+        await settingsService.write(
+            buildUserEntity({ grants: [adminGrant] }),
+            autoBanSetting,
+            false,
+        );
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654325 }),
+                    text: "hello",
+                },
+            }),
+        );
+
+        const user = await usersRepository.findOneByTelegramId("987654325");
+
+        assert.equal(user?.isBanned, false);
     });
 
     void it("doesn't send pong for a newly created banned user", async (t) => {
