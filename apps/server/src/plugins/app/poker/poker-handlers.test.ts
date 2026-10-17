@@ -53,6 +53,7 @@ const en = pokerLocales.en;
 interface KeyboardButton {
     text: string;
     style?: string;
+    copy_text?: { text: string };
 }
 
 void describe("Poker access", () => {
@@ -131,7 +132,14 @@ void describe("Poker rooms", () => {
             (await readRoomKeyboard(bot, creator))
                 .slice(1)
                 .map((row) => row.map(({ text }) => text)),
-            [[revealLabel(0, 1)], [en.inviteButton, en.moreButton]],
+            [[revealLabel(0, 1)], [en.copyLinkButton, en.moreButton]],
+        );
+        assert.match(
+            (await readRoomKeyboard(bot, creator)).at(-1)?.[0]?.copy_text
+                ?.text ?? "",
+            new RegExp(
+                `^https://t\\.me/\\w+\\?start=poker_${await readToken()}$`,
+            ),
         );
     });
 
