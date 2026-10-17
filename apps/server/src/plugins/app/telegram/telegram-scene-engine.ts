@@ -282,7 +282,7 @@ export class TelegramSceneEngine {
             "Telegram scene is blocked",
         );
 
-        await ctx.reply(this.blockedText(ctx, blocker, nextTitle));
+        await ctx.notify(this.blockedText(ctx, blocker, nextTitle));
     }
 
     private blockedText(
@@ -425,7 +425,7 @@ export class TelegramSceneEngine {
             !isAllowed(instance.scene.inputs[name]?.guard, ctx.user)
         ) {
             this.recordForbidden(ctx, instance.scene);
-            await ctx.reply(ctx.t("telegram:forbidden"));
+            await ctx.notify(ctx.t("telegram:forbidden"));
             return;
         }
 
@@ -439,7 +439,7 @@ export class TelegramSceneEngine {
         const focused = await this.focusedInput(ctx);
 
         if (focused && focused.id !== instance.id) {
-            await ctx.reply(ctx.t("telegram:inputBusy"));
+            await ctx.notify(ctx.t("telegram:inputBusy"));
             return;
         }
 

@@ -123,15 +123,15 @@ void describe("Telegram guards on scenes", () => {
         assert.deepEqual(readEditedTexts(bot), []);
     });
 
-    void it("refuses to ask a guarded input", async (t) => {
+    void it("refuses to ask a guarded input in the answer to the press", async (t) => {
         const bot = await buildGuardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654506 });
 
         await bot.sendText(chat, "/card");
         await bot.pressButton(chat, "Note");
 
-        assert.deepEqual(bot.readSentTexts(), [
-            "Card 0",
+        assert.deepEqual(bot.readSentTexts(), ["Card 0"]);
+        assert.deepEqual(readCallbackAnswers(bot), [
             telegramLocales.en.forbidden,
         ]);
     });
