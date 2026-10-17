@@ -7,7 +7,6 @@ const en = {
     off: "off",
     none: "none",
     numberPrompt: "Send a whole number, or /cancel to stop.",
-    hideButton: "✖️ Hide",
     backButton: "‹ Back",
 } as const;
 
@@ -20,7 +19,6 @@ export const settingsLocales: Locales<typeof en> = {
         off: "вимкнено",
         none: "немає",
         numberPrompt: "Надішліть ціле число або /cancel, щоб зупинитися.",
-        hideButton: "✖️ Сховати",
         backButton: "‹ Назад",
     },
     ru: {
@@ -30,7 +28,6 @@ export const settingsLocales: Locales<typeof en> = {
         off: "выключено",
         none: "нет",
         numberPrompt: "Отправьте целое число или /cancel, чтобы остановиться.",
-        hideButton: "✖️ Скрыть",
         backButton: "‹ Назад",
     },
 };

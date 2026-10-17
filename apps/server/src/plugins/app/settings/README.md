@@ -78,7 +78,7 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 
 ## The menu
 
-`/settings` starts the `settings` scene with the key `settings` and the guard `update Setting`, so only an admin sees the command. One slot shows every section with the value of each setting and under it one button per setting, each in its own row and named with the setting's `emoji` and title, then `✖️ Hide`. A flag switches at once with `toggle`; a number asks for a whole number and asks again while it is out of the range, then calls `write`; choices open a second screen with a checkbox per option and `‹ Back`, and each checkbox calls `toggleChoice`. Every change puts the stored value into the snapshot, so the screen shows what MongoDB holds.
+`/settings` starts the `settings` scene with the key `settings` and the guard `update Setting`, so only an admin sees the command. One slot shows every section with the value of each setting and under it one button per setting, each in its own row and named with the setting's `emoji` and title. There is no dismiss button: a second `/settings` moves the same message to the bottom of the chat, and the scene expires 24 hours after its last use. A flag switches at once with `toggle`; a number asks for a whole number and asks again while it is out of the range, then calls `write`; choices open a second screen with a checkbox per option and `‹ Back`, and each checkbox calls `toggleChoice`. Every change puts the stored value into the snapshot, so the screen shows what MongoDB holds.
 
 ## Files
 
