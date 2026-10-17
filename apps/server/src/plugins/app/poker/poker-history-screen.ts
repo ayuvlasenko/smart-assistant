@@ -1,5 +1,9 @@
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
-import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
+import {
+    escapeTelegramHtml,
+    measureTelegramHtml,
+    telegramMessageTextLimit,
+} from "../telegram/telegram-html.js";
+import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
     buildPokerMessage,
@@ -20,29 +24,34 @@ export function renderPokerHistory(
 ): TelegramMessageContent {
     const { ctx, scene, room, deck } = view;
     const { t } = ctx;
+    const header = [
+        formatPokerHeader(room, ctx.timeZone, t("poker:historyTitle")),
+        ...(isClosed ? [escapeTelegramHtml(t("poker:closedNote"))] : []),
+        "",
+    ];
     const rounds = listRevealedPokerRounds(room)
         .filter((round) => summarizePokerRound(round, deck).distribution.length)
-        .toReversed();
-    const page = pageOf(rounds, scene.state.page, roundsPageSize);
+        .toReversed()
+        .map((round) => describeRound(view, round));
+    const pages = splitIntoPages(
+        rounds,
+        telegramMessageTextLimit - measureTelegramHtml(header.join("\n")),
+    );
+    const page = pages[scene.state.page] ?? [];
 
     return buildPokerMessage(
         [
-            formatPokerHeader(room, ctx.timeZone, t("poker:historyTitle")),
-            ...(isClosed ? [escapeTelegramHtml(t("poker:closedNote"))] : []),
-            "",
-            ...(page.items.length
-                ? page.items.flatMap((round, index) => [
+            ...header,
+            ...(page.length
+                ? page.flatMap((round, index) => [
                       ...(index ? [""] : []),
-                      ...describeRound(view, round),
+                      ...round,
                   ])
                 : [escapeTelegramHtml(t("poker:historyEmpty"))]),
         ],
         [
-            pageButtons(
-                scene.state.page,
-                page.total,
-                roundsPageSize,
-                (text, target) => scene.button(text, "page", target),
+            pageButtons(scene.state.page, pages.length, 1, (text, target) =>
+                scene.button(text, "page", target),
             ),
             isClosed
                 ? [scene.button(t("poker:hideButton"), "hide", null)]
@@ -72,4 +81,28 @@ function describeRound(
         `${formatBold(name)} ${escapeTelegramHtml(result)}`,
         ...formatPokerDistribution(summary, labels),
     ];
+}
+
+function splitIntoPages(rounds: string[][], maxLength: number): string[][][] {
+    const pages: string[][][] = [];
+    let page: string[][] = [];
+    let length = 0;
+
+    for (const round of rounds) {
+        const roundLength = measureTelegramHtml(round.join("\n"));
+
+        if (
+            page.length === roundsPageSize ||
+            (page.length && length + 2 + roundLength > maxLength)
+        ) {
+            pages.push(page);
+            page = [];
+            length = 0;
+        }
+
+        length += (page.length ? 2 : 1) + roundLength;
+        page.push(round);
+    }
+
+    return page.length ? [...pages, page] : pages;
 }

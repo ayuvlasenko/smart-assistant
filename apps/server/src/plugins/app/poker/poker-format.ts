@@ -1,7 +1,11 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
 import { ObjectId } from "mongodb";
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    escapeTelegramHtml,
+    measureTelegramHtml,
+    telegramMessageTextLimit,
+} from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { UserEntity } from "../users/user-entity.js";
 import { PokerDeckName } from "./poker-decks.js";
@@ -13,6 +17,8 @@ import {
 } from "./poker-round-summary.js";
 
 const nameGraphemes = 20;
+const maxListedVoters = 10;
+const cutMarker = "…";
 const agreementIcons: Record<PokerAgreement, string> = {
     none: "—",
     unanimous: "🎯",
@@ -28,7 +34,7 @@ export function buildPokerMessage(
     return {
         kind: "text",
         parse_mode: "HTML",
-        text: lines.join("\n"),
+        text: fitTelegramText(lines).join("\n"),
         keyboard: keyboard.filter((row) => row.length),
     };
 }
@@ -178,9 +184,12 @@ export function formatPokerVoters(
     votes: PokerCardVotes,
     labels: Map<string, string>,
 ): string {
-    return votes.userIds
-        .map((userId) => labels.get(userId) ?? userId)
-        .join(", ");
+    const listed = votes.userIds
+        .slice(0, maxListedVoters)
+        .map((userId) => labels.get(userId) ?? userId);
+    const hidden = votes.userIds.length - listed.length;
+
+    return [...listed, ...(hidden ? [`+${hidden}`] : [])].join(", ");
 }
 
 export function validatePokerTitle(
@@ -201,6 +210,24 @@ export function inRowsOf<TItem>(size: number, items: TItem[]): TItem[][] {
     }
 
     return rows;
+}
+
+function fitTelegramText(lines: string[]): string[] {
+    if (measureTelegramHtml(lines.join("\n")) <= telegramMessageTextLimit) {
+        return lines;
+    }
+
+    const fitted = [...lines];
+
+    while (
+        fitted.length &&
+        measureTelegramHtml([...fitted, cutMarker].join("\n")) >
+            telegramMessageTextLimit
+    ) {
+        fitted.pop();
+    }
+
+    return [...fitted, cutMarker];
 }
 
 function truncateName(name: string): string {

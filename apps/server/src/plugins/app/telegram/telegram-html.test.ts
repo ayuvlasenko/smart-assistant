@@ -4,6 +4,7 @@ import {
     escapeTelegramHtml,
     formatTelegramHtmlMention,
     formatTelegramHtmlTime,
+    measureTelegramHtml,
 } from "./telegram-html.js";
 
 void describe("Telegram HTML", () => {
@@ -28,6 +29,13 @@ void describe("Telegram HTML", () => {
         assert.equal(
             formatTelegramHtmlMention(42, "<Ann>"),
             '<a href="tg://user?id=42">&lt;Ann&gt;</a>',
+        );
+    });
+
+    void it("measures the text that Telegram shows, without tags and with one character per entity", () => {
+        assert.equal(
+            measureTelegramHtml("<b>Tom &amp; Jerry</b> &lt;3"),
+            "Tom & Jerry <3".length,
         );
     });
 });
