@@ -165,6 +165,7 @@ See [Updates for other users](#updates-for-other-users) for how the engine finds
 ## Bot UX
 
 - Keep the chat free of service buttons. Mention `/cancel` once, in the first question of an input, instead of a cancel button on every message.
+- Stay silent when the user expects no answer or an answer would tell about access: an unknown message or command, a command, button, input or deep link that a guard refuses. Answer every input, every known command and every link the user may use, including a refusal such as a closed room or an expired invite.
 - Answer a refused button press in the answer to the callback, not with a message: the notice shows over the chat and leaves no trace in it. `ctx.notify(text)` answers the pending callback of the update, or replies when the update is a message. The engine refuses `ask` and a scene start this way.
 - Mention step commands such as `/skip` in the prompt text of the step that accepts them.
 - Use inline buttons only when the user picks from a set of options, such as an account or a date. Accept typed text for free-form input.
@@ -418,7 +419,7 @@ A `scene` button runs a handler from `buttons` of the scene. An `input` button b
 **Edge cases.**
 
 - A message that the scene edited without a button, or deleted, no longer holds that button. A press on it, or on a message of an ended scene, gets `telegram:buttonExpired`.
-- A value that no longer matches the schema of its button after a deploy also gets `buttonExpired`. A failed guard gets `telegram:forbidden`.
+- A value that no longer matches the schema of its button after a deploy also gets `buttonExpired`. A failed guard gets an empty callback answer, so the press says nothing about the access of the user.
 - A press does not need the input focus, so the buttons of every running scene work at the same time.
 
 ## Slots
@@ -606,13 +607,13 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
 
-| Guard on              | Checked                                            | When the guard refuses                                                          |
-| --------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
-| command, `on`, `when` | while the router looks for a route                 | the route does not match, the user gets `unknown`                               |
-| deep link             | while the router looks for a route                 | the `/start` command answers                                                    |
-| scene                 | `start`, button press, input, `deliver`, `publish` | `start` returns `false`, a press gets `forbidden`, `deliver` and `publish` skip |
-| scene button          | button press                                       | the callback gets `forbidden`, the handler does not run                         |
-| scene input           | `ask`, input text, input button                    | `ask` notifies `forbidden`, the text goes to the routes                         |
+| Guard on              | Checked                                            | When the guard refuses                                                              |
+| --------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| command, `on`, `when` | while the router looks for a route                 | the route does not match, and the bot stays silent                                  |
+| deep link             | while the router looks for a route                 | the bot stays silent; the `/start` command does not answer for the link             |
+| scene                 | `start`, button press, input, `deliver`, `publish` | `start` returns `false`, a press gets an empty answer, `deliver` and `publish` skip |
+| scene button          | button press                                       | the callback gets an empty answer, the handler does not run                         |
+| scene input           | `ask`, input text, input button                    | `ask` does nothing, the text goes to the routes                                     |
 
 `isBanned` is not a guard: it is the gate before the router. A banned user gets only the deep links registered with `allowBanned`, such as an invite link.
 

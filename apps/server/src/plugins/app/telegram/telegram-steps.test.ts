@@ -255,7 +255,6 @@ void describe("Telegram steps", () => {
 
         assert.deepEqual(bot.readSentTexts(), [
             telegramLocales.en.nothingToChoose,
-            telegramLocales.en.unknown,
         ]);
     });
 

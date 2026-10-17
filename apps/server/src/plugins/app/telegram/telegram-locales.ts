@@ -2,7 +2,6 @@ import { Locales } from "../i18n-service.js";
 
 const en = {
     welcome: "Welcome! You can use the bot now.",
-    unknown: "I don't understand this message.",
     error: "Something went wrong. Please try again later.",
     cancelCommand: "Cancel the current action",
     sceneCancelled: "Cancelled.",
@@ -13,7 +12,6 @@ const en = {
     sceneBlockedStart:
         "To start “{{next}}”, finish “{{current}}” first or send /cancel.",
     buttonExpired: "This button is no longer active.",
-    forbidden: "You don't have access to this.",
     invalidNumber: "Send a number, for example 12.5.",
     numberOutOfRange: "Send a number from {{min}} to {{max}}.",
     invalidDate: "Send a date like 31.12.2026, or use the buttons.",
@@ -27,7 +25,6 @@ export const telegramLocales: Locales<typeof en> = {
     en,
     uk: {
         welcome: "Вітаю! Тепер ви можете користуватися ботом.",
-        unknown: "Я не розумію це повідомлення.",
         error: "Щось пішло не так. Спробуйте пізніше.",
         cancelCommand: "Скасувати поточну дію",
         sceneCancelled: "Скасовано.",
@@ -39,7 +36,6 @@ export const telegramLocales: Locales<typeof en> = {
         sceneBlockedStart:
             "Щоб почати «{{next}}», спершу завершіть «{{current}}» або надішліть /cancel.",
         buttonExpired: "Ця кнопка вже неактивна.",
-        forbidden: "У вас немає доступу до цього.",
         invalidNumber: "Надішліть число, наприклад 12.5.",
         numberOutOfRange: "Надішліть число від {{min}} до {{max}}.",
         invalidDate:
@@ -51,7 +47,6 @@ export const telegramLocales: Locales<typeof en> = {
     },
     ru: {
         welcome: "Добро пожаловать! Теперь вы можете пользоваться ботом.",
-        unknown: "Я не понимаю это сообщение.",
         error: "Что-то пошло не так. Попробуйте позже.",
         cancelCommand: "Отменить текущее действие",
         sceneCancelled: "Отменено.",
@@ -63,7 +58,6 @@ export const telegramLocales: Locales<typeof en> = {
         sceneBlockedStart:
             "Чтобы начать «{{next}}», сначала завершите «{{current}}» или отправьте /cancel.",
         buttonExpired: "Эта кнопка больше не активна.",
-        forbidden: "У вас нет доступа к этому.",
         invalidNumber: "Отправьте число, например 12.5.",
         numberOutOfRange: "Отправьте число от {{min}} до {{max}}.",
         invalidDate:

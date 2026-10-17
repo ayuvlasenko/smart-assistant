@@ -17,7 +17,6 @@ import {
 } from "../../../test/telegram-scene-bot.js";
 import { text } from "./telegram-filters.js";
 import { TelegramGuard } from "./telegram-guard.js";
-import { telegramLocales } from "./telegram-locales.js";
 import { defineScene, TelegramScene } from "./telegram-scene.js";
 import { textStep } from "./telegram-steps.js";
 
@@ -59,10 +58,7 @@ void describe("Telegram guards on routes", () => {
         await setGrants(chat.id, ["vip"]);
         await bot.sendText(chat, "/secret");
 
-        assert.deepEqual(bot.readSentTexts(), [
-            telegramLocales.en.unknown,
-            "secret",
-        ]);
+        assert.deepEqual(bot.readSentTexts(), ["secret"]);
     });
 
     void it("skips a guarded match route for users the guard refuses", async (t) => {
@@ -73,10 +69,7 @@ void describe("Telegram guards on routes", () => {
         await setGrants(chat.id, ["vip"]);
         await bot.sendText(chat, "hi");
 
-        assert.deepEqual(bot.readSentTexts(), [
-            telegramLocales.en.unknown,
-            "hi vip",
-        ]);
+        assert.deepEqual(bot.readSentTexts(), ["hi vip"]);
     });
 });
 
@@ -92,7 +85,7 @@ void describe("Telegram guards on scenes", () => {
         assert.deepEqual(bot.readSentTexts(), ["not started", "VIP 0"]);
     });
 
-    void it("answers a guarded button with the forbidden text and skips its handler", async (t) => {
+    void it("answers a guarded button without a text and skips its handler", async (t) => {
         const bot = await buildGuardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654504 });
 
@@ -100,10 +93,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "+10");
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [
-            telegramLocales.en.forbidden,
-            undefined,
-        ]);
+        assert.deepEqual(readCallbackAnswers(bot), [undefined, undefined]);
         assert.deepEqual(readEditedTexts(bot), ["Card 1"]);
     });
 
@@ -117,13 +107,11 @@ void describe("Telegram guards on scenes", () => {
         await setGrants(chat.id, []);
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [
-            telegramLocales.en.forbidden,
-        ]);
+        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
         assert.deepEqual(readEditedTexts(bot), []);
     });
 
-    void it("refuses to ask a guarded input in the answer to the press", async (t) => {
+    void it("refuses to ask a guarded input without a notice", async (t) => {
         const bot = await buildGuardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654506 });
 
@@ -131,9 +119,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "Note");
 
         assert.deepEqual(bot.readSentTexts(), ["Card 0"]);
-        assert.deepEqual(readCallbackAnswers(bot), [
-            telegramLocales.en.forbidden,
-        ]);
+        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
     });
 
     void it("passes the text for a guarded input to the routes after the user loses the grant", async (t) => {
@@ -151,7 +137,6 @@ void describe("Telegram guards on scenes", () => {
         assert.deepEqual(bot.readSentTexts(), [
             "Card 0",
             "Your note? Send /cancel to stop.",
-            telegramLocales.en.unknown,
         ]);
     });
 

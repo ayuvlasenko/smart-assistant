@@ -357,7 +357,7 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
     });
 
-    void it("replies with a hint instead of pong on other text messages in a private chat", async (t) => {
+    void it("stays silent instead of pong on other text messages in a private chat", async (t) => {
         const { telegramApiService, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
@@ -383,9 +383,7 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.en.unknown,
-        ]);
+        assert.deepEqual(readSentTexts(telegramApiService), []);
     });
 
     void it("doesn't send pong when ping is marked as a command for an existing unbanned user", async (t) => {
@@ -421,9 +419,7 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.en.unknown,
-        ]);
+        assert.deepEqual(readSentTexts(telegramApiService), []);
     });
 
     void it("skips updates without a Telegram user", async (t) => {
@@ -693,9 +689,7 @@ void describe("TelegramUpdateHandler", () => {
         const user = await usersRepository.findOneByTelegramId("987654335");
 
         assert.equal(user?.languageCode, "ru");
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.ru.unknown,
-        ]);
+        assert.deepEqual(readSentTexts(telegramApiService), []);
     });
 
     void it("keeps the stored language when Telegram sends no language", async (t) => {
@@ -916,6 +910,32 @@ void describe("TelegramUpdateHandler deep links", () => {
             "poker 42",
             telegramLocales.en.welcome,
         ]);
+    });
+
+    void it("stays silent on a deep link whose guard refuses the user instead of the /start answer", async (t) => {
+        const { telegramApiService, telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink(
+                        "vip",
+                        async (ctx, value) => {
+                            await ctx.reply(`vip ${value}`);
+                        },
+                        { guard: (user) => user.grants.includes("vip") },
+                    );
+                },
+            });
+
+        await createUser(usersRepository, "987654342");
+
+        await telegramUpdateHandler.handle(
+            buildStartUpdate(987654342, "/start vip_1", 1),
+        );
+
+        assert.deepEqual(readSentTexts(telegramApiService), []);
     });
 
     void it("refuses a deep link name twice or with characters outside a-z and 0-9", async (t) => {

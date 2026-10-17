@@ -51,7 +51,7 @@ void describe("Settings menu", () => {
         await bot.allowUser(user.id);
         await bot.sendText(user, "/settings");
 
-        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.unknown]);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("shows every setting with its value and switches a flag", async (t) => {
