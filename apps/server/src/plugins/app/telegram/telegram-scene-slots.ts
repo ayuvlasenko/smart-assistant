@@ -93,10 +93,6 @@ export class TelegramSceneSlots {
             return;
         }
 
-        if (previous) {
-            await this.discard(ctx, previous.messageId);
-        }
-
         const message = await ctx.send(content);
 
         slots[name] = {
@@ -104,6 +100,10 @@ export class TelegramSceneSlots {
             kind: content.kind,
             hash,
         } satisfies TelegramSlotState;
+
+        if (previous) {
+            await this.discard(ctx, previous.messageId);
+        }
     }
 
     private async discard(
