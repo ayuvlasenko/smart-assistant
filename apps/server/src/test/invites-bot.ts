@@ -1,6 +1,4 @@
-import accessPlugin, {
-    AccessService,
-} from "../plugins/app/access/access-service.js";
+import { AccessService } from "../plugins/app/access/access-service.js";
 import invitesHandlersPlugin from "../plugins/app/invites/invites-handlers.js";
 import invitesRepositoryPlugin, {
     InvitesRepository,
@@ -27,7 +25,6 @@ export async function buildInvitesBot(
     const bot = await buildTelegramSceneBot({
         ...options,
         plugins: [
-            accessPlugin,
             pingHandlersPlugin,
             invitesRepositoryPlugin,
             invitesServicePlugin,

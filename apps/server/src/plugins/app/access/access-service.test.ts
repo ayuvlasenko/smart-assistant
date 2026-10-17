@@ -25,6 +25,22 @@ void describe("AccessService", () => {
         assert.equal(access.holds(user, adminGrant), false);
     });
 
+    void it("adds the default grants to every user without a ban, except admin", () => {
+        const service = new AccessService();
+        const access = buildAccess(service);
+        const user = buildUserEntity();
+
+        service.useDefaultGrants(() => ["ping.use", adminGrant]);
+
+        assert.equal(access.can(user, "use", "Ping"), true);
+        assert.equal(access.can(user, "read", "Invite"), false);
+        assert.equal(access.holds(user, "ping.use"), false);
+        assert.equal(
+            access.can(buildUserEntity({ isBanned: true }), "use", "Ping"),
+            false,
+        );
+    });
+
     void it("ignores grants that are not registered", () => {
         const access = buildAccess();
         const user = buildUserEntity({ grants: ["removed.feature"] });
@@ -129,8 +145,10 @@ interface TestSubjects {
     Ping: never;
 }
 
-function buildAccess(): AccessControl<TestSubjects> {
-    const access = new AccessService().subjects<TestSubjects>();
+function buildAccess(
+    service = new AccessService(),
+): AccessControl<TestSubjects> {
+    const access = service.subjects<TestSubjects>();
 
     access.register({
         name: "access",

@@ -189,7 +189,7 @@ Every inline keyboard follows the same layout, so a user finds the same kind of 
 flowchart TD
     route["routes/api/telegram<br/>POST /webhook"] --> handler[TelegramUpdateHandler]
     handler -->|"claim update_id"| lock[LockService]
-    handler -->|"find or create user"| users[UsersRepository]
+    handler -->|"find or create user"| users[UsersService]
     handler -->|withUpdate| chats[TelegramChats]
 
     chats -->|"lock + load + save"| sessions[TelegramSessionStore]
@@ -260,7 +260,7 @@ sequenceDiagram
 
 **Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
-**New users.** The user lookup is one upsert by the Telegram id. When it creates the user, the handler counts `telegram_users_created_total`.
+**New users.** The user lookup is one upsert by the Telegram id through `UsersService.findOrCreateByTelegramId`. A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
 
 ## Session and lock
 

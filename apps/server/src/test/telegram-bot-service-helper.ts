@@ -9,6 +9,8 @@ import { MongoClient } from "mongodb";
 import { TestContext } from "node:test";
 import { options as appOptions } from "../app.js";
 import { Env } from "../env.js";
+import accessDefaultGrantsPlugin from "../plugins/app/access/access-default-grants.js";
+import accessPlugin from "../plugins/app/access/access-service.js";
 import appLoggerPlugin from "../plugins/app/app-logger.js";
 import cachePlugin, { CacheService } from "../plugins/app/cache-service.js";
 import i18nPlugin from "../plugins/app/i18n-service.js";
@@ -17,6 +19,10 @@ import metricsPlugin, {
     MetricsService,
 } from "../plugins/app/metrics-service.js";
 import rateLimiterPlugin from "../plugins/app/rate-limiter.js";
+import settingsRepositoryPlugin from "../plugins/app/settings/settings-repository.js";
+import settingsServicePlugin, {
+    SettingsService,
+} from "../plugins/app/settings/settings-service.js";
 import telegramApiPlugin from "../plugins/app/telegram/telegram-api-service.js";
 import telegramPlugin, {
     TelegramBotService,
@@ -78,6 +84,7 @@ export interface TelegramBotServiceTestApp {
     cache: CacheService;
     keyPrefix: string;
     metrics: MetricsService;
+    settingsService: SettingsService;
     telegramChats: TelegramChats;
     telegramApiService: TelegramApiServiceMock;
     telegramBotService: TelegramBotService;
@@ -123,10 +130,14 @@ export async function buildTelegramBotServiceTestApp({
     app.register(requestContextPlugin, requestContextAutoConfig);
     app.register(emitteryPlugin);
     app.register(usersRepositoryPlugin);
-    app.register(usersServicePlugin);
     app.register(appLoggerPlugin);
     app.register(cachePlugin);
     app.register(i18nPlugin);
+    app.register(accessPlugin);
+    app.register(settingsRepositoryPlugin);
+    app.register(settingsServicePlugin);
+    app.register(accessDefaultGrantsPlugin);
+    app.register(usersServicePlugin);
     app.register(metricsPlugin);
     app.register(lockPlugin);
     app.register(rateLimiterPlugin);
@@ -184,6 +195,7 @@ export async function buildTelegramBotServiceTestApp({
         cache: app.getDecorator<CacheService>("cache"),
         keyPrefix,
         metrics: app.getDecorator<MetricsService>("metrics"),
+        settingsService: app.getDecorator<SettingsService>("settingsService"),
         telegramChats: app.getDecorator<TelegramChats>("telegramChats"),
         telegramApiService,
         telegramBotService:

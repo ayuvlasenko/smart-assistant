@@ -102,6 +102,22 @@ void describe("PokerRoomsService create and join", () => {
         assert.equal(new Set(emojis).size, 6);
     });
 
+    void it("adds no participant past the limit, also when the room filled up after the check", async (t) => {
+        const bot = await buildBot(t);
+        const room = await createRoom(bot);
+        const user = await createUser(bot, [pokerJoinGrant]);
+
+        assert.equal(
+            await bot.pokerRoomsRepository.join(
+                room.token,
+                { userId: user._id, emoji: "🐼", joinedAt: new Date() },
+                { isEmojiFree: true, maxParticipants: 1 },
+            ),
+            null,
+        );
+        assert.equal((await findRoom(room)).participants.length, 1);
+    });
+
     void it("refuses an unknown link, a closed room and a user without the grant", async (t) => {
         const bot = await buildBot(t);
         const room = await createRoom(bot);

@@ -13,6 +13,8 @@ import { Env } from "../../../env.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import { buildUserEntity } from "../../../test/user-fixtures.js";
+import { adminGrant } from "../access/access-service.js";
 import {
     measureTelegramHtml,
     telegramMessageTextLimit,
@@ -22,6 +24,7 @@ import { formatPokerRoomTime } from "./poker-format.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import { pokerLocales } from "./poker-locales.js";
 import { PokerRoomEntity, PokerRound } from "./poker-room-entity.js";
+import { pokerMaxParticipantsSetting } from "./poker-rooms-service.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
@@ -38,6 +41,7 @@ before(async () => {
 beforeEach(async () => {
     await mongo.collection("users").deleteMany({});
     await mongo.collection("pokerRooms").deleteMany({});
+    await mongo.collection("settings").deleteMany({});
 });
 
 after(async () => {
@@ -68,6 +72,25 @@ void describe("Poker access", () => {
             telegramLocales.en.welcome,
         ]);
         assert.equal((await readRoom()).participants.length, 1);
+    });
+
+    void it("refuses a new participant when the room reached the limit of the settings", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655104 });
+        const member = buildTelegramPrivateChat({ id: 987655105 });
+        const latecomer = buildTelegramPrivateChat({ id: 987655106 });
+
+        await bot.settingsService.write(
+            buildUserEntity({ grants: [adminGrant] }),
+            pokerMaxParticipantsSetting,
+            2,
+        );
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await joinRoom(bot, latecomer);
+
+        assert.equal((await readRoom()).participants.length, 2);
+        assert.ok(bot.readSentTexts().includes(en.roomFull));
     });
 
     void it("answers an unknown room link", async (t) => {

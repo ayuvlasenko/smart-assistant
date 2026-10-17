@@ -121,19 +121,19 @@ Every change also sets `lastActivityAt` and increments `version`.
 
 ## Joining a room
 
-**Problem.** Two users can open the link at the same moment, and both must get different emojis while the pool has a free one. One user can open the link twice.
+**Problem.** Two users can open the link at the same moment, and both must get different emojis while the pool has a free one. One user can open the link twice. A room also has a limit of participants, and two users who race for its last place must not both get it.
 
-**Idea.** The join is one `findOneAndUpdate` that pushes the participant only when the user is not in the room yet and the chosen emoji is still free. On a miss the service reads the room again and tries another emoji.
+**Idea.** The join is one `findOneAndUpdate` that pushes the participant only when the user is not in the room yet, the room has a free place and the chosen emoji is still free. On a miss the service reads the room again and tries another emoji.
 
 **Walk-through.**
 
 1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets the `/start` answer.
-2. The service loads the room by token. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`.
-3. It picks a random emoji that no participant has, from a pool of 40 in `poker-rooms-service.ts`.
-4. The update filter requires an open room, `participants.userId` without the user and `participants.emoji` without the emoji. A match gives `joined` and emits `poker.roomChanged`.
+2. The service loads the room by token. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
+3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
+4. The update filter requires an open room, `participants.userId` without the user, no element at the index `maxParticipants - 1` of `participants`, and `participants.emoji` without the emoji. A match gives `joined` and emits `poker.roomChanged`.
 5. A miss goes back to step 2. After 41 attempts, one more than the pool, the service throws.
 
-When all 40 emojis are taken, the service picks any emoji and drops the emoji condition, so a large room repeats emojis instead of refusing a user. The handler starts the `pokerRoom` scene for `joined` and `alreadyJoined`, and checks nothing after `sceneEngine.start`, because the engine already answers a refusal of a blocking scene.
+`poker.maxParticipants` is 40 by default, from 2 to 100, and an admin changes it in `/settings`, see [Settings](../settings/README.md). Before the setting a room had no limit, so the deploy that added it refuses the 41st user of a room. A lower limit does not remove anybody: the participants stay, and only a new user gets `This room is full.` Only a limit above 40 lets all 40 emojis be taken; then the service picks any emoji and drops the emoji condition, so the room repeats emojis instead of refusing a user. The handler starts the `pokerRoom` scene for `joined` and `alreadyJoined`, and checks nothing after `sceneEngine.start`, because the engine already answers a refusal of a blocking scene.
 
 ## Idle participants and auto reveal
 
@@ -223,7 +223,7 @@ The screen shows no mean. One outlier moves the mean far, and planning poker aim
 
 A label is plain text. Names and titles come from users, so every screen passes them through `escapeTelegramHtml` before it puts them into the HTML of the message.
 
-The emoji is unique in a room of up to 40 participants, so it tells them apart also when the names and the usernames do not. A larger room repeats emojis, see [Joining a room](#joining-a-room).
+The emoji is unique in a room of up to 40 participants, so it tells them apart also when the names and the usernames do not. A room above 40, which needs a higher `poker.maxParticipants`, repeats emojis, see [Joining a room](#joining-a-room).
 
 ## Files
 
@@ -232,7 +232,8 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, idle participants          | [A room document](#a-room-document)                           |
 | `poker-decks.ts`                                                          | The decks                                                                       | [Using the bot](#using-the-bot)                               |
 | `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and its conditional updates                         | [A room document](#a-room-document)                           |
-| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, lists; the emoji pool         | [Joining a room](#joining-a-room)                             |
+| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, lists; the participant limit  | [Joining a room](#joining-a-room)                             |
+| `poker-participant-emojis.ts`                                             | The emoji pool                                                                  | [Joining a room](#joining-a-room)                             |
 | `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                           | [The round summary](#the-round-summary)                       |
 | `poker-handlers.ts`                                                       | The grants, `/poker`, the `poker` deep link, the scenes, the event subscription | [Using the bot](#using-the-bot)                               |
 | `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene: the room lists and the form                                  | [Using the bot](#using-the-bot)                               |

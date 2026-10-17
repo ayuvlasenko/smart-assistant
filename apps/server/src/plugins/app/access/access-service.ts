@@ -85,6 +85,7 @@ export class AccessService {
     private readonly sections: AccessSection[] = [];
     private readonly grants = new Map<string, AccessGrant>();
     private readonly abilities = new WeakMap<UserEntity, AnyAbility>();
+    private defaultGrantsReader: (() => readonly string[]) | undefined;
     private readonly control: AccessControl<AnySubjects> = {
         register: (section) => {
             this.register(section);
@@ -108,6 +109,10 @@ export class AccessService {
 
     subjects<TSubjects>(): AccessControl<TSubjects> {
         return this.control;
+    }
+
+    useDefaultGrants(read: () => readonly string[]): void {
+        this.defaultGrantsReader = read;
     }
 
     private register(section: AccessSection): void {
@@ -172,12 +177,20 @@ export class AccessService {
         const builder = new AbilityBuilder<AnyAbility>(createMongoAbility);
 
         if (!user.isBanned) {
-            for (const name of user.grants) {
+            for (const name of this.effectiveGrants(user)) {
                 this.grants.get(name)?.define(builder, user);
             }
         }
 
         return builder.build();
+    }
+
+    private effectiveGrants(user: UserEntity): Set<string> {
+        const defaults = (this.defaultGrantsReader?.() ?? []).filter(
+            (name) => name !== adminGrant,
+        );
+
+        return new Set([...user.grants, ...defaults]);
     }
 }
 

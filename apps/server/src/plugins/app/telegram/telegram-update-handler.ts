@@ -13,6 +13,7 @@ import { LockHoldTimeoutError, LockLostError } from "../lock-errors.js";
 import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
+import { UsersService } from "../users/users-service.js";
 import { TelegramApiClient } from "./telegram-api-service.js";
 import { TelegramBotService } from "./telegram-bot-service.js";
 import { TelegramChats } from "./telegram-chats.js";
@@ -48,6 +49,7 @@ export class TelegramUpdateHandler {
     private readonly telegramRouter: TelegramRouter;
     private readonly telegramChats: TelegramChats;
     private readonly usersRepository: UsersRepository;
+    private readonly usersService: UsersService;
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
@@ -59,6 +61,7 @@ export class TelegramUpdateHandler {
         telegramRouter: TelegramRouter,
         telegramChats: TelegramChats,
         usersRepository: UsersRepository,
+        usersService: UsersService,
         lockService: LockService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
@@ -69,6 +72,7 @@ export class TelegramUpdateHandler {
         this.telegramRouter = telegramRouter;
         this.telegramChats = telegramChats;
         this.usersRepository = usersRepository;
+        this.usersService = usersService;
         this.lockService = lockService;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
@@ -146,9 +150,8 @@ export class TelegramUpdateHandler {
     ): Promise<UserEntity> {
         const languageCode = resolveLanguage(telegramUser.language_code);
         const { user, isCreated } =
-            await this.usersRepository.findOneByTelegramIdOrCreate({
+            await this.usersService.findOrCreateByTelegramId({
                 telegramId: String(telegramUser.id),
-                isBanned: true,
                 ...readProfile(telegramUser, languageCode ?? defaultLanguage),
             });
 
@@ -324,6 +327,7 @@ export default fp(
                 fastify.getDecorator<TelegramRouter>("telegramRouter"),
                 fastify.getDecorator<TelegramChats>("telegramChats"),
                 fastify.getDecorator<UsersRepository>("usersRepository"),
+                fastify.getDecorator<UsersService>("usersService"),
                 fastify.getDecorator<LockService>("lockService"),
                 fastify.getDecorator<I18nService>("i18nService"),
                 fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
@@ -343,6 +347,7 @@ export default fp(
             "telegram-metrics",
             "telegram-router",
             "users-repository",
+            "users-service",
         ],
     },
 );
