@@ -42,8 +42,9 @@ const telegramWebhookClaimKey = "telegram:webhook:set";
 const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
 const telegramBotUsernameCacheKey = "telegram:bot:username";
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
-const telegramChatCommandsCacheTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
+const telegramChatCommandsCacheTtlMilliseconds = 24 * 60 * 60 * 1000;
 const telegramCommandsGenerationKey = "telegram:commands:generation";
+const telegramCommandsGenerationTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
@@ -132,7 +133,7 @@ export class TelegramBotService {
 
         await this.setDefaultCommands();
         await this.cache.set(telegramCommandsGenerationKey, randomUUID(), {
-            ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
+            ttlMilliseconds: telegramCommandsGenerationTtlMilliseconds,
         });
 
         return url;

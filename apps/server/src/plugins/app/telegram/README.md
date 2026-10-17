@@ -255,7 +255,7 @@ sequenceDiagram
     H->>H: answer callback, map errors to a reply and a metric
 ```
 
-**Duplicates.** Before anything else, the handler sets `telegram:update:<update_id>` with `SET NX` for 24 hours. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice.
+**Duplicates.** Before anything else, the handler sets `telegram:update:<update_id>` with `SET NX` for one hour. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
 
 **Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
@@ -305,19 +305,21 @@ rate-limit:telegram:<botId>:global                     hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global:class:interactive   hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global:class:background    hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global:waiting:background  sorted set: pod id → expiry time (ms)
+rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 ```
 
 `<botId>` is the number before `:` in `TELEGRAM_BOT_TOKEN`, so every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again.
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
-| Limit                                    | Rate         | Burst | Methods                                                       |
-| ---------------------------------------- | ------------ | ----- | ------------------------------------------------------------- |
-| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`, `deleteMessage(s)`                          |
-| `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                                              |
-| none                                     |              |       | `answerCallbackQuery`, `getMe`, `setMyCommands`, `setWebhook` |
+| Limit                                    | Rate         | Burst | Methods                                      |
+| ---------------------------------------- | ------------ | ----- | -------------------------------------------- |
+| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`, `deleteMessage(s)`         |
+| `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                             |
+| `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                              |
+| none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook` |
 
-We do not know whether Telegram counts edits in the global limit, so edits take a global token too.
+We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
 
 **Walk-through.** A user presses a button, and the handler edits a slot.
 
@@ -613,9 +615,9 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 1. `TelegramBotService.syncCommands` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
 2. It lists the commands whose guard allows the user, in the user's language, and hashes the list together with the menu generation from `telegram:commands:generation`.
-3. When the hash equals `telegram:commands:<telegramId>`, it does nothing. Otherwise it calls `setMyCommands` with the chat scope and stores the new hash for 30 days.
+3. When the hash equals `telegram:commands:<telegramId>`, it does nothing. Otherwise it calls `setMyCommands` with the chat scope and stores the new hash for one day.
 
-So the menu changes after a new grant, a language change, or a deploy that adds a command, and costs no API call otherwise. A failed sync logs an error and does not fail the update.
+So the menu changes after a new grant, a language change, or a deploy that adds a command, and otherwise costs one API call per user at most once a day. The day only bounds the memory of the hashes: a user who comes back after it gets the same menu set again. A failed sync logs an error and does not fail the update.
 
 **Production and preview.** On start, production sets the webhook once per hour across pods and sets the default menu: the commands without a guard, in every language. Preview pods share one bot token, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhook at the preview, sets the default menu and writes a new generation. The new generation changes every hash, so each chat gets its menu again on its next update.
 

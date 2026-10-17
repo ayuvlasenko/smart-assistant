@@ -28,6 +28,12 @@ const botMessages: TelegramRateLimit = {
     scopeOf: () => "global",
 };
 
+const botCommands: TelegramRateLimit = {
+    ratePerSecond: 5,
+    burst: 5,
+    scopeOf: () => "commands",
+};
+
 const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
     {
         sendMessage: [chatMessages, botMessages],
@@ -42,6 +48,7 @@ const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
         editMessageReplyMarkup: [chatMessages, botMessages],
         deleteMessage: [chatMessages],
         deleteMessages: [chatMessages],
+        setMyCommands: [botCommands],
     };
 
 export function telegramRateLimitBuckets(

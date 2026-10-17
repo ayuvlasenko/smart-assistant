@@ -82,6 +82,32 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(user.isBanned, true);
     });
 
+    void it("logs the user of an update with the update id", async (t) => {
+        const logs = createLogCollector();
+        const { telegramUpdateHandler } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            logger: logs.logger,
+        });
+
+        await telegramUpdateHandler.handle(
+            buildTelegramTextMessageUpdate({
+                update_id: 4242,
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654323 }),
+                    text: "hello",
+                },
+            }),
+        );
+
+        const entry = logs
+            .readEntries()
+            .find(({ msg }) => msg === "User for update");
+
+        assert.equal(entry?.updateId, 4242);
+    });
+
     void it("doesn't send pong for a newly created banned user", async (t) => {
         const { telegramApiService, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({

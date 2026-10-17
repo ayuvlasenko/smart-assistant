@@ -5,6 +5,7 @@ export interface LogEntry {
     module?: string;
     msg?: string;
     reqId?: string;
+    updateId?: number;
     req?: {
         remoteAddress?: string;
         remotePort?: number;
