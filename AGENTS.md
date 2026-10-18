@@ -31,7 +31,7 @@ Before a commit, run `pnpm format`, then `pnpm --filter server typecheck`, `pnpm
 
 Write commit messages in English as Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`.
 
-After the first push of a pull request, wait for the CI `deploy` job with `gh pr checks <number> --watch`, then run `curl -fsS -X POST https://pr-<number>.smart-assistant.bambom.org/api/telegram/webhook/refresh`. Preview pods share one bot token, so the bot answers only the preview whose webhook was refreshed last. A later push redeploys the same preview and keeps its webhook; refresh again only when another preview took the bot.
+After the first push of a pull request, wait for the CI `deploy` job with `gh pr checks <number> --watch`, then run `curl -fsS -X POST https://pr-<number>.smart-assistant.bambom.org/api/telegram/webhook/refresh`. CI skips a draft pull request, so its preview appears only after the pull request is marked ready for review. Preview pods share one bot token, so the bot answers only the preview whose webhook was refreshed last. A later push redeploys the same preview and keeps its webhook; refresh again only when another preview took the bot.
 
 ## Documentation
 
