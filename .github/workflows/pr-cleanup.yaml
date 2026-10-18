@@ -8,6 +8,7 @@ on:
 jobs:
   cleanup:
     runs-on: arc-ayuvlasenko-smart-assistant-gen-a9f0f8
+    timeout-minutes: 10
     concurrency:
       group: deploy-${{ github.event.pull_request.number || github.ref_name }}
       cancel-in-progress: false
@@ -25,26 +26,35 @@ jobs:
           chmod +x $HOME/.local/bin/argocd
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Delete PR app
+      - name: Delete PR apps
         env:
           ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          APP="smart-assistant-pr-${{ github.event.pull_request.number }}"
-          if argocd app get "$APP" --grpc-web >/dev/null 2>&1; then
-            argocd app delete "$APP" --yes --wait --grpc-web
-          else
-            echo "$APP already gone, skipping."
-          fi
+          app_listed() {
+            local apps names
+            apps=$(argocd app list -o json --grpc-web) || exit 1
+            names=$(jq -r '(. // [])[].metadata.name' <<< "$apps") || exit 1
+            grep -qxF "$1" <<< "$names"
+          }
 
-      - name: Delete PR migration app
-        env:
-          ARGOCD_SERVER: ${{ vars.ARGOCD_SERVER }}
-          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
-        run: |
-          APP="smart-assistant-pr-${{ github.event.pull_request.number }}-migration"
-          if argocd app get "$APP" --grpc-web >/dev/null 2>&1; then
-            argocd app delete "$APP" --yes --wait --grpc-web
-          else
-            echo "$APP already gone, skipping."
-          fi
+          for APP in "smart-assistant-pr-$PR_NUMBER" "smart-assistant-pr-$PR_NUMBER-migration"; do
+            if ! app_listed "$APP"; then
+              echo "$APP already gone, skipping."
+              continue
+            fi
+
+            argocd app delete "$APP" --yes --grpc-web
+
+            for _ in $(seq 60); do
+              if ! app_listed "$APP"; then
+                echo "$APP deleted."
+                continue 2
+              fi
+              sleep 5
+            done
+
+            echo "$APP still exists after 5 minutes." >&2
+            exit 1
+          done
