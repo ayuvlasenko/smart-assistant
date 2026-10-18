@@ -23,8 +23,8 @@ export default fp(
             throw err;
         }
 
-        fastify.addHook("onClose", async () => {
-            await closeValkeyClient(client);
+        fastify.addHook("onClose", () => {
+            client.disconnect();
         });
     },
     {
@@ -45,12 +45,4 @@ function buildValkeyClient(config: Env): Redis {
     };
 
     return new Redis(config.VALKEY_URL, options);
-}
-
-async function closeValkeyClient(client: Redis): Promise<void> {
-    try {
-        await client.quit();
-    } catch {
-        client.disconnect();
-    }
 }
