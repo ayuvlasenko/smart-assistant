@@ -28,7 +28,7 @@ void describe("valkey", () => {
     });
 
     void it("closes and stops reconnecting while Valkey is away", async (t) => {
-        const { app, client } = await buildValkeyApp(t, { closeAfter: false });
+        const { app, client } = await buildValkeyApp(t);
         const { client: admin } = await buildTestValkey(t);
         const reconnecting = once(client, "reconnecting", {
             signal: AbortSignal.timeout(EVENT_TIMEOUT_MS),
@@ -55,7 +55,7 @@ void describe("valkey", () => {
 
 async function buildValkeyApp(
     t: TestContext,
-    options: { closeAfter?: boolean; valkeyUrl?: string } = {},
+    options: { valkeyUrl?: string } = {},
 ): Promise<{ app: FastifyInstance; client: Redis }> {
     const app = Fastify({ logger: false });
 
@@ -68,9 +68,7 @@ async function buildValkeyApp(
     });
     app.register(valkeyPlugin);
 
-    if (options.closeAfter ?? true) {
-        t.after(() => app.close());
-    }
+    t.after(() => app.close());
 
     await app.ready();
 
