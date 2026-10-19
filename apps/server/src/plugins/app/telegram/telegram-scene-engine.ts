@@ -1,5 +1,4 @@
 import { Update } from "@grammyjs/types";
-import { Value } from "@sinclair/typebox/value";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramContext } from "./telegram-context.js";
@@ -8,14 +7,19 @@ import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
     parseTelegramButtonPress,
-    TelegramButtonPress,
+    TelegramButton,
     TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import {
-    TelegramSceneSlots,
-    TelegramSlotMessages,
-} from "./telegram-scene-slots.js";
+    TelegramSceneMessages,
+    TelegramSceneMessagesRelease,
+} from "./telegram-scene-messages.js";
+import { TelegramScenePresses } from "./telegram-scene-presses.js";
+import {
+    TelegramSceneScreens,
+    TelegramScreenState,
+} from "./telegram-scene-screens.js";
 import {
     TelegramSceneInstance,
     TelegramSceneStorage,
@@ -35,13 +39,22 @@ export class TelegramSceneEngine {
     >();
     private readonly buttons = new TelegramSceneButtons();
     private readonly inputs: TelegramSceneInputs;
-    private readonly slots = new TelegramSceneSlots();
+    private readonly presses: TelegramScenePresses;
+    private readonly screens = new TelegramSceneScreens();
+    private readonly messages = new TelegramSceneMessages();
     private readonly telegramMetrics: TelegramMetrics;
 
     constructor(telegramMetrics: TelegramMetrics) {
         this.telegramMetrics = telegramMetrics;
 
         this.inputs = new TelegramSceneInputs(telegramMetrics, this.buttons);
+        this.presses = new TelegramScenePresses(
+            telegramMetrics,
+            this.buttons,
+            this.inputs,
+            this.screens,
+            (ctx, instance) => this.sceneControl(ctx, instance),
+        );
     }
 
     register(scene: TelegramScene): void {
@@ -142,12 +155,16 @@ export class TelegramSceneEngine {
         const press = parseTelegramButtonPress(ctx.update);
 
         if (press) {
-            return this.handlePress(ctx, press);
+            return this.presses.handle(
+                ctx,
+                await this.updateFor(ctx).storage.load(press.sceneId),
+                press,
+            );
         }
 
         const instance = await this.focusedInput(ctx);
 
-        if (instance && !this.canUseInput(ctx, instance)) {
+        if (instance && !this.inputs.canUse(instance, ctx.user)) {
             return next();
         }
 
@@ -221,8 +238,8 @@ export class TelegramSceneEngine {
         try {
             const result = await action();
 
-            await update.render(ctx, this.slots, (instance, slotMessageId) =>
-                this.sceneControl(ctx, instance, slotMessageId),
+            await update.render(ctx, (instance, reshow) =>
+                this.render(ctx, instance, reshow),
             );
 
             return result;
@@ -230,6 +247,24 @@ export class TelegramSceneEngine {
             stopRecording();
             update.save();
         }
+    }
+
+    private async render(
+        ctx: TelegramContext,
+        instance: TelegramSceneInstance,
+        reshow: boolean,
+    ): Promise<void> {
+        if (!instance.scene.root) {
+            return;
+        }
+
+        const contents = await this.screens.render(
+            ctx,
+            instance,
+            this.sceneControl(ctx, instance),
+        );
+
+        await this.messages.render(ctx, instance, contents, { reshow });
     }
 
     private async instanceIdFor(
@@ -322,72 +357,12 @@ export class TelegramSceneEngine {
         }
     }
 
-    private async handlePress(
-        ctx: TelegramContext<Update>,
-        press: TelegramButtonPress,
-    ): Promise<void> {
-        const instance = await this.updateFor(ctx).storage.load(press.sceneId);
-        const button = instance && this.buttons.find(instance, press);
-
-        if (!instance || !button) {
-            return this.rejectExpiredButton(ctx, "unknown");
-        }
-
-        if (button.kind === "input") {
-            if (!this.canUseInput(ctx, instance)) {
-                return this.rejectForbiddenButton(
-                    ctx,
-                    `${instance.scene.name}:input`,
-                );
-            }
-
-            const isHandled = await this.inputs.handleButton(
-                ctx,
-                this.sceneControl(ctx, instance),
-                instance,
-                button.step,
-                button.value,
-            );
-
-            if (!isHandled) {
-                return this.rejectExpiredButton(
-                    ctx,
-                    `${instance.scene.name}:input`,
-                );
-            }
-
-            this.recordPress(instance, "input");
-            return;
-        }
-
-        const definition = instance.scene.buttons[button.name];
-        const action = `${instance.scene.name}:${button.name}`;
-
-        if (!definition || !Value.Check(definition.value, button.value)) {
-            return this.rejectExpiredButton(ctx, action);
-        }
-
-        if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !isAllowed(definition.guard, ctx.user)
-        ) {
-            return this.rejectForbiddenButton(ctx, action);
-        }
-
-        await definition.handle(
-            ctx,
-            this.sceneControl(ctx, instance),
-            button.value,
-        );
-        this.recordPress(instance, button.name);
-    }
-
     private async end(
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
-        messages: TelegramSlotMessages,
+        messages: TelegramSceneMessagesRelease,
     ): Promise<void> {
-        await this.slots.release(ctx, instance, messages);
+        await this.messages.release(ctx, instance, messages);
         this.updateFor(ctx).storage.remove(instance);
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "end");
         ctx.log.info(
@@ -452,20 +427,6 @@ export class TelegramSceneEngine {
         );
     }
 
-    private canUseInput(
-        ctx: TelegramContext,
-        instance: TelegramSceneInstance,
-    ): boolean {
-        const name = instance.record.input?.name;
-        const input =
-            name === undefined ? undefined : instance.scene.inputs[name];
-
-        return (
-            isAllowed(instance.scene.guard, ctx.user) &&
-            isAllowed(input?.guard, ctx.user)
-        );
-    }
-
     private recordForbidden(ctx: TelegramContext, scene: TelegramScene): void {
         this.telegramMetrics.recordSceneEvent(scene.name, "forbidden");
         ctx.log.info({ scene: scene.name }, "Telegram scene is forbidden");
@@ -474,52 +435,81 @@ export class TelegramSceneEngine {
     private sceneControl(
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
-        slotMessageId?: number,
     ): SceneControl {
         this.updateFor(ctx).touch(instance);
+
+        const button = (text: string, data: TelegramButton) =>
+            this.buttons.create(instance, text, data);
+        const screenOf = (
+            name: string,
+            params: [] | [Record<string, unknown>],
+        ): TelegramScreenState => ({ name, params: params[0] ?? {} });
+        const screens = this.screens;
 
         return {
             id: instance.id,
             name: instance.scene.name,
             state: instance.record.state,
+            get screen() {
+                return screens.of(instance);
+            },
             button: (text, name, value) =>
-                this.buttons.create(
-                    instance,
-                    text,
-                    { kind: "scene", name, value },
-                    slotMessageId,
-                ),
+                button(text, { kind: "scene", name, value }),
+            screenButton: (text, name, ...params) =>
+                button(text, {
+                    kind: "screen",
+                    screen: screenOf(name, params),
+                }),
+            backButton: (text) => button(text, { kind: "back" }),
+            isConfirming: (name, ...value) =>
+                this.buttons.isConfirming(instance, name, ...value),
+            push: (name, ...params) => {
+                const screen = screenOf(name, params);
+
+                return this.navigate(ctx, instance, screen, () => {
+                    screens.push(instance, screen);
+                });
+            },
+            replace: (name, ...params) => {
+                const screen = screenOf(name, params);
+
+                return this.navigate(ctx, instance, screen, () => {
+                    screens.replace(instance, screen);
+                });
+            },
+            back: () =>
+                this.navigate(ctx, instance, undefined, () => {
+                    screens.back(instance);
+                }),
+            reset: () =>
+                this.navigate(ctx, instance, undefined, () => {
+                    screens.reset(instance);
+                }),
             ask: (name) => this.ask(ctx, instance, name),
             end: (options) =>
                 this.end(ctx, instance, options?.messages ?? "keep"),
         };
     }
 
-    private async rejectExpiredButton(
-        ctx: TelegramContext<Update>,
-        action: string,
+    private async navigate(
+        ctx: TelegramContext,
+        instance: TelegramSceneInstance,
+        target: TelegramScreenState | undefined,
+        move: () => void,
     ): Promise<void> {
-        this.telegramMetrics.recordButtonPress(action, "expired");
-        ctx.log.info({ action }, "Telegram button is expired");
+        if (target && !this.screens.canShow(instance, ctx.user, target)) {
+            this.recordForbidden(ctx, instance.scene);
+            return;
+        }
 
-        await ctx.answerCallbackQuery(ctx.t("telegram:buttonExpired"));
-    }
-
-    private async rejectForbiddenButton(
-        ctx: TelegramContext<Update>,
-        action: string,
-    ): Promise<void> {
-        this.telegramMetrics.recordButtonPress(action, "forbidden");
-        ctx.log.info({ action }, "Telegram button is forbidden");
-
-        await ctx.answerCallbackQuery();
-    }
-
-    private recordPress(instance: TelegramSceneInstance, button: string): void {
-        this.telegramMetrics.recordButtonPress(
-            `${instance.scene.name}:${button}`,
-            "handled",
+        await this.inputs.cancel(
+            ctx,
+            this.sceneControl(ctx, instance),
+            instance,
+            { silent: true },
         );
+        instance.record.confirming = undefined;
+        move();
     }
 
     private updateFor(ctx: TelegramContext): TelegramSceneUpdate {
@@ -530,6 +520,7 @@ export class TelegramSceneEngine {
                 new TelegramSceneStorage(
                     ctx.session,
                     (name) => this.scenes.get(name),
+                    this.screens,
                     ctx.log,
                 ),
             );

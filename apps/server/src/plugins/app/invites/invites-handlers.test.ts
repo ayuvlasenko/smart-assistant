@@ -287,6 +287,35 @@ void describe("Invites scenes", () => {
         );
     });
 
+    void it("forgets a pending revoke after a look at the users of the invite", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987654830 });
+        const guest = buildTelegramPrivateChat({ id: 987654831 });
+
+        await createAdmin(bot, admin);
+        await createInviteThroughForm(bot, admin);
+        await sendAsStranger(
+            bot,
+            guest,
+            `/start invite_${await readInviteToken()}`,
+        );
+        await bot.telegramChats.idle();
+        await bot.pressButton(admin, en.revokeButton);
+        await bot.pressButton(admin, "👥 Users (1)");
+        await bot.pressButton(admin, en.backButton);
+
+        assert.ok(
+            (await bot.readButtonLabels(admin.id)).includes(en.revokeButton),
+        );
+
+        await bot.pressButton(admin, en.revokeButton);
+
+        assert.equal(
+            (await mongo.collection("invites").findOne())?.revokedAt,
+            undefined,
+        );
+    });
+
     void it("hides the create and revoke buttons from a user who can only read invites", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654822 });

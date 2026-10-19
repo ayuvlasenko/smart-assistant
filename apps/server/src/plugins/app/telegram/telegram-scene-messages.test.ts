@@ -53,8 +53,8 @@ after(async () => {
     await mongoClient.close();
 });
 
-void describe("Telegram scene slots", () => {
-    void it("sends the slot when the scene starts and edits it when the state changes", async (t) => {
+void describe("Telegram scene messages", () => {
+    void it("sends the message when the scene starts and edits it when the state changes", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654430 });
 
@@ -75,7 +75,7 @@ void describe("Telegram scene slots", () => {
         );
     });
 
-    void it("leaves the message alone when the slot content stays the same", async (t) => {
+    void it("leaves the message alone when its content stays the same", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654431 });
 
@@ -251,7 +251,7 @@ void describe("Telegram scene slots", () => {
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 0"]);
     });
 
-    void it("deletes the slot message when the slot has no content", async (t) => {
+    void it("deletes the message when the screen has no content", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654438 });
 
@@ -261,7 +261,7 @@ void describe("Telegram scene slots", () => {
         assert.deepEqual(await readDeletedBotMessageIds(bot), [1]);
     });
 
-    void it("moves the slot message down when a keyed scene starts again", async (t) => {
+    void it("moves the message down when a keyed scene starts again", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654439 });
 
@@ -273,7 +273,7 @@ void describe("Telegram scene slots", () => {
         assert.deepEqual(bot.readSentTexts(), ["Count 0", "Count 1"]);
     });
 
-    void it("removes the slot buttons when the scene ends", async (t) => {
+    void it("removes the buttons of the messages when the scene ends", async (t) => {
         const bot = await buildCardBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654440 });
 
@@ -317,22 +317,38 @@ void describe("Telegram scene slots", () => {
         );
     });
 
-    void it("keeps the message of a slot when a later slot fails", async (t) => {
-        const panel = { isFooterBroken: true };
+    void it("edits the first message and sends the second when a screen grows", async (t) => {
+        const panel = { isFooterBroken: false };
         const bot = await buildPanelBot(t, panel);
         const chat = buildTelegramPrivateChat({ id: 987654441 });
 
         await bot.sendText(chat, "/panel");
         await bot.pressButton(chat, "Toggle");
-        panel.isFooterBroken = false;
+
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "Details",
+            "Footer",
+        ]);
+        assert.deepEqual(bot.readSentTexts(), ["Footer", "Footer"]);
+    });
+
+    void it("keeps the messages as they were when the render fails", async (t) => {
+        const panel = { isFooterBroken: true };
+        const bot = await buildPanelBot(t, panel);
+        const chat = buildTelegramPrivateChat({ id: 987654445 });
+
+        await bot.sendText(chat, "/panel");
         await bot.pressButton(chat, "Toggle");
 
         assert.deepEqual(bot.readSentTexts(), [
             "Footer",
-            "Details",
             telegramLocales.en.error,
         ]);
-        assert.deepEqual(await readDeletedBotMessageIds(bot), [2]);
+        assert.equal(
+            bot.telegramApiService.editMessageText.mock.callCount(),
+            0,
+        );
+        assert.deepEqual(await readDeletedBotMessageIds(bot), []);
     });
 
     void it("doesn't render a scene that waits for an answer when another command runs", async (t) => {
@@ -348,7 +364,7 @@ void describe("Telegram scene slots", () => {
 
         assert.deepEqual(bot.readSentTexts(), [
             "Footer",
-            "Details",
+            "Footer",
             "Note?",
             "pong",
         ]);
@@ -363,29 +379,30 @@ async function buildPanelBot(
         name: "panel",
         state: Type.Object({ isOpen: Type.Boolean() }),
         ttl: 60_000,
-        slots: {
-            details: async (ctx, scene) => {
-                if (!scene.state.isOpen) {
-                    return undefined;
-                }
+        root: { name: "panel", params: {} },
+        screens: {
+            panel: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => {
+                    if (scene.state.isOpen && panel.isFooterBroken) {
+                        throw new Error("Render failed");
+                    }
 
-                return { kind: "text", text: "Details" };
-            },
-            footer: async (ctx, scene) => {
-                if (scene.state.isOpen && panel.isFooterBroken) {
-                    throw new Error("Slot failed");
-                }
-
-                return {
-                    kind: "text",
-                    text: "Footer",
-                    keyboard: [
-                        [
-                            scene.button("Toggle", "toggle", null),
-                            scene.button("Note", "note", null),
+                    const footer: TelegramMessageContent = {
+                        kind: "text",
+                        text: "Footer",
+                        keyboard: [
+                            [
+                                scene.button("Toggle", "toggle", null),
+                                scene.button("Note", "note", null),
+                            ],
                         ],
-                    ],
-                };
+                    };
+
+                    return scene.state.isOpen
+                        ? [{ kind: "text", text: "Details" }, footer]
+                        : [footer];
+                },
             },
         },
         buttons: {
@@ -455,53 +472,63 @@ function defineCardScene(
         state: cardStateSchema,
         key: () => "card",
         ttl: 60_000,
-        slots: {
-            card: async (
-                ctx,
-                scene,
-            ): Promise<TelegramMessageContent | undefined> => {
-                const { count, view } = scene.state;
-                const keyboard = [
-                    [
-                        scene.button("+1", "add", null),
-                        scene.button("Same", "same", null),
-                        scene.button("Close", "close", null),
-                        scene.button("Reset", "reset", null),
-                    ],
-                    [
-                        scene.button("Text", "view", "text"),
-                        scene.button("Photo", "view", "photo"),
-                        scene.button("Rich", "view", "rich"),
-                        scene.button("Hide", "view", "hidden"),
-                    ],
-                ];
+        root: { name: "card", params: {} },
+        screens: {
+            card: {
+                params: Type.Object({}),
+                render: async (
+                    ctx,
+                    scene,
+                ): Promise<TelegramMessageContent[]> => {
+                    const { count, view } = scene.state;
+                    const keyboard = [
+                        [
+                            scene.button("+1", "add", null),
+                            scene.button("Same", "same", null),
+                            scene.button("Close", "close", null),
+                            scene.button("Reset", "reset", null),
+                        ],
+                        [
+                            scene.button("Text", "view", "text"),
+                            scene.button("Photo", "view", "photo"),
+                            scene.button("Rich", "view", "rich"),
+                            scene.button("Hide", "view", "hidden"),
+                        ],
+                    ];
 
-                switch (view) {
-                    case "text":
-                        return {
-                            kind: "text",
-                            text: `Count ${count}`,
-                            keyboard,
-                        };
-                    case "photo":
-                        return {
-                            kind: "media",
-                            media: {
-                                type: "photo",
-                                media: `photo-${count}`,
-                                caption: `Count ${count}`,
-                            },
-                            keyboard,
-                        };
-                    case "rich":
-                        return {
-                            kind: "rich",
-                            message: { markdown: `# Count ${count}` },
-                            keyboard,
-                        };
-                    case "hidden":
-                        return undefined;
-                }
+                    switch (view) {
+                        case "text":
+                            return [
+                                {
+                                    kind: "text",
+                                    text: `Count ${count}`,
+                                    keyboard,
+                                },
+                            ];
+                        case "photo":
+                            return [
+                                {
+                                    kind: "media",
+                                    media: {
+                                        type: "photo",
+                                        media: `photo-${count}`,
+                                        caption: `Count ${count}`,
+                                    },
+                                    keyboard,
+                                },
+                            ];
+                        case "rich":
+                            return [
+                                {
+                                    kind: "rich",
+                                    message: { markdown: `# Count ${count}` },
+                                    keyboard,
+                                },
+                            ];
+                        case "hidden":
+                            return [];
+                    }
+                },
             },
         },
         buttons: {

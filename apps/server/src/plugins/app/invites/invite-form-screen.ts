@@ -23,12 +23,14 @@ export function renderInviteForm(view: InvitesView): TelegramMessageContent {
 
     return buildInvitesMessage(describeDraft(view), [
         [
-            scene.button(t("invites:accessButton"), "show", "sections"),
+            scene.screenButton(t("invites:accessButton"), "sections", {
+                page: 0,
+            }),
             scene.button(t("invites:limitButton"), "askLimit", null),
         ],
-        [scene.button(t("invites:validForButton"), "show", "validFor")],
+        [scene.screenButton(t("invites:validForButton"), "validFor")],
         [
-            scene.button(t("invites:backButton"), "show", "list"),
+            scene.backButton(t("invites:backButton")),
             {
                 ...scene.button(t("invites:createButton"), "save", null),
                 style: "success",
@@ -39,11 +41,15 @@ export function renderInviteForm(view: InvitesView): TelegramMessageContent {
 
 export function renderInviteFormSections(
     view: InvitesView,
+    page: number,
 ): TelegramMessageContent {
     const { ctx, scene, access } = view;
     const { t } = ctx;
-    const sections = listGrantableSections(access, ctx.user);
-    const page = pageOf(sections, scene.state.page, sectionsPageSize);
+    const sections = pageOf(
+        listGrantableSections(access, ctx.user),
+        page,
+        sectionsPageSize,
+    );
 
     return buildInvitesMessage(
         [
@@ -52,44 +58,46 @@ export function renderInviteFormSections(
             escapeTelegramHtml(t("invites:chooseSection")),
         ],
         [
-            ...page.items.map((section) => [
-                scene.button(
+            ...sections.items.map((section) => [
+                scene.screenButton(
                     `${section.title(t)} (${countSelected(section, scene.state.draft.grants)}/${section.grants.length})`,
                     "section",
-                    section.name,
+                    { section: section.name, page: 0 },
                 ),
             ]),
             pageButtons(
-                scene.state.page,
-                page.total,
+                page,
+                sections.total,
                 sectionsPageSize,
                 pageButtonOf(scene),
             ),
-            [scene.button(t("invites:backButton"), "show", "form")],
+            [scene.backButton(t("invites:backButton"))],
         ],
     );
 }
 
 export function renderInviteFormSection(
     view: InvitesView,
+    sectionName: string,
+    page: number,
 ): TelegramMessageContent {
     const { ctx, scene, access } = view;
     const { t } = ctx;
     const section = listGrantableSections(access, ctx.user).find(
-        ({ name }) => name === scene.state.section,
+        ({ name }) => name === sectionName,
     );
 
     if (!section) {
-        return renderInviteFormSections(view);
+        return renderInviteFormSections(view, 0);
     }
 
     const { grants } = scene.state.draft;
-    const page = pageOf(section.grants, scene.state.page, grantsPageSize);
+    const sectionGrants = pageOf(section.grants, page, grantsPageSize);
 
     return buildInvitesMessage(
         [...describeDraft(view), "", formatBold(section.title(t))],
         [
-            ...page.items.map((grant) => [
+            ...sectionGrants.items.map((grant) => [
                 scene.button(
                     `${grants.includes(grant.name) ? "✅" : "⬜"} ${grant.title(t)}`,
                     "toggle",
@@ -97,12 +105,12 @@ export function renderInviteFormSection(
                 ),
             ]),
             pageButtons(
-                scene.state.page,
-                page.total,
+                page,
+                sectionGrants.total,
                 grantsPageSize,
                 pageButtonOf(scene),
             ),
-            [scene.button(t("invites:backButton"), "show", "sections")],
+            [scene.backButton(t("invites:backButton"))],
         ],
     );
 }
@@ -129,7 +137,7 @@ export function renderInviteFormValidFor(
                 scene.button(t("invites:otherDays"), "askValidFor", null),
                 scene.button(t("invites:noExpiry"), "validFor", null),
             ],
-            [scene.button(t("invites:backButton"), "show", "form")],
+            [scene.backButton(t("invites:backButton"))],
         ],
     );
 }

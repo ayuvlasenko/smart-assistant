@@ -2,7 +2,7 @@
 
 This directory is the Telegram transport and the scene engine of the bot. It turns a webhook request into a call of a command, a route or a scene, keeps the per-user state in Valkey, and draws the scene messages. It does not import feature domains: a domain registers its commands and scenes through `TelegramRouter`.
 
-The first part of this file says how to write bot code in a domain: commands, deep links, scenes and their buttons, slots and inputs. The second part explains how each mechanism works inside and which problem it solves. Every mechanism there follows the same shape: the problem, the idea, the data it keeps, a walk-through, and the edge cases.
+The first part of this file says how to write bot code in a domain: commands, deep links, scenes with their screens, buttons and inputs. The second part explains how each mechanism works inside and which problem it solves. Every mechanism there follows the same shape: the problem, the idea, the data it keeps, a walk-through, and the edge cases.
 
 - [What Telegram gives us](#what-telegram-gives-us)
 - [Writing bot code](#writing-bot-code)
@@ -13,7 +13,7 @@ The first part of this file says how to write bot code in a domain: commands, de
 - [Rate limits](#rate-limits)
 - [Scene instances](#scene-instances)
 - [Buttons](#buttons)
-- [Slots](#slots)
+- [Screens and messages](#screens-and-messages)
 - [Inputs](#inputs)
 - [Blocking scenes](#blocking-scenes)
 - [Updates for other users](#updates-for-other-users)
@@ -66,20 +66,51 @@ export function createReportScene(
         guard: access.guard("read", "Report"),
         key: (state) => state.reportId,
         watch: (state) => [`reports.report:${state.reportId}`],
-        slots: {
-            report: async (ctx, scene) => {
-                const report = await reportsService.find(
-                    ctx.user,
-                    scene.state.reportId,
-                );
+        root: { name: "report", params: {} },
+        screens: {
+            report: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => {
+                    const report = await reportsService.find(
+                        ctx.user,
+                        scene.state.reportId,
+                    );
 
-                return {
-                    kind: "text",
-                    text: report.title,
-                    keyboard: [
-                        [scene.button(ctx.t("reports:rename"), "rename", null)],
-                    ],
-                };
+                    return [
+                        {
+                            kind: "text",
+                            text: report.title,
+                            keyboard: [
+                                [
+                                    scene.button(
+                                        ctx.t("reports:rename"),
+                                        "rename",
+                                        null,
+                                    ),
+                                    scene.screenButton(
+                                        ctx.t("reports:history"),
+                                        "history",
+                                        { page: 0 },
+                                    ),
+                                ],
+                            ],
+                        },
+                    ];
+                },
+            },
+            history: {
+                params: Type.Object({ page: Type.Integer({ minimum: 0 }) }),
+                render: async (ctx, scene, { page }) => [
+                    {
+                        kind: "text",
+                        text: await reportsService.describeHistory(
+                            ctx.user,
+                            scene.state.reportId,
+                            page,
+                        ),
+                        keyboard: [[scene.backButton(ctx.t("reports:back"))]],
+                    },
+                ],
             },
         },
         buttons: {
@@ -130,7 +161,8 @@ events.on("reports.reportChanged", ({ data }) => {
 
 **The definition.**
 
-- `state` is a TypeBox schema. The engine checks every stored record against it, so a record from an older schema is dropped, not misread.
+- `state` is a TypeBox schema. The engine checks every stored record against it, so a record from an older schema is dropped, not misread. Keep only the fields that outlive a screen in it, such as a draft; the fields of one screen go to the params of that screen.
+- `screens` lists what the scene can show. A screen has `params`, a TypeBox object, and `render`, which returns the messages of the screen. A screen without params declares `params: Type.Object({})`. `root` is the screen that a new instance starts on. See [Screens and messages](#screens-and-messages).
 - `ttl` is how long the scene lives after its last use. An optional `maxAge` limits its whole life from the start. A scene lives until it calls `scene.end()` or its time runs out, and a user can have many scenes at once.
 - `key(state)` makes one instance per business entity, such as the id of the entity. A second `start` with the same key shows the running scene again and keeps its state.
 - Create a scene in a factory, `create<Name>Scene(dependencies)`, that receives the services it needs. A handler that starts another scene gets `telegramSceneEngine` from the factory too and calls `sceneEngine.start(ctx, otherScene, state)` from the closure.
@@ -141,9 +173,20 @@ events.on("reports.reportChanged", ({ data }) => {
 
 **Buttons.** Create every inline button with `scene.button(text, name, value)` for a handler in `buttons`, or with `input.button(text, value)` inside a step. Never write `callback_data` by hand: the scene keeps the value, and `callback_data` holds only a reference. The buttons of every running scene work at the same time. See [Buttons](#buttons).
 
-**Slots.** Show a message that changes with the state as a slot: a function in `slots` that returns `TelegramMessageContent` (`text`, `rich` or `media`) or `undefined`. A handler only changes the state; the engine draws the slots after the update and edits, replaces or deletes the message itself. Never keep the message id of a slot in the state. A reply sent in a handler comes before the slot messages. Choose what happens to the slot messages when the scene ends with `scene.end({ messages: "keep" | "removeButtons" | "delete" })`. See [Slots](#slots).
+**Screens.** Show everything the scene draws as screens. `render` returns an array of `TelegramMessageContent` (`text`, `rich` or `media`), and the engine matches the array to the messages of the scene by position: it edits a message in place, sends the new ones at the end and deletes the rest. A handler only changes the state or the screen; the engine draws the current screen after the update. Never keep a message id in the state. A reply sent in a handler comes before the screen messages. Choose what happens to the messages when the scene ends with `scene.end({ messages: "keep" | "removeButtons" | "delete" })`. See [Screens and messages](#screens-and-messages).
 
-**Pagination.** Keep the page in the state and draw it in a slot, with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one.
+**Navigation.** `scene.screen` is the current screen, `{ name, params }`; a check of `name` narrows the type of `params`, and a handler may change the params in place. The scene keeps a stack of the previous screens:
+
+- `scene.push(name, params)` opens a screen and keeps the current one in the stack. `scene.screenButton(text, name, params)` does the same as a button, without a handler.
+- `scene.back()` returns to the previous screen with its params, or to `root` when the stack is empty. `scene.backButton(text)` is the button for it.
+- `scene.replace(name, params)` changes the current screen and keeps the stack, so back skips it: use it after a save that turns a form into the saved entity.
+- `scene.reset()` clears the stack and opens `root`.
+
+A screen without params takes no second argument: `scene.push("form")`. Each move cancels the waiting input of the scene and a pending confirmation. A `guard` on a screen hides it: the engine refuses a move to it and shows `root` instead when the user loses the access.
+
+**Confirmation.** Mark a destructive button `confirm: true`. The first press only remembers the button and its value and draws the screen again; the second press of the same button with the same value runs `handle`. Any other button of the scene and any move cancel it. Draw the second label with `scene.isConfirming(name)`, such as `⛔ Sure?`.
+
+**Pagination.** Keep the page in the params of the screen and draw it with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one, and back returns to the page the user left.
 
 **Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a notice that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
 
@@ -157,9 +200,9 @@ Never write to the session of another user. Change the scenes of other users thr
 
 1. The domain service saves the change and emits `<domain>.<entity>Changed` on `eventEmitter`, narrowed with `fastify.getDecorator<Emittery<<Domain>Events>>("eventEmitter")`. The events of a domain live in `<domain>-events.ts`.
 2. The handlers plugin subscribes with `on` and calls one of these:
-    - `telegramChats.publish(topics)` when any user may look at the data. The scene declares the topics it shows now with `watch(state)`, such as `<domain>.<entity>:<id>`.
+    - `telegramChats.publish(topics)` when any user may look at the data. The scene declares the topics it shows now with `watch(state)`, and a screen adds its own with `watch(params, state)`, such as `<domain>.<entity>:<id>`.
     - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. `targets` are user ids with scene keys. The optional `handle` runs under the user's session lock without an incoming update.
-3. Both return at once and run in the background, and the engine renders the slots afterwards. So a handler only changes the state or sends a notification. Tests wait for both with `telegramChats.idle()`.
+3. Both return at once and run in the background, and the engine draws the screens afterwards. So a handler only changes the state or sends a notification. Tests wait for both with `telegramChats.idle()`.
 
 See [Updates for other users](#updates-for-other-users) for how the engine finds and redraws the scenes.
 
@@ -170,7 +213,7 @@ See [Updates for other users](#updates-for-other-users) for how the engine finds
 - Answer a refused button press in the answer to the callback, not with a message: the notice shows over the chat and leaves no trace in it. `ctx.notify(text)` answers the pending callback of the update, or replies when the update is a message. The engine refuses `ask` and a scene start this way.
 - Mention step commands such as `/skip` in the prompt text of the step that accepts them.
 - Use inline buttons only when the user picks from a set of options, such as an account or a date. Accept typed text for free-form input.
-- Update the existing message for pagination and similar controls instead of sending a new one: show it as a slot and keep the page in the state.
+- Update the existing message for pagination and similar controls instead of sending a new one: show it as a screen and keep the page in its params.
 - Name a command in snake case: lowercase Latin letters, digits and underscores, such as `/new_invite`, at most 32 characters.
 - The bot works in private chats only. The update handler ignores groups and channels, so do not add group-specific behavior such as reply targets or forum topics.
 
@@ -182,7 +225,7 @@ Every inline keyboard follows the same layout, so a user finds the same kind of 
 2. Put the navigation row last. `‹ Back` stands on its left. The action that finishes the screen, such as `✅ Create`, `🔒 Close` or `⛔ Revoke`, stands on its right. A screen without `‹ Back` puts its dismiss button, such as `✖️ Hide`, in that row.
 3. Put at most two buttons in a row. A grid of options is the exception: up to six cards, or up to three choices of a period.
 4. Colour only two kinds of buttons through `style`: the main action gets `primary` or `success`, a destructive action gets `danger`. A client without `style` shows plain buttons, so the text of a button must make sense without the colour.
-5. Ask for a destructive action twice. The second label is short, such as `⛔ Sure?`, so it still fits next to `‹ Back`. Any other button of the scene cancels the confirmation.
+5. Ask for a destructive action twice: declare its button with `confirm: true`. The second label is short, such as `⛔ Sure?`, so it still fits next to `‹ Back`. Any other button of the scene cancels the confirmation.
 6. Name the action on a button and show the values in the text of the message. A form button reads `🃏 Deck`, not `🃏 Deck: Fibonacci`, so two field buttons fit in one row.
 
 ## Map
@@ -205,9 +248,11 @@ flowchart TD
 
     engine --> update[TelegramSceneUpdate]
     update --> storage[TelegramSceneStorage]
-    engine --> buttons[TelegramSceneButtons]
+    engine --> presses[TelegramScenePresses]
+    presses --> buttons[TelegramSceneButtons]
     engine --> inputs[TelegramSceneInputs]
-    engine --> slots[TelegramSceneSlots]
+    engine --> screens[TelegramSceneScreens]
+    engine --> messages[TelegramSceneMessages]
     inputs --> steps["telegram-steps.ts"]
 
     ctx --> responder[TelegramResponder]
@@ -252,7 +297,7 @@ sequenceDiagram
             Rt->>Rt: deep link by name, command, then on/when routes
         end
     end
-    E->>E: render slots of touched scenes
+    E->>E: render the screens of touched scenes
     E->>E: save touched scenes (also on failure)
     S->>S: write changed fields if the lock is still held
     H->>H: answer callback, map errors to a reply and a metric
@@ -326,7 +371,7 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 
 We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
 
-**Walk-through.** A user presses a button, and the handler edits a slot.
+**Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 
 1. `TelegramChats.withContext` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call outside a session, such as `setMyCommands` before the lock, gets the class `interactive` and its own 60 s timeout signal.
 2. `TelegramApiService.call` reads the scope and asks `telegramRateLimitBuckets` for the buckets of `editMessageText`: the chat bucket, then the global one.
@@ -345,7 +390,7 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 - A class bucket needs a burst above 1. With a burst of 1 the bucket loses every token that the late timer of the loop could not take: in a test at 100 tokens per second, the rate dropped by a fifth.
 - A pod that dies leaves its marks for up to 2 s, and the other class keeps its share for that time.
 
-**Metrics.** `telegram_rate_limit_wait_seconds{method, priority}` measures the wait for the tokens; its p95 for `interactive` shows a limit that is too tight. `telegram_api_requests_total{result="rate_limited"}` counts every `429`, and any growth means the numbers are above the real limits. The `error_code` label of `telegram_api_requests_total` keeps the Bot API code of a failed request, so a `400` of `editMessageText`, a slot that had to be sent again, stays apart from a `403` of a user who blocked the bot. `telegram_api_retry_after_seconds{method}` shows the `retry_after` values. `result="aborted"` counts the requests that the signal of the scope stopped.
+**Metrics.** `telegram_rate_limit_wait_seconds{method, priority}` measures the wait for the tokens; its p95 for `interactive` shows a limit that is too tight. `telegram_api_requests_total{result="rate_limited"}` counts every `429`, and any growth means the numbers are above the real limits. The `error_code` label of `telegram_api_requests_total` keeps the Bot API code of a failed request, so a `400` of `editMessageText`, a message that had to be sent again, stays apart from a `403` of a user who blocked the bot. `telegram_api_retry_after_seconds{method}` shows the `retry_after` values. `result="aborted"` counts the requests that the signal of the scope stopped.
 
 **A new Bot API method.** A method that sends, edits or deletes a message gets a line in `telegramRateLimits` with the limits it counts against. A method without a line has no limits, and only its `429` makes it wait. A new kind of limit is a new `TelegramRateLimit`: its rate, burst, optional `shares`, and `scopeOf`, which turns the params of the call into the key of the bucket or skips the bucket.
 
@@ -361,11 +406,12 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 {
     "name": "invites",
     "startedAt": 1760500000000,
-    "state": { "screen": "invite", "inviteId": "66f1c2…", "page": 0 },
+    "state": { "draft": { "grants": [], "maxUses": 1, "validForDays": null } },
+    "screen": { "name": "invite", "params": { "inviteId": "66f1c2…" } },
+    "stack": [{ "name": "list", "params": { "page": 2 } }],
+    "confirming": { "name": "revoke", "value": "66f1c2…" },
     "buttons": { "nextId": 7, "messages": [] },
-    "slots": {
-        "invites": { "messageId": 812, "kind": "text", "hash": "Qm9…" }
-    },
+    "messages": [{ "messageId": 812, "kind": "text", "hash": "Qm9…" }],
     "topics": ["invites.invite:66f1c2…"]
 }
 ```
@@ -373,10 +419,10 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 **Walk-through.**
 
 1. `sceneEngine.start(ctx, scene, state)` checks the guard of the scene and builds the id. With a `key`, the id is the first 12 characters of `sha256("<scene name>:<key>")` in base64url, so the same key always gives the same id. Without a `key`, the id is 8 random bytes.
-2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its slot messages move to the bottom of the chat, and the state stays as it is.
+2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its messages move to the bottom of the chat, and the state and the screen stay as they are.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
 4. Every call that gives a handler the scene object marks the instance as touched in `TelegramSceneUpdate`.
-5. After the update, the engine draws the slots of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
+5. After the update, the engine draws the current screen of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
 **Edge cases.** A command whose start is refused stays in the chat. The guard of the scene refuses silently, and a command that vanishes without an answer looks like a fault; a blocking scene answers with a notice that needs the command above it. A command whose handler fails stays above the error message too. Only a message with a command counts: a text answer that leads to a `start` stays. The engine reads a record through the current TypeBox schema of the scene. After a deploy that removed the scene or changed the schema of its state, the record does not match. The engine then removes the record and logs `Telegram scene is not registered or its state is outdated`. The user's next press on its buttons gets `buttonExpired`. Business data stays in the domain repository. The state keeps only the view of it, such as an id and a page, so a lost record loses nothing important.
@@ -404,44 +450,65 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 }
 ```
 
-A `scene` button runs a handler from `buttons` of the scene. An `input` button belongs to one step of an input, see [Inputs](#inputs).
+A `scene` button runs a handler from `buttons` of the scene. A `screen` button, `{ "kind": "screen", "screen": { "name": "users", "params": { … } } }`, pushes that screen, and a `back` button returns to the previous one; neither has a handler. An `input` button belongs to one step of an input, see [Inputs](#inputs).
 
 **Walk-through.**
 
-1. A slot or a handler calls `scene.button("Open", "open", id)`. The engine looks for an equal button, the same name and value, in the message that the slot shows now. When it finds one, it takes its id. Otherwise it takes `nextId` and increments it.
+1. A screen or a handler calls `scene.button("Open", "open", id)`. The engine looks for an equal button, the same kind, name and value, in the messages that the scene shows now. When it finds one, it takes its id. Otherwise it takes `nextId` and increments it. One `render` draws all messages of a screen at once, so the engine does not know which message a button is for; an equal button in two messages gets one id, and each message still keeps its own copy.
 2. The engine keeps the button in memory as unsent and returns `{ text, callback_data: "Xk3f9aB1c0dE:3" }`.
 3. `TelegramContext` sends or edits the message and emits `messageSent` or `messageEdited` with the keyboard.
 4. The engine reads the `callback_data` of this scene from the keyboard and writes only those buttons under the id of the message. A button that never reached a message is never stored.
 5. A press with `Xk3f9aB1c0dE:3` on message 812 loads the instance `Xk3f9aB1c0dE` and finds button 3 in message 812.
-6. The engine checks the value against the schema of the `open` button and checks the guard of the scene and of the button. Then it runs the handler with the stored value.
+6. The engine checks the value against the schema of the `open` button and checks the guard of the scene and of the button. Then it runs the handler with the stored value. A `screen` button checks the params against the schema of the screen and the guard of the screen instead.
 
-**Why the id is reused.** The slot compares a hash of its content, and the content includes the `callback_data`. When a redraw gives an equal button a new id, the hash changes and the engine calls `editMessageText` for a message that looks the same. With the old id, an unchanged screen costs no API call.
+**Why the id is reused.** The engine compares a hash of the content of each message, and the content includes the `callback_data`. When a redraw gives an equal button a new id, the hash changes and the engine calls `editMessageText` for a message that looks the same. With the old id, an unchanged screen costs no API call.
 
 **Edge cases.**
 
 - A message that the scene edited without a button, or deleted, no longer holds that button. A press on it, or on a message of an ended scene, gets `telegram:buttonExpired`.
 - A value that no longer matches the schema of its button after a deploy also gets `buttonExpired`. A failed guard gets an empty callback answer, so the press says nothing about the access of the user.
 - A press does not need the input focus, so the buttons of every running scene work at the same time.
+- A button with `confirm: true` keeps `confirming` in the record after the first press and runs `handle` only on the second press with the same value. Every other press of the scene, a `screen` or `back` button, an `input` button, a button with another value, and every move clear `confirming` first. `publish` and `deliver` redraw the screen and keep it, because the user pressed nothing.
 
-## Slots
+## Screens and messages
 
-**Problem.** A scene often shows its state as one message that changes: a list with pages, a form. Without help, every handler would keep the message id, choose between send and edit, avoid `message is not modified`, and clean up after a deleted message.
+**Problem.** A scene shows its state as messages that change: a list with pages, a form. Without help, every handler would keep the message ids, choose between send and edit, avoid `message is not modified`, and clean up after a deleted message. A scene also moves between several views of its data, such as a list, an item and a form, and each view may need more than one message. Without help, every scene keeps the name of its view and the fields of every view in one flat state, resets them by hand on each move, and loses the page of the list when the user comes back. And the bot can only add a message at the bottom of the chat: a message that appears above another one lands below it.
 
-**Idea.** A slot is a function of the state that returns the content of a message. The handler only changes the state. After the update, the engine renders every slot of every touched instance and brings the message in line with it.
+**Idea.** A screen is a name with typed params and a `render` that returns the messages of the screen. The record keeps the current screen and a stack of the previous ones, so back restores a screen with its params. The engine matches the messages of the new screen to the old ones by position, so an edit keeps a message in place and a new message always goes to the end.
 
-**Data.** `slots` in the scene record keeps, per slot name, the id of the message, its kind (`text`, `rich` or `media`) and a SHA-256 hash of the content that it shows now.
+**Data.** The scene record keeps:
 
-**Walk-through.** For every slot of a touched instance, after the handler succeeded:
+- `screen`: the current screen, `{ "name": "users", "params": { "inviteId": "66f1c2…", "page": 0 } }`.
+- `stack`: the previous screens, the last one on top. The stack has no limit; a scene moves forward with `push` and returns with `back`, so its depth follows the tree of its screens.
+- `messages`: per position, the id of the message, its kind (`text`, `rich` or `media`) and a SHA-256 hash of the content that it shows now.
+- `confirming`: the button that waits for its second press, see [Buttons](#buttons).
 
-1. The engine calls the slot and gets the content, or `undefined`.
-2. With `undefined`, it deletes the old message and forgets the slot.
-3. With the same hash as before, it does nothing.
-4. Otherwise it edits the old message. `message is not modified` counts as a success.
-5. When the edit is not possible or fails, for example because the user deleted the message, it sends a new message and only then deletes the old one. When Telegram refuses the new message too, for example because the text is too long, the old message stays with its old content and the update fails. A `media` message is never edited into text; a text message is edited into media only when Telegram accepts it.
+**Walk-through.** The user is on the list of invites on page 2 and opens an invite with two messages.
 
-A second `start` of a running scene sets `reshow`: the engine skips the hash check and sends the slot again as a new message at the bottom of the chat. Messages that a handler sends with `ctx.reply` come before the slot messages, because the slots render at the end.
+1. The `screen` button pushes `list` with `{ "page": 2 }` to the stack and makes `invite` the current screen. The move cancels the waiting input of the scene, with `cleanup` of the input, and clears `confirming`.
+2. After the update, the engine checks the guard of the current screen and calls its `render`, which returns two messages.
+3. Position 0 had the list. The hash differs, so the engine edits that message into the invite.
+4. Position 1 had no message, so the engine sends one. It goes to the end of the chat, below position 0.
+5. `‹ Back` pops `list` with `{ "page": 2 }`. Position 0 is edited back into page 2 of the list, and the message at position 1 is deleted.
 
-**Edge cases.** When the handler fails, the state is saved but the slot is not drawn. The next touch of the scene finds a different hash and draws it. When the bot cannot delete a message, for example one older than 48 hours, it removes the keyboard of the message instead. `scene.end({ messages })` chooses what happens to the slot messages: `keep`, `removeButtons` or `delete`.
+For every position the engine:
+
+1. Does nothing when the hash is the same as before.
+2. Otherwise edits the old message. `message is not modified` counts as a success.
+3. When the edit is not possible or fails, for example because the user deleted the message, sends a new message and only then deletes the old one. A `media` message is never edited into text; a text message is edited into media only when Telegram accepts it.
+
+Once it sent a new message, it sends every later position again too, and deletes their old messages, so the messages keep the order of the array. Positions past the end of the new array lose their messages. Messages that a handler sends with `ctx.reply` come before the screen messages, because the screen renders at the end of the update.
+
+**Edge cases.**
+
+- When Telegram refuses the new message too, for example because the text is too long, the old message stays with its old content and the update fails.
+- A second `start` of a running scene sets `reshow`: the engine skips the hash check and sends every message of the current screen again at the bottom of the chat. The stack stays.
+- When the guard of the current screen refuses the user, for example after a lost grant, the engine clears the stack and draws `root`.
+- After a deploy, a record whose `screen` or `stack` names a screen that no longer exists, or holds params that no longer match its schema, is dropped like a record with an outdated state.
+- When the handler or `render` fails, the state is saved but the screen is not drawn, and the messages stay as they were. The next touch of the scene finds a different hash and draws it.
+- When the bot cannot delete a message, for example one older than 48 hours, it removes the keyboard of the message instead.
+- `scene.end({ messages })` chooses what happens to the messages: `keep`, `removeButtons` or `delete`.
+- A scene without `screens` draws no messages, for example a scene that only asks a question.
 
 ## Inputs
 
@@ -476,6 +543,7 @@ A second `start` of a running scene sets `reshow`: the engine skips the hash che
 - A second `ask` in the same scene replaces its input. An `ask` while another scene holds the focus gets `telegram:inputBusy`.
 - `focus` repairs itself. When it points to a scene that has no input any more, or to an input that a deploy removed, the engine clears it.
 - An `input` button is valid only while its step is the current step. Every step change forgets the input buttons of the scene.
+- A move to another screen of the scene, `push`, `replace`, `back` or `reset`, cancels its waiting input without a reply and without the `cancel` hook, and `cleanup: true` deletes the question. So `complete` always runs on the screen that asked.
 
 ## Blocking scenes
 
@@ -496,7 +564,7 @@ flowchart TD
     askBlocker -->|no| askFocus["focus check as before"]
 
     cancel["/cancel"] --> hasBlocker{"blocking scene runs?"}
-    hasBlocker -->|yes| endScene["cancel its input (runs the cancel hook),<br/>end it, remove slot buttons"]
+    hasBlocker -->|yes| endScene["cancel its input (runs the cancel hook),<br/>end it, remove the buttons of its messages"]
     hasBlocker -->|no| cancelInput["cancel the waiting input"]
 ```
 
@@ -543,7 +611,7 @@ sequenceDiagram
         C->>C: withChat: session lock + context without update
         C->>E: redraw(ctx, sceneId, topics) for every scene of the user
         E->>E: skip a scene that stopped watching or fails its guard
-        E->>E: render slots, save
+        E->>E: render the screen, save
     end
 ```
 
@@ -577,11 +645,11 @@ sequenceDiagram
         C->>C: withChat: session lock + context without update
         C->>E: deliver(ctx, scene, key)
         E->>E: find the scene instance by key, run handle
-        E->>E: render slots, save
+        E->>E: render the screen, save
     end
 ```
 
-`targets` pairs every user id with the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its slots from the repository. With `handle` it can also change its state or send a notification.
+`targets` pairs every user id with the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
 
 **Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod.
 
@@ -636,7 +704,7 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver` | [Updates for other users](#updates-for-other-users)         |
 | `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                           | [Session and lock](#session-and-lock)                       |
 | `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events          | [Buttons](#buttons)                                         |
-| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists             | [Slots](#slots)                                             |
+| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists             | [Screens and messages](#screens-and-messages)               |
 | `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, timeout, logs  | [Rate limits](#rate-limits)                                 |
 | `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                    | [Rate limits](#rate-limits)                                 |
 | `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                           | [Access and the command menu](#access-and-the-command-menu) |
@@ -646,8 +714,10 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | `telegram-scene-engine.ts`                                         | Start, find and end instances; route presses and input text          | [Scene instances](#scene-instances)                         |
 | `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                 | [Scene instances](#scene-instances)                         |
 | `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them             | [Scene instances](#scene-instances)                         |
-| `telegram-scene-buttons.ts`                                        | Button values per message                                            | [Buttons](#buttons)                                         |
-| `telegram-scene-slots.ts`                                          | Messages that mirror the state                                       | [Slots](#slots)                                             |
+| `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                  | [Buttons](#buttons)                                         |
+| `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler      | [Buttons](#buttons)                                         |
+| `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                          | [Screens and messages](#screens-and-messages)               |
+| `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position                        | [Screens and messages](#screens-and-messages)               |
 | `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                         | [Inputs](#inputs)                                           |
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                   | [Inputs](#inputs)                                           |
 | `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                      |                                                             |

@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { ObjectId } from "mongodb";
 import { AccessControl } from "../access/access-service.js";
-import { TelegramMessageContent } from "../telegram/telegram-responder.js";
+import { TelegramContext } from "../telegram/telegram-context.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { numberStep } from "../telegram/telegram-steps.js";
 import { InvitesSubjects } from "./invite-entity.js";
@@ -16,9 +16,10 @@ import { renderInvitesList } from "./invites-list-screen.js";
 import {
     InviteDraft,
     invitesButtonValues,
+    InvitesSceneControl,
+    invitesScreens,
     InvitesState,
     invitesStateSchema,
-    InvitesView,
     InviteUrlResolver,
 } from "./invites-schemas.js";
 import { InvitesService } from "./invites-service.js";
@@ -35,15 +36,7 @@ export function inviteTopic(inviteId: string): string {
 }
 
 export function buildInvitesState(): InvitesState {
-    return {
-        screen: "list",
-        listPage: 0,
-        page: 0,
-        inviteId: null,
-        isRevoking: false,
-        section: null,
-        draft: buildDraft(),
-    };
+    return { draft: buildDraft() };
 }
 
 export function createInvitesScene(
@@ -53,6 +46,13 @@ export function createInvitesScene(
 ): TelegramScene<typeof invitesStateSchema> {
     const canCreate = access.guard("create", "Invite");
     const canUpdate = access.guard("update", "Invite");
+    const view = (ctx: TelegramContext, scene: InvitesSceneControl) => ({
+        ctx,
+        scene,
+        invitesService,
+        access,
+        resolveInviteUrl,
+    });
 
     return defineScene({
         name: "invites",
@@ -60,81 +60,84 @@ export function createInvitesScene(
         ttl: invitesSceneTtlMilliseconds,
         guard: access.guard("read", "Invite"),
         key: () => "invites",
-        watch: watchInvites,
-        slots: {
-            invites: (ctx, scene) =>
-                render({
-                    ctx,
-                    scene,
-                    invitesService,
-                    access,
-                    resolveInviteUrl,
-                }),
+        root: { name: "list", params: { page: 0 } },
+        screens: {
+            list: {
+                params: invitesScreens.list,
+                watch: () => [invitesTopic],
+                render: async (ctx, scene, { page }) => [
+                    await renderInvitesList(view(ctx, scene), page),
+                ],
+            },
+            invite: {
+                params: invitesScreens.invite,
+                watch: ({ inviteId }) => [inviteTopic(inviteId)],
+                render: async (ctx, scene, { inviteId }) => [
+                    await renderInvite(view(ctx, scene), inviteId),
+                ],
+            },
+            users: {
+                params: invitesScreens.users,
+                watch: ({ inviteId }) => [inviteTopic(inviteId)],
+                render: async (ctx, scene, { inviteId, page }) => [
+                    await renderInviteUsers(view(ctx, scene), inviteId, page),
+                ],
+            },
+            form: {
+                params: invitesScreens.form,
+                guard: canCreate,
+                render: async (ctx, scene) => [
+                    renderInviteForm(view(ctx, scene)),
+                ],
+            },
+            sections: {
+                params: invitesScreens.sections,
+                guard: canCreate,
+                render: async (ctx, scene, { page }) => [
+                    renderInviteFormSections(view(ctx, scene), page),
+                ],
+            },
+            section: {
+                params: invitesScreens.section,
+                guard: canCreate,
+                render: async (ctx, scene, { section, page }) => [
+                    renderInviteFormSection(view(ctx, scene), section, page),
+                ],
+            },
+            validFor: {
+                params: invitesScreens.validFor,
+                guard: canCreate,
+                render: async (ctx, scene) => [
+                    renderInviteFormValidFor(view(ctx, scene)),
+                ],
+            },
         },
         buttons: {
-            show: {
-                value: invitesButtonValues.show,
-                handle: async (ctx, scene, screen) => {
-                    scene.state.screen = screen;
-                    scene.state.page = 0;
-                    scene.state.isRevoking = false;
-                },
-            },
-            open: {
-                value: invitesButtonValues.open,
-                handle: async (ctx, scene, inviteId) => {
-                    scene.state.screen = "invite";
-                    scene.state.inviteId = inviteId;
-                    scene.state.isRevoking = false;
-                },
-            },
-            listPage: {
-                value: invitesButtonValues.listPage,
-                handle: async (ctx, scene, page) => {
-                    scene.state.listPage = page;
-                },
-            },
             page: {
                 value: invitesButtonValues.page,
                 handle: async (ctx, scene, page) => {
-                    scene.state.page = page;
+                    if ("page" in scene.screen.params) {
+                        scene.screen.params.page = page;
+                    }
                 },
             },
             revoke: {
                 value: invitesButtonValues.revoke,
                 guard: canUpdate,
-                handle: async (ctx, scene) => {
-                    if (!scene.state.inviteId) {
-                        return;
-                    }
-
-                    if (!scene.state.isRevoking) {
-                        scene.state.isRevoking = true;
-                        return;
-                    }
-
+                confirm: true,
+                handle: async (ctx, scene, inviteId) => {
                     await invitesService.revoke(
                         ctx.user,
-                        new ObjectId(scene.state.inviteId),
+                        new ObjectId(inviteId),
                     );
-                    scene.state.isRevoking = false;
                 },
             },
             create: {
                 value: invitesButtonValues.create,
                 guard: canCreate,
                 handle: async (ctx, scene) => {
-                    scene.state.screen = "form";
                     scene.state.draft = buildDraft();
-                },
-            },
-            section: {
-                value: invitesButtonValues.section,
-                guard: canCreate,
-                handle: async (ctx, scene, section) => {
-                    scene.state.screen = "section";
-                    scene.state.section = section;
-                    scene.state.page = 0;
+                    await scene.push("form");
                 },
             },
             toggle: {
@@ -157,7 +160,7 @@ export function createInvitesScene(
                 guard: canCreate,
                 handle: async (ctx, scene, days) => {
                     scene.state.draft.validForDays = days;
-                    scene.state.screen = "form";
+                    await scene.back();
                 },
             },
             askLimit: {
@@ -189,10 +192,10 @@ export function createInvitesScene(
                         expiresAt: readExpiry(validForDays),
                     });
 
-                    scene.state.screen = "invite";
-                    scene.state.inviteId = invite._id.toHexString();
-                    scene.state.isRevoking = false;
                     scene.state.draft = buildDraft();
+                    await scene.replace("invite", {
+                        inviteId: invite._id.toHexString(),
+                    });
                 },
             },
         },
@@ -234,42 +237,11 @@ export function createInvitesScene(
                 ],
                 complete: async (ctx, scene, { days }) => {
                     scene.state.draft.validForDays = days;
-                    scene.state.screen = "form";
+                    await scene.back();
                 },
             },
         },
     });
-}
-
-function watchInvites({ screen, inviteId }: InvitesState): string[] {
-    if (screen === "list") {
-        return [invitesTopic];
-    }
-
-    if ((screen === "invite" || screen === "users") && inviteId) {
-        return [inviteTopic(inviteId)];
-    }
-
-    return [];
-}
-
-async function render(view: InvitesView): Promise<TelegramMessageContent> {
-    switch (view.scene.state.screen) {
-        case "list":
-            return renderInvitesList(view);
-        case "invite":
-            return renderInvite(view);
-        case "users":
-            return renderInviteUsers(view);
-        case "form":
-            return renderInviteForm(view);
-        case "sections":
-            return renderInviteFormSections(view);
-        case "section":
-            return renderInviteFormSection(view);
-        case "validFor":
-            return renderInviteFormValidFor(view);
-    }
 }
 
 function buildDraft(): InviteDraft {

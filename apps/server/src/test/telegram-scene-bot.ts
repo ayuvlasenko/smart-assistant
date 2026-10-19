@@ -42,6 +42,7 @@ export interface TelegramSceneBot extends TelegramBotServiceTestApp {
     ): Promise<void>;
     readSentTexts(): string[];
     readMessageTexts(chatId: number): Promise<string[]>;
+    readButtonLabels(chatId: number): Promise<string[]>;
     readLastKeyboard(): InlineKeyboardButton.CallbackButton[][];
     readLastEditedKeyboard(): InlineKeyboardButton.CallbackButton[][];
 }
@@ -134,6 +135,23 @@ export async function buildTelegramSceneBot(
             ),
         readMessageTexts: (chatId) =>
             readMessageTexts(telegramApiService, chatId),
+        readButtonLabels: async (chatId) => {
+            const keyboards = await readKeyboardsByMessage(
+                telegramApiService,
+                chatId,
+            );
+
+            return [...keyboards.entries()]
+                .sort(([left], [right]) => left - right)
+                .flatMap(([, markup]) =>
+                    (
+                        (markup as InlineKeyboardMarkup | undefined)
+                            ?.inline_keyboard ?? []
+                    )
+                        .flat()
+                        .map((button) => button.text),
+                );
+        },
         readLastKeyboard: () =>
             readCallbackButtons(
                 telegramApiService.sendMessage.mock.calls.at(-1)?.arguments[0]

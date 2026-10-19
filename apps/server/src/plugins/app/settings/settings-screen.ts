@@ -60,7 +60,7 @@ export function renderSettingsChoices(
                         option.value,
                     ),
                 ]),
-            [scene.button(t("settings:backButton"), "back", null)],
+            [scene.backButton(t("settings:backButton"))],
         ],
     );
 }

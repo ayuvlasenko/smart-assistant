@@ -398,27 +398,33 @@ async function buildBoardBot(
             (view === "both" ? ["a", "b"] : [view]).map(
                 (name) => `board:${name}`,
             ),
-        slots: {
-            board: async (ctx, scene) => {
-                if (ctx.user.telegramId === String(boards.failingUserId)) {
-                    throw new Error("Render failed");
-                }
+        root: { name: "board", params: {} },
+        screens: {
+            board: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => {
+                    if (ctx.user.telegramId === String(boards.failingUserId)) {
+                        throw new Error("Render failed");
+                    }
 
-                return {
-                    kind: "text",
-                    text:
-                        scene.state.view === "both"
-                            ? `Board a: ${boards.a}, b: ${boards.b}`
-                            : `Board ${scene.state.view}: ${boards[scene.state.view]}`,
-                    keyboard: [
-                        [
-                            scene.button("Open b", "open", "b"),
-                            scene.button("Open both", "open", "both"),
-                            scene.button("Close", "close", null),
-                            scene.button("Slow b", "slowSwitch", null),
-                        ],
-                    ],
-                };
+                    return [
+                        {
+                            kind: "text",
+                            text:
+                                scene.state.view === "both"
+                                    ? `Board a: ${boards.a}, b: ${boards.b}`
+                                    : `Board ${scene.state.view}: ${boards[scene.state.view]}`,
+                            keyboard: [
+                                [
+                                    scene.button("Open b", "open", "b"),
+                                    scene.button("Open both", "open", "both"),
+                                    scene.button("Close", "close", null),
+                                    scene.button("Slow b", "slowSwitch", null),
+                                ],
+                            ],
+                        },
+                    ];
+                },
             },
         },
         buttons: {
@@ -483,17 +489,23 @@ async function buildRoomBot(
         state: Type.Object({ roomId: Type.String() }),
         key: (state) => state.roomId,
         ttl: 60_000,
-        slots: {
-            card: async (ctx, scene) => ({
-                kind: "text",
-                text: `Votes ${room.votes}`,
-                keyboard: [
-                    [
-                        scene.button("Vote", "vote", null),
-                        scene.button("Reveal", "reveal", null),
-                    ],
+        root: { name: "card", params: {} },
+        screens: {
+            card: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => [
+                    {
+                        kind: "text",
+                        text: `Votes ${room.votes}`,
+                        keyboard: [
+                            [
+                                scene.button("Vote", "vote", null),
+                                scene.button("Reveal", "reveal", null),
+                            ],
+                        ],
+                    },
                 ],
-            }),
+            },
         },
         buttons: {
             vote: {

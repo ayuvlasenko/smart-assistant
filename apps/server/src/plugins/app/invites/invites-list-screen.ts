@@ -14,27 +14,26 @@ import {
     formatGrants,
     formatInviteLabel,
     formatLabeledTime,
+    pageButtonOf,
 } from "./invite-format.js";
 import { InvitesView } from "./invites-schemas.js";
 
 const invitesPageSize = 5;
 const invitesPerRow = 2;
 
-export async function renderInvitesList({
-    ctx,
-    scene,
-    invitesService,
-    access,
-}: InvitesView): Promise<TelegramMessageContent> {
+export async function renderInvitesList(
+    { ctx, scene, invitesService, access }: InvitesView,
+    page: number,
+): Promise<TelegramMessageContent> {
     const { t } = ctx;
-    const offset = scene.state.listPage * invitesPageSize;
-    const page = await invitesService.list(ctx.user, {
+    const offset = page * invitesPageSize;
+    const invites = await invitesService.list(ctx.user, {
         skip: offset,
         limit: invitesPageSize,
     });
     const now = new Date();
-    const lines = page.items.length
-        ? page.items.map((invite, index) =>
+    const lines = invites.items.length
+        ? invites.items.map((invite, index) =>
               describeListItem(
                   t,
                   ctx.timeZone,
@@ -51,19 +50,19 @@ export async function renderInvitesList({
         [
             ...inRowsOf(
                 invitesPerRow,
-                page.items.map((invite, index) =>
-                    scene.button(
+                invites.items.map((invite, index) =>
+                    scene.screenButton(
                         `#${offset + index + 1} ${formatInviteLabel(invite, readInviteStatus(invite, now))}`,
-                        "open",
-                        invite._id.toHexString(),
+                        "invite",
+                        { inviteId: invite._id.toHexString() },
                     ),
                 ),
             ),
             pageButtons(
-                scene.state.listPage,
-                page.total,
+                page,
+                invites.total,
                 invitesPageSize,
-                (text, target) => scene.button(text, "listPage", target),
+                pageButtonOf(scene),
             ),
             access.can(ctx.user, "create", "Invite")
                 ? [scene.button(t("invites:newInviteButton"), "create", null)]

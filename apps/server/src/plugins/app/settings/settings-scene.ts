@@ -1,14 +1,13 @@
 import { Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
-import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { numberStep } from "../telegram/telegram-steps.js";
 import { SettingsSubjects } from "./setting-entity.js";
 import {
     settingsButtonValues,
+    settingsScreens,
     SettingsState,
     settingsStateSchema,
-    SettingsView,
 } from "./settings-schemas.js";
 import {
     renderSettingsChoices,
@@ -21,7 +20,7 @@ export const settingsTopic = "settings";
 const settingsSceneTtlMilliseconds = 24 * 60 * 60 * 1000;
 
 export function buildSettingsState(): SettingsState {
-    return { screen: "list", setting: null };
+    return { numberSetting: null };
 }
 
 export function createSettingsScene(
@@ -37,9 +36,27 @@ export function createSettingsScene(
         guard: canUpdate,
         key: () => "settings",
         watch: () => [settingsTopic],
-        slots: {
-            settings: async (ctx, scene) =>
-                render({ ctx, scene, settingsService }),
+        root: { name: "list", params: {} },
+        screens: {
+            list: {
+                params: settingsScreens.list,
+                render: async (ctx, scene) => [
+                    renderSettingsList({ ctx, scene, settingsService }),
+                ],
+            },
+            choices: {
+                params: settingsScreens.choices,
+                render: async (ctx, scene, { setting }) => {
+                    const view = { ctx, scene, settingsService };
+                    const choices = findChoices(settingsService, setting);
+
+                    return [
+                        choices
+                            ? renderSettingsChoices(view, choices)
+                            : renderSettingsList(view),
+                    ];
+                },
+            },
         },
         buttons: {
             open: {
@@ -52,22 +69,26 @@ export function createSettingsScene(
                             await settingsService.toggle(ctx.user, setting);
                             return;
                         case "number":
-                            scene.state.setting = setting.name;
+                            scene.state.numberSetting = setting.name;
                             await scene.ask("number");
                             return;
                         case "choices":
-                            scene.state.screen = "choices";
-                            scene.state.setting = setting.name;
+                            await scene.push("choices", {
+                                setting: setting.name,
+                            });
                     }
                 },
             },
             choose: {
                 value: settingsButtonValues.choose,
                 handle: async (ctx, scene, option) => {
-                    const setting = findChoices(
-                        settingsService,
-                        scene.state.setting,
-                    );
+                    const setting =
+                        scene.screen.name === "choices"
+                            ? findChoices(
+                                  settingsService,
+                                  scene.screen.params.setting,
+                              )
+                            : undefined;
 
                     if (!setting) {
                         return;
@@ -78,13 +99,6 @@ export function createSettingsScene(
                         setting,
                         option,
                     );
-                },
-            },
-            back: {
-                value: settingsButtonValues.back,
-                handle: async (ctx, scene) => {
-                    scene.state.screen = "list";
-                    scene.state.setting = null;
                 },
             },
         },
@@ -103,7 +117,7 @@ export function createSettingsScene(
                 ],
                 complete: async (ctx, scene, { value }) => {
                     const setting = settingsService.find(
-                        scene.state.setting ?? "",
+                        scene.state.numberSetting ?? "",
                     );
 
                     if (setting?.kind !== "number") {
@@ -128,22 +142,11 @@ export function createSettingsScene(
     });
 }
 
-function render(view: SettingsView): TelegramMessageContent {
-    const setting =
-        view.scene.state.screen === "choices"
-            ? findChoices(view.settingsService, view.scene.state.setting)
-            : undefined;
-
-    return setting
-        ? renderSettingsChoices(view, setting)
-        : renderSettingsList(view);
-}
-
 function findChoices(
     settingsService: SettingsService,
-    name: string | null,
+    name: string,
 ): ChoicesSetting | undefined {
-    const setting = name === null ? undefined : settingsService.find(name);
+    const setting = settingsService.find(name);
 
     return setting?.kind === "choices" ? setting : undefined;
 }

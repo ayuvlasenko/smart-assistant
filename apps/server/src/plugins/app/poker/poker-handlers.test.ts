@@ -143,6 +143,33 @@ void describe("Poker rooms", () => {
         );
     });
 
+    void it("returns to the page of the room list after the form", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655185 });
+
+        await createRoomThroughForm(bot, creator);
+
+        const room = await readRoom();
+
+        await mongo.collection<PokerRoomEntity>("pokerRooms").insertMany(
+            Array.from({ length: 5 }, (_, index) => ({
+                ...room,
+                _id: new ObjectId(),
+                token: `${room.token}${index}`,
+            })),
+        );
+        await bot.sendText(creator, "/poker");
+        await bot.pressButton(creator, "›");
+        await bot.pressButton(creator, en.newRoomButton);
+        await bot.pressButton(creator, en.backButton);
+
+        assert.ok(
+            (await bot.readButtonLabels(creator.id)).some((label) =>
+                label.startsWith("#6 "),
+            ),
+        );
+    });
+
     void it("shows the votes of other participants without their cards", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655121 });
@@ -346,6 +373,9 @@ void describe("Poker rooms", () => {
         assert.ok(
             (await readRoomMessage(bot, creator)).includes("Round 3 · voting"),
         );
+        assert.ok(
+            (await bot.readButtonLabels(creator.id)).includes(en.historyButton),
+        );
     });
 
     void it("lets only the creator close the room after a confirmation", async (t) => {
@@ -374,8 +404,16 @@ void describe("Poker rooms", () => {
         );
 
         await bot.pressButton(creator, en.closeButton);
+        await bot.pressButton(creator, en.historyButton);
+        await bot.pressButton(creator, en.backButton);
+        await bot.pressButton(creator, en.closeButton);
 
         assert.equal((await readRoom()).closedAt, undefined);
+        assert.ok(
+            (await bot.readButtonLabels(creator.id)).includes(
+                en.confirmCloseButton,
+            ),
+        );
 
         await bot.pressButton(creator, en.confirmCloseButton);
         await bot.telegramChats.idle();

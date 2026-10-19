@@ -2,17 +2,15 @@ import { Update } from "@grammyjs/types";
 import { TelegramContext, TelegramMessageChange } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
-import { TelegramSceneSlots } from "./telegram-scene-slots.js";
 import {
     TelegramSceneInstance,
     TelegramSceneStorage,
 } from "./telegram-scene-storage.js";
-import { TelegramSceneControl } from "./telegram-scene.js";
 
-export type TelegramSceneControlFactory = (
+export type TelegramSceneRenderer = (
     instance: TelegramSceneInstance,
-    slotMessageId?: number,
-) => TelegramSceneControl<Record<string, unknown>>;
+    reshow: boolean,
+) => Promise<void>;
 
 export class TelegramSceneUpdate {
     readonly storage: TelegramSceneStorage;
@@ -52,17 +50,11 @@ export class TelegramSceneUpdate {
 
     async render(
         ctx: TelegramContext,
-        slots: TelegramSceneSlots,
-        controlOf: TelegramSceneControlFactory,
+        render: TelegramSceneRenderer,
     ): Promise<void> {
         for (const [instance, { reshow }] of this.touched) {
             if (this.storage.has(instance)) {
-                await slots.render(
-                    ctx,
-                    instance,
-                    (slotMessageId) => controlOf(instance, slotMessageId),
-                    { reshow },
-                );
+                await render(instance, reshow);
             }
         }
 

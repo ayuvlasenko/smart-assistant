@@ -27,10 +27,11 @@ const usersPageSize = 10;
 
 export async function renderInvite(
     view: InvitesView,
+    inviteId: string,
 ): Promise<TelegramMessageContent> {
     const { ctx, scene, access, resolveInviteUrl } = view;
     const { t } = ctx;
-    const invite = await findInvite(view);
+    const invite = await findInvite(view, inviteId);
 
     if (!invite) {
         return renderMissingInvite(view);
@@ -81,18 +82,20 @@ export async function renderInvite(
                 : [],
             invite.activations.length
                 ? [
-                      scene.button(
+                      scene.screenButton(
                           t("invites:usersButton", {
                               count: invite.activations.length,
                           }),
-                          "show",
                           "users",
+                          { inviteId, page: 0 },
                       ),
                   ]
                 : [],
             [
-                scene.button(t("invites:backButton"), "show", "list"),
-                ...(isActive && canRevoke ? [revokeButton(t, scene)] : []),
+                scene.backButton(t("invites:backButton")),
+                ...(isActive && canRevoke
+                    ? [revokeButton(t, scene, inviteId)]
+                    : []),
             ],
         ],
     );
@@ -100,47 +103,39 @@ export async function renderInvite(
 
 export async function renderInviteUsers(
     view: InvitesView,
+    inviteId: string,
+    page: number,
 ): Promise<TelegramMessageContent> {
     const { ctx, scene, invitesService } = view;
     const { t } = ctx;
-    const invite = await findInvite(view);
+    const invite = await findInvite(view, inviteId);
 
     if (!invite) {
         return renderMissingInvite(view);
     }
 
-    const page = await invitesService.listUsers(ctx.user, invite, {
-        skip: scene.state.page * usersPageSize,
+    const users = await invitesService.listUsers(ctx.user, invite, {
+        skip: page * usersPageSize,
         limit: usersPageSize,
     });
 
     return buildInvitesMessage(
         [
             formatBold(t("invites:usersTitle")),
-            ...page.items.map((item) => describeUser(t, ctx.timeZone, item)),
+            ...users.items.map((item) => describeUser(t, ctx.timeZone, item)),
         ],
         [
-            pageButtons(
-                scene.state.page,
-                page.total,
-                usersPageSize,
-                pageButtonOf(scene),
-            ),
-            [scene.button(t("invites:backButton"), "show", "invite")],
+            pageButtons(page, users.total, usersPageSize, pageButtonOf(scene)),
+            [scene.backButton(t("invites:backButton"))],
         ],
     );
 }
 
-function findInvite({
-    ctx,
-    scene,
-    invitesService,
-}: InvitesView): Promise<InviteEntity | null> | null {
-    const { inviteId } = scene.state;
-
-    return inviteId
-        ? invitesService.find(ctx.user, new ObjectId(inviteId))
-        : null;
+function findInvite(
+    { ctx, invitesService }: InvitesView,
+    inviteId: string,
+): Promise<InviteEntity | null> {
+    return invitesService.find(ctx.user, new ObjectId(inviteId));
 }
 
 function renderMissingInvite({
@@ -149,23 +144,24 @@ function renderMissingInvite({
 }: InvitesView): TelegramMessageContent {
     return buildInvitesMessage(
         [escapeTelegramHtml(ctx.t("invites:inviteMissing"))],
-        [[scene.button(ctx.t("invites:backButton"), "show", "list")]],
+        [[scene.backButton(ctx.t("invites:backButton"))]],
     );
 }
 
 function revokeButton(
     t: Translate,
     scene: InvitesSceneControl,
+    inviteId: string,
 ): InlineKeyboardButton {
     return {
         ...scene.button(
             t(
-                scene.state.isRevoking
+                scene.isConfirming("revoke", inviteId)
                     ? "invites:confirmRevokeButton"
                     : "invites:revokeButton",
             ),
             "revoke",
-            null,
+            inviteId,
         ),
         style: "danger",
     };
