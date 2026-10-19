@@ -12,7 +12,6 @@ import {
     TelegramSceneScreens,
     telegramScreenSchema,
 } from "./telegram-scene-screens.js";
-import { telegramSlotsStateSchema } from "./telegram-scene-slots.js";
 import { TelegramScene } from "./telegram-scene.js";
 import { TelegramSession } from "./telegram-session.js";
 
@@ -24,8 +23,7 @@ const sceneRecordSchema = Type.Object({
     stack: Type.Optional(Type.Array(telegramScreenSchema)),
     confirming: Type.Optional(telegramConfirmationSchema),
     buttons: telegramButtonsStateSchema,
-    messages: Type.Optional(telegramSceneMessagesStateSchema),
-    slots: telegramSlotsStateSchema,
+    messages: telegramSceneMessagesStateSchema,
     input: Type.Optional(telegramInputStateSchema),
     topics: Type.Array(Type.String()),
 });
@@ -113,7 +111,7 @@ export class TelegramSceneStorage {
             startedAt: Date.now(),
             state,
             buttons: { nextId: 1, messages: [] },
-            slots: {},
+            messages: [],
             topics: [],
         };
         const instance = this.toInstance(id, scene, record);

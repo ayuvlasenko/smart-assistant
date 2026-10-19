@@ -186,18 +186,24 @@ async function buildGuardBot(t: TestContext): Promise<GuardBot> {
                 state: counterStateSchema,
                 ttl: 60_000,
                 key: () => "card",
-                slots: {
-                    card: async (ctx, scene) => ({
-                        kind: "text",
-                        text: `Card ${scene.state.count}`,
-                        keyboard: [
-                            [
-                                scene.button("+1", "add", null),
-                                scene.button("+10", "bonus", null),
-                                scene.button("Note", "note", null),
-                            ],
+                root: { name: "card", params: {} },
+                screens: {
+                    card: {
+                        params: Type.Object({}),
+                        render: async (ctx, scene) => [
+                            {
+                                kind: "text",
+                                text: `Card ${scene.state.count}`,
+                                keyboard: [
+                                    [
+                                        scene.button("+1", "add", null),
+                                        scene.button("+10", "bonus", null),
+                                        scene.button("Note", "note", null),
+                                    ],
+                                ],
+                            },
                         ],
-                    }),
+                    },
                 },
                 buttons: {
                     add: {
@@ -242,12 +248,18 @@ async function buildGuardBot(t: TestContext): Promise<GuardBot> {
                 ttl: 60_000,
                 guard: isVip,
                 key: () => "vip",
-                slots: {
-                    card: async (ctx, scene) => ({
-                        kind: "text",
-                        text: `VIP ${scene.state.count}`,
-                        keyboard: [[scene.button("+1", "add", null)]],
-                    }),
+                root: { name: "card", params: {} },
+                screens: {
+                    card: {
+                        params: Type.Object({}),
+                        render: async (ctx, scene) => [
+                            {
+                                kind: "text",
+                                text: `VIP ${scene.state.count}`,
+                                keyboard: [[scene.button("+1", "add", null)]],
+                            },
+                        ],
+                    },
                 },
                 buttons: {
                     add: {

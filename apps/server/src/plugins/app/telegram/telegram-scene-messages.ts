@@ -32,8 +32,6 @@ export class TelegramSceneMessages {
         contents: TelegramMessageContent[],
         { reshow = false }: { reshow?: boolean } = {},
     ): Promise<void> {
-        instance.record.messages ??= [];
-
         const messages = instance.record.messages;
         let mustSend = reshow;
 
@@ -85,7 +83,7 @@ export class TelegramSceneMessages {
         instance: TelegramSceneInstance,
         release: TelegramSceneMessagesRelease,
     ): Promise<void> {
-        for (const message of instance.record.messages ?? []) {
+        for (const message of instance.record.messages) {
             if (release === "removeButtons") {
                 await ctx.removeKeyboard(message.messageId);
             } else if (release === "delete") {

@@ -10,8 +10,8 @@ import { TelegramContext } from "./telegram-context.js";
 import { TelegramUpdateFilter } from "./telegram-filters.js";
 import { TelegramGuard } from "./telegram-guard.js";
 import { TelegramMessageContent } from "./telegram-responder.js";
+import { TelegramSceneMessagesRelease } from "./telegram-scene-messages.js";
 import { TelegramScreenState } from "./telegram-scene-screens.js";
-import { TelegramSlotMessages } from "./telegram-scene-slots.js";
 
 export type TelegramTransition<TPayload> =
     | { type: "next"; patch?: Partial<TPayload> }
@@ -71,7 +71,7 @@ export interface TelegramSceneControl<
     back(): Promise<void>;
     reset(): Promise<void>;
     ask(name: keyof TInputs & string): Promise<void>;
-    end(options?: { messages?: TelegramSlotMessages }): Promise<void>;
+    end(options?: { messages?: TelegramSceneMessagesRelease }): Promise<void>;
 }
 
 export interface TelegramInputControl<TPayload> {
@@ -169,18 +169,6 @@ export interface TelegramSceneDefinition<
             ): Promise<unknown>;
         };
     };
-    slots?: Record<
-        string,
-        (
-            ctx: TelegramContext,
-            scene: DefinedSceneControl<
-                TStateSchema,
-                TButtons,
-                TInputs,
-                TScreens
-            >,
-        ) => Promise<TelegramMessageContent | undefined>
-    >;
     inputs?: {
         [TName in keyof TInputs]: {
             payload: TInputs[TName];
@@ -258,11 +246,6 @@ export interface TelegramSceneScreen {
     ): Promise<TelegramMessageContent[]>;
 }
 
-export type TelegramSceneSlot = (
-    ctx: TelegramContext,
-    scene: ErasedSceneControl,
-) => Promise<TelegramMessageContent | undefined>;
-
 export type TelegramScene<TStateSchema extends TObject = TObject> =
     TelegramSceneShape<TStateSchema> & TelegramSceneBlocking;
 
@@ -276,7 +259,6 @@ interface TelegramSceneShape<TStateSchema extends TObject> {
     readonly screens: Readonly<Record<string, TelegramSceneScreen>>;
     readonly buttons: Readonly<Record<string, TelegramSceneButton>>;
     readonly inputs: Readonly<Record<string, TelegramSceneInput>>;
-    readonly slots: Readonly<Record<string, TelegramSceneSlot>>;
     key(state: Record<string, unknown>): string | undefined;
     watch(
         state: Record<string, unknown>,
@@ -341,7 +323,6 @@ export function defineScene<
             string,
             TelegramSceneButton
         >,
-        slots: (definition.slots ?? {}) as Record<string, TelegramSceneSlot>,
         inputs: Object.fromEntries(inputs) as Record<
             string,
             TelegramSceneInput

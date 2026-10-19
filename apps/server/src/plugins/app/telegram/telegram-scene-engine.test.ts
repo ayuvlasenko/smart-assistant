@@ -606,7 +606,7 @@ void describe("TelegramSceneEngine scenes", () => {
             startedAt: Date.now(),
             state: { count: 0, label: "main" },
             buttons: { nextId: 1, messages: [] },
-            slots: {},
+            messages: [],
             input: {
                 name: "removed",
                 step: "first",
@@ -1544,12 +1544,18 @@ function defineWizardScene(lifetime: SceneLifetime) {
         key: () => "wizard",
         ...lifetime,
         start: (ctx, scene) => scene.ask("answer"),
-        slots: {
-            panel: async (ctx, scene) => ({
-                kind: "text",
-                text: `Wizard ${scene.state.step}`,
-                keyboard: [[scene.button("Skip", "skip", null)]],
-            }),
+        root: { name: "panel", params: {} },
+        screens: {
+            panel: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => [
+                    {
+                        kind: "text",
+                        text: `Wizard ${scene.state.step}`,
+                        keyboard: [[scene.button("Skip", "skip", null)]],
+                    },
+                ],
+            },
         },
         buttons: {
             skip: {
@@ -1587,12 +1593,18 @@ function defineSurveyScene() {
         blocking: true,
         state: Type.Object({}),
         ttl: 60_000,
-        slots: {
-            panel: async (ctx, scene) => ({
-                kind: "text",
-                text: "Survey",
-                keyboard: [[scene.button("Answer", "answer", null)]],
-            }),
+        root: { name: "panel", params: {} },
+        screens: {
+            panel: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => [
+                    {
+                        kind: "text",
+                        text: "Survey",
+                        keyboard: [[scene.button("Answer", "answer", null)]],
+                    },
+                ],
+            },
         },
         buttons: {
             answer: {

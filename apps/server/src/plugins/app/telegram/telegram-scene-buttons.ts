@@ -85,10 +85,9 @@ export class TelegramSceneButtons {
         instance: TelegramSceneInstance,
         text: string,
         button: TelegramButton,
-        reuseFromMessageId?: number,
     ): InlineKeyboardButton.CallbackButton {
         const id =
-            findSameButton(instance, button, reuseFromMessageId) ??
+            findSameButton(instance, button) ??
             String(instance.record.buttons.nextId++);
 
         this.unsentIn(instance).set(id, button);
@@ -189,15 +188,10 @@ export class TelegramSceneButtons {
 function findSameButton(
     instance: TelegramSceneInstance,
     button: TelegramButton,
-    messageId: number | undefined,
 ): string | undefined {
     const value = JSON.stringify(button);
 
     return instance.record.buttons.messages
-        .filter(
-            (message) =>
-                messageId === undefined || message.messageId === messageId,
-        )
         .flatMap((message) => Object.entries(message.buttons))
         .find(([, stored]) => JSON.stringify(stored) === value)?.[0];
 }

@@ -20,7 +20,6 @@ import {
     TelegramSceneScreens,
     TelegramScreenState,
 } from "./telegram-scene-screens.js";
-import { TelegramSceneSlots } from "./telegram-scene-slots.js";
 import {
     TelegramSceneInstance,
     TelegramSceneStorage,
@@ -41,7 +40,6 @@ export class TelegramSceneEngine {
     private readonly buttons = new TelegramSceneButtons();
     private readonly inputs: TelegramSceneInputs;
     private readonly presses: TelegramScenePresses;
-    private readonly slots = new TelegramSceneSlots();
     private readonly screens = new TelegramSceneScreens();
     private readonly messages = new TelegramSceneMessages();
     private readonly telegramMetrics: TelegramMetrics;
@@ -257,13 +255,7 @@ export class TelegramSceneEngine {
         reshow: boolean,
     ): Promise<void> {
         if (!instance.scene.root) {
-            return this.slots.render(
-                ctx,
-                instance,
-                (slotMessageId) =>
-                    this.sceneControl(ctx, instance, slotMessageId),
-                { reshow },
-            );
+            return;
         }
 
         const contents = await this.screens.render(
@@ -370,7 +362,6 @@ export class TelegramSceneEngine {
         instance: TelegramSceneInstance,
         messages: TelegramSceneMessagesRelease,
     ): Promise<void> {
-        await this.slots.release(ctx, instance, messages);
         await this.messages.release(ctx, instance, messages);
         this.updateFor(ctx).storage.remove(instance);
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "end");
@@ -444,12 +435,11 @@ export class TelegramSceneEngine {
     private sceneControl(
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
-        slotMessageId?: number,
     ): SceneControl {
         this.updateFor(ctx).touch(instance);
 
         const button = (text: string, data: TelegramButton) =>
-            this.buttons.create(instance, text, data, slotMessageId);
+            this.buttons.create(instance, text, data);
         const screenOf = (
             name: string,
             params: [] | [Record<string, unknown>],
