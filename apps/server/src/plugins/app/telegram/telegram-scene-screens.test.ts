@@ -19,11 +19,14 @@ import {
 import { message } from "./telegram-filters.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { complete, defineScene } from "./telegram-scene.js";
+import { choiceStep } from "./telegram-steps.js";
 
 interface Shop {
     stock: Record<string, number>;
     removed: string[];
     notes: string[];
+    ratings: string[];
+    isVip: boolean;
 }
 
 const shopSceneField = `scene:${createHash("sha256")
@@ -190,6 +193,89 @@ void describe("Telegram scene screens", () => {
         assert.deepEqual(shop.removed, []);
     });
 
+    void it("forgets a pending confirmation when another button of the scene is pressed", async (t) => {
+        const { bot, shop } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654714 });
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Open a");
+        await bot.pressButton(chat, "Remove");
+        await bot.pressButton(chat, "Restock");
+
+        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
+
+        await bot.pressButton(chat, "Remove");
+
+        assert.deepEqual(shop.removed, []);
+        assert.deepEqual(shop.stock.a, 1);
+    });
+
+    void it("forgets a pending confirmation when an input button is pressed", async (t) => {
+        const { bot, shop } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654715 });
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Open a");
+        await bot.pressButton(chat, "Rate");
+        await bot.pressButton(chat, "Remove");
+        await bot.pressButton(chat, "Good");
+
+        assert.deepEqual(shop.ratings, ["good"]);
+        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
+
+        await bot.pressButton(chat, "Remove");
+
+        assert.deepEqual(shop.removed, []);
+    });
+
+    void it("asks again when the confirmed button comes back with another value", async (t) => {
+        const { bot, shop } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654716 });
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Open a");
+        await bot.pressButton(chat, "Remove");
+        await bot.pressButton(chat, "Remove copy");
+
+        const labels = await bot.readButtonLabels(chat.id);
+
+        assert.deepEqual(shop.removed, []);
+        assert.ok(labels.includes("Sure? copy"));
+        assert.ok(labels.includes("Remove"));
+
+        await bot.pressButton(chat, "Sure? copy");
+
+        assert.deepEqual(shop.removed, ["a-copy"]);
+    });
+
+    void it("shows the root screen when the guard of the current screen stops letting the user in", async (t) => {
+        const { bot, shop } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654717 });
+
+        shop.isVip = true;
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "VIP");
+
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["VIP"]);
+
+        shop.isVip = false;
+        bot.telegramChats.publish(["shop.vip"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["List 0"]);
+    });
+
+    void it("refuses a move of a handler into a screen that its guard hides", async (t) => {
+        const { bot } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654718 });
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Next");
+        await bot.pressButton(chat, "Force secret");
+
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["List 1"]);
+    });
+
     void it("cancels a waiting input when the screen changes", async (t) => {
         const { bot, shop } = await buildShopBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654709 });
@@ -278,7 +364,13 @@ void describe("Telegram scene screens", () => {
 async function buildShopBot(
     t: TestContext,
 ): Promise<{ bot: TelegramSceneBot; shop: Shop }> {
-    const shop: Shop = { stock: { a: 0, b: 0 }, removed: [], notes: [] };
+    const shop: Shop = {
+        stock: { a: 0, b: 0 },
+        removed: [],
+        notes: [],
+        ratings: [],
+        isVip: false,
+    };
     const shopScene = defineScene({
         name: "shop",
         state: Type.Object({}),
@@ -304,6 +396,14 @@ async function buildShopBot(
                                 scene.screenButton("Form", "form"),
                                 scene.screenButton("Secret", "secret"),
                             ],
+                            [
+                                scene.screenButton("VIP", "vip"),
+                                scene.button(
+                                    "Force secret",
+                                    "forceSecret",
+                                    null,
+                                ),
+                            ],
                             [scene.backButton("Up")],
                         ],
                     },
@@ -325,9 +425,22 @@ async function buildShopBot(
                                 }),
                             ],
                             [
+                                scene.button("Restock", "restock", id),
+                                scene.button("Rate", "rate", null),
+                            ],
+                            [
+                                scene.button(
+                                    scene.isConfirming("remove", `${id}-copy`)
+                                        ? "Sure? copy"
+                                        : "Remove copy",
+                                    "remove",
+                                    `${id}-copy`,
+                                ),
+                            ],
+                            [
                                 scene.backButton("Back"),
                                 scene.button(
-                                    scene.isConfirming("remove")
+                                    scene.isConfirming("remove", id)
                                         ? "Sure?"
                                         : "Remove",
                                     "remove",
@@ -362,6 +475,12 @@ async function buildShopBot(
                 guard: () => false,
                 render: async () => [{ kind: "text", text: "Secret" }],
             },
+            vip: {
+                params: Type.Object({}),
+                guard: () => shop.isVip,
+                watch: () => ["shop.vip"],
+                render: async () => [{ kind: "text", text: "VIP" }],
+            },
         },
         buttons: {
             page: {
@@ -382,6 +501,20 @@ async function buildShopBot(
             note: {
                 value: Type.Null(),
                 handle: (ctx, scene) => scene.ask("note"),
+            },
+            restock: {
+                value: Type.String(),
+                handle: async (ctx, scene, id) => {
+                    shop.stock[id] = (shop.stock[id] ?? 0) + 1;
+                },
+            },
+            rate: {
+                value: Type.Null(),
+                handle: (ctx, scene) => scene.ask("rating"),
+            },
+            forceSecret: {
+                value: Type.Null(),
+                handle: (ctx, scene) => scene.push("secret"),
             },
             save: {
                 value: Type.Null(),
@@ -407,6 +540,23 @@ async function buildShopBot(
                 ],
                 complete: async (ctx, scene, { text }) => {
                     shop.notes.push(text);
+                },
+            },
+            rating: {
+                payload: Type.Object({ rating: Type.String() }),
+                steps: (step) => [
+                    choiceStep(step, {
+                        name: "rating",
+                        property: "rating",
+                        prompt: () => "Rating?",
+                        load: async () => ({
+                            items: [{ label: "Good", value: "good" }],
+                            total: 1,
+                        }),
+                    }),
+                ],
+                complete: async (ctx, scene, { rating }) => {
+                    shop.ratings.push(rating);
                 },
             },
         },
