@@ -1,19 +1,15 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
-import { TelegramSceneControl } from "../telegram/telegram-scene.js";
+import {
+    TelegramSceneControl,
+    TelegramSceneInputSchemas,
+} from "../telegram/telegram-scene.js";
 import { InvitesSubjects } from "./invite-entity.js";
 import { InvitesService } from "./invites-service.js";
 
-const invitesScreenSchema = Type.Union([
-    Type.Literal("list"),
-    Type.Literal("invite"),
-    Type.Literal("users"),
-    Type.Literal("form"),
-    Type.Literal("sections"),
-    Type.Literal("section"),
-    Type.Literal("validFor"),
-]);
+const pageSchema = Type.Integer({ minimum: 0 });
+const inviteIdSchema = Type.String({ pattern: "^[0-9a-f]{24}$" });
 
 const inviteDraftSchema = Type.Object({
     grants: Type.Array(Type.String()),
@@ -22,23 +18,23 @@ const inviteDraftSchema = Type.Object({
 });
 
 export const invitesStateSchema = Type.Object({
-    screen: invitesScreenSchema,
-    listPage: Type.Integer({ minimum: 0 }),
-    page: Type.Integer({ minimum: 0 }),
-    inviteId: Type.Union([Type.String(), Type.Null()]),
-    isRevoking: Type.Boolean(),
-    section: Type.Union([Type.String(), Type.Null()]),
     draft: inviteDraftSchema,
 });
 
+export const invitesScreens = {
+    list: Type.Object({ page: pageSchema }),
+    invite: Type.Object({ inviteId: inviteIdSchema }),
+    users: Type.Object({ inviteId: inviteIdSchema, page: pageSchema }),
+    form: Type.Object({}),
+    sections: Type.Object({ page: pageSchema }),
+    section: Type.Object({ section: Type.String(), page: pageSchema }),
+    validFor: Type.Object({}),
+};
+
 export const invitesButtonValues = {
-    show: invitesScreenSchema,
-    open: Type.String({ pattern: "^[0-9a-f]{24}$" }),
-    listPage: Type.Integer({ minimum: 0 }),
-    page: Type.Integer({ minimum: 0 }),
-    revoke: Type.Null(),
+    page: pageSchema,
+    revoke: inviteIdSchema,
     create: Type.Null(),
-    section: Type.String(),
     toggle: Type.String(),
     validFor: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     askLimit: Type.Null(),
@@ -52,7 +48,9 @@ export type InviteDraft = InvitesState["draft"];
 
 export type InvitesSceneControl = TelegramSceneControl<
     InvitesState,
-    typeof invitesButtonValues
+    typeof invitesButtonValues,
+    TelegramSceneInputSchemas,
+    typeof invitesScreens
 >;
 
 export type InviteUrlResolver = (token: string) => Promise<string>;

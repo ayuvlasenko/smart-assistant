@@ -78,42 +78,34 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 
 **Problem.** An admin moves between a list, an invite, its users and a form. A new message per screen would fill the chat, and several messages of one flow would show different versions of the same data.
 
-**Idea.** `/invites` starts one scene, `invites`, with the key `invites`, a TTL of 24 h and the guard `read Invite`. The state says which screen is open, and one slot, also named `invites`, draws that screen into one message. The key gives every admin one instance, so a second `/invites` shows the running scene again at the bottom of the chat, on the screen where the admin left it.
+**Idea.** `/invites` starts one scene, `invites`, with the key `invites`, a TTL of 24 h and the guard `read Invite`. Each view is a screen of the scene, and the screen draws one message. The key gives every admin one instance, so a second `/invites` shows the running scene again at the bottom of the chat, on the screen where the admin left it, with the screens behind it.
 
-**Data.** The state of the scene:
+**Data.** The state of the scene keeps only `draft`: the form, with `grants`, `maxUses` (1 by default) and `validForDays`. Everything else is in the params of the screens:
 
-| Field        | Meaning                                                          |
-| ------------ | ---------------------------------------------------------------- |
-| `screen`     | The open screen, one of the rows of the table below              |
-| `listPage`   | The page of the list, kept while the admin looks at an invite    |
-| `page`       | The page of the open screen: users, sections or grants           |
-| `inviteId`   | The open invite                                                  |
-| `isRevoking` | The first press of revoke happened, and the second press revokes |
-| `section`    | The open section of grants in the form                           |
-| `draft`      | The form: `grants`, `maxUses` (1 by default) and `validForDays`  |
+| Screen     | Params             | Shows                                                                                              | Leads to                                   |
+| ---------- | ------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `list`     | `page`             | Five invites per page, active first; a button opens each one; `➕ New invite` with `create Invite` | `invite`, `form`                           |
+| `invite`   | `inviteId`         | Status, uses, expiry, grants; `📋 Copy link` while active; revoke with `update Invite`             | `users`, `‹ Back`                          |
+| `users`    | `inviteId`, `page` | The users who came, ten per page                                                                   | `‹ Back`                                   |
+| `form`     |                    | The draft: grants, user limit, valid days; `✅ Create`                                             | `sections`, `validFor`, `invite`, `‹ Back` |
+| `sections` | `page`             | The sections that hold grants the admin has, with pages                                            | `section`, `‹ Back`                        |
+| `section`  | `section`, `page`  | The grants of one section as checkboxes, with pages                                                | `‹ Back`                                   |
+| `validFor` |                    | 1, 7 or 30 days, another number, or no expiry                                                      | `form`                                     |
 
-**Walk-through of a press.** The admin presses an invite in the list.
+`‹ Back` returns to the screen the admin came from, with its page. The form screens carry the guard `create Invite`.
 
-1. The button `open` carries the invite id. The engine finds the button in the record of the scene and runs its handler.
-2. The handler sets `screen` to `invite` and `inviteId` to the id. It sends nothing.
-3. After the handler, the engine renders the slot. `render` in `invites-scene.ts` picks `renderInvite` by `screen`. The screen loads the invite through `InvitesService`, which checks `read Invite` again.
-4. The engine edits the same message with the new text and keyboard. On save, `watch` moves the scene from the topic `invites` to `invites.invite:<id>`.
+**Walk-through of a press.** The admin is on page 2 of the list and presses an invite.
 
-| Screen     | Shows                                                                                              | Leads to                                   |
-| ---------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `list`     | Five invites per page, active first; a button opens each one; `➕ New invite` with `create Invite` | `invite`, `form`                           |
-| `invite`   | Status, uses, expiry, grants; `📋 Copy link` while active; revoke with `update Invite`             | `users`, `‹ Back` to `list`                |
-| `users`    | The users who came, ten per page                                                                   | `‹ Back` to `invite`                       |
-| `form`     | The draft: grants, user limit, valid days; `✅ Create`                                             | `sections`, `validFor`, `invite`, `‹ Back` |
-| `sections` | The sections that hold grants the admin has, with pages                                            | `section`, `‹ Back` to `form`              |
-| `section`  | The grants of one section as checkboxes, with pages                                                | `‹ Back` to `sections`                     |
-| `validFor` | 1, 7 or 30 days, another number, or no expiry                                                      | `form`                                     |
+1. The `screen` button carries `{ "name": "invite", "params": { "inviteId": "…" } }`. The engine checks the params and the guards, pushes `list` with `{ "page": 1 }` to the stack and makes `invite` the current screen. No handler of the scene runs.
+2. After the update, the engine renders the `invite` screen, which loads the invite through `InvitesService`. The service checks `read Invite` again.
+3. The engine edits the same message with the new text and keyboard. On save, the `watch` of the screen moves the scene from the topic `invites` to `invites.invite:<id>`.
+4. `‹ Back` pops the list, and the same message shows page 2 again.
 
-Revoke needs two presses: the first one sets `isRevoking`, and the red `⛔ Revoke` next to `‹ Back` turns into `⛔ Sure?`; the second one revokes. A move to the list or to another invite resets `isRevoking`.
+Revoke needs two presses: its button has `confirm: true` and carries the invite id. The first press turns the red `⛔ Revoke` next to `‹ Back` into `⛔ Sure?`; the second one revokes. Any other button and any move cancel it, so a look at the users and back shows `⛔ Revoke` again.
 
-The form keeps the draft in the scene state and writes nothing until `✅ Create`, which opens the new invite on the same message. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
+The form keeps the draft in the scene state and writes nothing until `✅ Create`, which replaces the form with the new invite on the same message, so `‹ Back` from it leads to the list. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
 
-The scene redraws by itself when an invite changes. The scene watches `invites` on the list and `invites.invite:<id>` on the invite and its users, and nothing on the form. `InvitesService` emits `invites.inviteChanged` with the invite id after it creates, activates or revokes an invite, and the handler publishes both topics, so every admin who looks at the list or at that invite sees the change. The bootstrap on start emits nothing. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
+The scene redraws by itself when an invite changes. The `list` screen watches `invites`, the `invite` and `users` screens watch `invites.invite:<id>`, and the form watches nothing. `InvitesService` emits `invites.inviteChanged` with the invite id after it creates, activates or revokes an invite, and the handler publishes both topics, so every admin who looks at the list or at that invite sees the change. The bootstrap on start emits nothing. The slot is a compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
 
 ## Files
 
@@ -123,8 +115,8 @@ The scene redraws by itself when an invite changes. The scene watches `invites` 
 | `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page            |
 | `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap                  |
 | `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event                   |
-| `invites-scene.ts`                                                    | The scene: its buttons, inputs and topics, and which screen renders                                 |
-| `invites-schemas.ts`                                                  | The state and button schemas of the scene and the view that every screen renders from               |
+| `invites-scene.ts`                                                    | The scene: its screens with their topics, its buttons and inputs                                    |
+| `invites-schemas.ts`                                                  | The state, screen and button schemas of the scene and the view that every screen renders from       |
 | `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry               |
 | `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, HTML lines, the message with its keyboard |
 | `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts`        | Events, errors, texts                                                                               |
