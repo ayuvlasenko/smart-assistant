@@ -14,16 +14,19 @@ const roomsPageSize = 5;
 
 export function renderPokerList(
     view: PokerView,
+    page: number,
 ): Promise<TelegramMessageContent> {
     const { ctx, scene, access } = view;
     const { t } = ctx;
     const canCreate = access.can(ctx.user, "create", "PokerRoom");
 
-    return renderRooms(view, "open", [
+    return renderRooms(view, "open", page, [
         canCreate
             ? [
                   scene.button(t("poker:newRoomButton"), "create", null),
-                  scene.button(t("poker:closedButton"), "show", "closed"),
+                  scene.screenButton(t("poker:closedButton"), "closed", {
+                      page: 0,
+                  }),
               ]
             : [],
     ]);
@@ -31,27 +34,29 @@ export function renderPokerList(
 
 export function renderPokerClosedList(
     view: PokerView,
+    page: number,
 ): Promise<TelegramMessageContent> {
     const { ctx, scene } = view;
 
-    return renderRooms(view, "closed", [
-        [scene.button(ctx.t("poker:backButton"), "show", "list")],
+    return renderRooms(view, "closed", page, [
+        [scene.backButton(ctx.t("poker:backButton"))],
     ]);
 }
 
 async function renderRooms(
     { ctx, scene, pokerRoomsService }: PokerView,
     status: PokerRoomStatus,
+    page: number,
     actions: InlineKeyboardButton[][],
 ): Promise<TelegramMessageContent> {
     const { t } = ctx;
-    const offset = scene.state.page * roomsPageSize;
-    const page = await pokerRoomsService.list(ctx.user, {
+    const offset = page * roomsPageSize;
+    const rooms = await pokerRoomsService.list(ctx.user, {
         status,
         skip: offset,
         limit: roomsPageSize,
     });
-    const labels = page.items.map((room, index) =>
+    const labels = rooms.items.map((room, index) =>
         t("poker:roomListItem", {
             title: `#${offset + index + 1} ${formatPokerRoomTitle(room, ctx.timeZone)}`,
             count: room.participants.length,
@@ -64,7 +69,7 @@ async function renderRooms(
             formatBold(
                 t(status === "open" ? "poker:listTitle" : "poker:closedTitle"),
             ),
-            ...(page.items.length
+            ...(rooms.items.length
                 ? []
                 : [
                       escapeTelegramHtml(
@@ -77,18 +82,15 @@ async function renderRooms(
                   ]),
         ],
         [
-            ...page.items.map((room, index) => [
+            ...rooms.items.map((room, index) => [
                 scene.button(
                     labels[index] ?? "",
                     "open",
                     room._id.toHexString(),
                 ),
             ]),
-            pageButtons(
-                scene.state.page,
-                page.total,
-                roomsPageSize,
-                (text, target) => scene.button(text, "page", target),
+            pageButtons(page, rooms.total, roomsPageSize, (text, target) =>
+                scene.button(text, "page", target),
             ),
             ...actions,
         ],

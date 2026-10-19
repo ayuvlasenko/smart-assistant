@@ -1,7 +1,10 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
-import { TelegramSceneControl } from "../telegram/telegram-scene.js";
+import {
+    TelegramSceneControl,
+    TelegramSceneInputSchemas,
+} from "../telegram/telegram-scene.js";
 import { PokerDeck, pokerDeckNames } from "./poker-decks.js";
 import { PokerRoomEntity, PokerSubjects } from "./poker-room-entity.js";
 import { PokerRoomsService } from "./poker-rooms-service.js";
@@ -12,12 +15,7 @@ const pokerDeckNameSchema = Type.Union(
     pokerDeckNames.map((name) => Type.Literal(name)),
 );
 
-const pokerScreenSchema = Type.Union([
-    Type.Literal("list"),
-    Type.Literal("closed"),
-    Type.Literal("form"),
-    Type.Literal("deck"),
-]);
+const pageSchema = Type.Integer({ minimum: 0 });
 
 const pokerRoomScreenSchema = Type.Union([
     Type.Literal("round"),
@@ -27,8 +25,6 @@ const pokerRoomScreenSchema = Type.Union([
 
 export const pokerStateSchema = Type.Object({
     userId: objectIdSchema,
-    screen: pokerScreenSchema,
-    page: Type.Integer({ minimum: 0 }),
     draft: Type.Object({
         title: Type.Union([Type.String(), Type.Null()]),
         deck: pokerDeckNameSchema,
@@ -36,9 +32,15 @@ export const pokerStateSchema = Type.Object({
     }),
 });
 
+export const pokerScreens = {
+    list: Type.Object({ page: pageSchema }),
+    closed: Type.Object({ page: pageSchema }),
+    form: Type.Object({}),
+    deck: Type.Object({}),
+};
+
 export const pokerButtonValues = {
-    show: pokerScreenSchema,
-    page: Type.Integer({ minimum: 0 }),
+    page: pageSchema,
     open: objectIdSchema,
     create: Type.Null(),
     deck: pokerDeckNameSchema,
@@ -79,7 +81,9 @@ export type PokerRoomState = Static<typeof pokerRoomStateSchema>;
 
 export type PokerSceneControl = TelegramSceneControl<
     PokerState,
-    typeof pokerButtonValues
+    typeof pokerButtonValues,
+    TelegramSceneInputSchemas,
+    typeof pokerScreens
 >;
 
 export type PokerRoomSceneControl = TelegramSceneControl<

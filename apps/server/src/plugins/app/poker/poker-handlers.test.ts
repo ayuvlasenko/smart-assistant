@@ -143,6 +143,33 @@ void describe("Poker rooms", () => {
         );
     });
 
+    void it("returns to the page of the room list after the form", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655181 });
+
+        await createRoomThroughForm(bot, creator);
+
+        const room = await readRoom();
+
+        await mongo.collection<PokerRoomEntity>("pokerRooms").insertMany(
+            Array.from({ length: 5 }, (_, index) => ({
+                ...room,
+                _id: new ObjectId(),
+                token: `${room.token}${index}`,
+            })),
+        );
+        await bot.sendText(creator, "/poker");
+        await bot.pressButton(creator, "›");
+        await bot.pressButton(creator, en.newRoomButton);
+        await bot.pressButton(creator, en.backButton);
+
+        assert.ok(
+            (await bot.readButtonLabels(creator.id)).some((label) =>
+                label.startsWith("#6 "),
+            ),
+        );
+    });
+
     void it("shows the votes of other participants without their cards", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655121 });

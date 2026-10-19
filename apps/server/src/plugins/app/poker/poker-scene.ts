@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
-import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
@@ -16,9 +15,10 @@ import {
     pokerButtonValues,
     PokerDraft,
     pokerRoomStateSchema,
+    PokerSceneControl,
+    pokerScreens,
     PokerState,
     pokerStateSchema,
-    PokerView,
 } from "./poker-schemas.js";
 
 const pokerSceneTtlMilliseconds = 7 * 24 * 60 * 60 * 1000;
@@ -30,7 +30,7 @@ export function pokerRoomsTopic(userId: string): string {
 }
 
 export function buildPokerState(userId: string): PokerState {
-    return { userId, screen: "list", page: 0, draft: buildDraft() };
+    return { userId, draft: buildDraft() };
 }
 
 export function createPokerScene(
@@ -42,6 +42,12 @@ export function createPokerScene(
     const canCreate = access.guard("create", "PokerRoom");
     const openRoom = (ctx: TelegramContext, roomId: string) =>
         sceneEngine.start(ctx, roomScene, buildPokerRoomState(roomId));
+    const view = (ctx: TelegramContext, scene: PokerSceneControl) => ({
+        ctx,
+        scene,
+        pokerRoomsService,
+        access,
+    });
 
     return defineScene({
         name: "poker",
@@ -50,22 +56,42 @@ export function createPokerScene(
         guard: access.guard("read", "PokerRoom"),
         key: () => "poker",
         watch: (state) => [pokerRoomsTopic(state.userId)],
-        slots: {
-            poker: (ctx, scene) =>
-                render({ ctx, scene, pokerRoomsService, access }),
+        root: { name: "list", params: { page: 0 } },
+        screens: {
+            list: {
+                params: pokerScreens.list,
+                render: async (ctx, scene, { page }) => [
+                    await renderPokerList(view(ctx, scene), page),
+                ],
+            },
+            closed: {
+                params: pokerScreens.closed,
+                render: async (ctx, scene, { page }) => [
+                    await renderPokerClosedList(view(ctx, scene), page),
+                ],
+            },
+            form: {
+                params: pokerScreens.form,
+                guard: canCreate,
+                render: async (ctx, scene) => [
+                    renderPokerForm(view(ctx, scene)),
+                ],
+            },
+            deck: {
+                params: pokerScreens.deck,
+                guard: canCreate,
+                render: async (ctx, scene) => [
+                    renderPokerDeckChoice(view(ctx, scene)),
+                ],
+            },
         },
         buttons: {
-            show: {
-                value: pokerButtonValues.show,
-                handle: async (ctx, scene, screen) => {
-                    scene.state.screen = screen;
-                    scene.state.page = 0;
-                },
-            },
             page: {
                 value: pokerButtonValues.page,
                 handle: async (ctx, scene, page) => {
-                    scene.state.page = page;
+                    if ("page" in scene.screen.params) {
+                        scene.screen.params.page = page;
+                    }
                 },
             },
             open: {
@@ -76,8 +102,8 @@ export function createPokerScene(
                 value: pokerButtonValues.create,
                 guard: canCreate,
                 handle: async (ctx, scene) => {
-                    scene.state.screen = "form";
                     scene.state.draft = buildDraft();
+                    await scene.push("form");
                 },
             },
             deck: {
@@ -85,7 +111,7 @@ export function createPokerScene(
                 guard: canCreate,
                 handle: async (ctx, scene, deck) => {
                     scene.state.draft.deck = deck;
-                    scene.state.screen = "form";
+                    await scene.back();
                 },
             },
             askTitle: {
@@ -112,9 +138,8 @@ export function createPokerScene(
                         autoReveal,
                     });
 
-                    scene.state.screen = "list";
-                    scene.state.page = 0;
                     scene.state.draft = buildDraft();
+                    await scene.reset();
                     await openRoom(ctx, room._id.toHexString());
                 },
             },
@@ -149,17 +174,4 @@ export function createPokerScene(
 
 function buildDraft(): PokerDraft {
     return { title: null, deck: defaultPokerDeckName, autoReveal: true };
-}
-
-async function render(view: PokerView): Promise<TelegramMessageContent> {
-    switch (view.scene.state.screen) {
-        case "list":
-            return renderPokerList(view);
-        case "closed":
-            return renderPokerClosedList(view);
-        case "form":
-            return renderPokerForm(view);
-        case "deck":
-            return renderPokerDeckChoice(view);
-    }
 }

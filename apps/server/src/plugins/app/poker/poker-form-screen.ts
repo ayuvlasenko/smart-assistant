@@ -18,12 +18,12 @@ export function renderPokerForm({
 
     return buildPokerMessage(describeDraft(t, draft), [
         [
-            scene.button(t("poker:deckButton"), "show", "deck"),
+            scene.screenButton(t("poker:deckButton"), "deck"),
             scene.button(t("poker:titleButton"), "askTitle", null),
         ],
         [scene.button(t("poker:autoRevealButton"), "autoReveal", null)],
         [
-            scene.button(t("poker:backButton"), "show", "list"),
+            scene.backButton(t("poker:backButton")),
             {
                 ...scene.button(t("poker:createButton"), "save", null),
                 style: "success",
@@ -52,7 +52,7 @@ export function renderPokerDeckChoice({
             ...pokerDeckNames.map((name) => [
                 scene.button(formatPokerDeckName(t, name), "deck", name),
             ]),
-            [scene.button(t("poker:backButton"), "show", "form")],
+            [scene.backButton(t("poker:backButton"))],
         ],
     );
 }

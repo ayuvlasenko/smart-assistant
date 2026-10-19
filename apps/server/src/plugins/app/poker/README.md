@@ -40,7 +40,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 
 The flow of a user:
 
-1. `/poker` starts the `poker` scene, which lives 7 days after its last use. It shows the open rooms of the user, five on a page. A user with `poker.create` also gets `➕ New room` and `🗄 Closed rooms`.
+1. `/poker` starts the `poker` scene, which lives 7 days after its last use. It shows the open rooms of the user, five on a page. A user with `poker.create` also gets `➕ New room` and `🗄 Closed rooms`. The lists, the form and its deck choice are screens of the scene, and `‹ Back` returns to the page of the list the user left.
 2. `➕ New room` opens the form. Its buttons `🃏 Deck`, `✏️ Title` and `⚡ Auto reveal` carry no values: the text of the form shows them. The form holds the deck, `fibonacciShort` by default, an optional title of at most 64 characters (a room without one shows its creation time, such as `31.12 19:15`, in the time zone of the viewer), and auto reveal, on by default. `✅ Create` creates the room and starts its `pokerRoom` scene below the list.
 3. Another user opens the room link, `https://t.me/<bot>?start=poker_<token>`, and joins. `📋 Copy link` stands under the main action of the room, in one row with `⋯ More`, and copies this link to the clipboard of the participant through `copy_text`, so the participant pastes it into any chat.
 4. A participant presses a card to vote and presses the same card again to take the vote back. The cards stand in even rows of at most six, so the six cards of `fibonacciShort` fit one row and the 11 cards of `fibonacci` take two. The own card is blue, without a mark in its text. The others see `✅` for a vote, `⏳` for a wait, and `💤` for an idle participant, never the card.
