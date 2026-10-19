@@ -7,6 +7,7 @@ import {
     Update,
 } from "@grammyjs/types";
 import { type Static, Type } from "@sinclair/typebox";
+import { telegramScreenSchema } from "./telegram-scene-screens.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
 
 const telegramButtonSchema = Type.Union([
@@ -20,7 +21,19 @@ const telegramButtonSchema = Type.Union([
         step: Type.String(),
         value: Type.Unknown(),
     }),
+    Type.Object({
+        kind: Type.Literal("screen"),
+        screen: telegramScreenSchema,
+    }),
+    Type.Object({
+        kind: Type.Literal("back"),
+    }),
 ]);
+
+export const telegramConfirmationSchema = Type.Object({
+    name: Type.String(),
+    value: Type.Unknown(),
+});
 
 export const telegramButtonsStateSchema = Type.Object({
     nextId: Type.Number(),
@@ -115,6 +128,34 @@ export class TelegramSceneButtons {
             : otherMessages;
     }
 
+    isConfirming(
+        instance: TelegramSceneInstance,
+        name: string,
+        ...value: [] | [unknown]
+    ): boolean {
+        const { confirming } = instance.record;
+
+        return (
+            confirming?.name === name &&
+            (!value.length ||
+                JSON.stringify(confirming.value) === JSON.stringify(value[0]))
+        );
+    }
+
+    confirm(
+        instance: TelegramSceneInstance,
+        name: string,
+        value: unknown,
+    ): boolean {
+        if (this.isConfirming(instance, name, value)) {
+            instance.record.confirming = undefined;
+            return true;
+        }
+
+        instance.record.confirming = { name, value };
+        return false;
+    }
+
     forgetInputButtons(instance: TelegramSceneInstance): void {
         const state = instance.record.buttons;
 
@@ -150,14 +191,15 @@ function findSameButton(
     button: TelegramButton,
     messageId: number | undefined,
 ): string | undefined {
-    const buttons = instance.record.buttons.messages.find(
-        (message) => message.messageId === messageId,
-    )?.buttons;
     const value = JSON.stringify(button);
 
-    return Object.entries(buttons ?? {}).find(
-        ([, stored]) => JSON.stringify(stored) === value,
-    )?.[0];
+    return instance.record.buttons.messages
+        .filter(
+            (message) =>
+                messageId === undefined || message.messageId === messageId,
+        )
+        .flatMap((message) => Object.entries(message.buttons))
+        .find(([, stored]) => JSON.stringify(stored) === value)?.[0];
 }
 
 function readOwnButtonIds(

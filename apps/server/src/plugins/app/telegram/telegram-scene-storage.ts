@@ -2,8 +2,16 @@ import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { FastifyBaseLogger } from "fastify";
 import { createHash, randomBytes } from "node:crypto";
-import { telegramButtonsStateSchema } from "./telegram-scene-buttons.js";
+import {
+    telegramButtonsStateSchema,
+    telegramConfirmationSchema,
+} from "./telegram-scene-buttons.js";
 import { telegramInputStateSchema } from "./telegram-scene-inputs.js";
+import { telegramSceneMessagesStateSchema } from "./telegram-scene-messages.js";
+import {
+    TelegramSceneScreens,
+    telegramScreenSchema,
+} from "./telegram-scene-screens.js";
 import { telegramSlotsStateSchema } from "./telegram-scene-slots.js";
 import { TelegramScene } from "./telegram-scene.js";
 import { TelegramSession } from "./telegram-session.js";
@@ -12,7 +20,11 @@ const sceneRecordSchema = Type.Object({
     name: Type.String(),
     startedAt: Type.Number(),
     state: Type.Record(Type.String(), Type.Unknown()),
+    screen: Type.Optional(telegramScreenSchema),
+    stack: Type.Optional(Type.Array(telegramScreenSchema)),
+    confirming: Type.Optional(telegramConfirmationSchema),
     buttons: telegramButtonsStateSchema,
+    messages: Type.Optional(telegramSceneMessagesStateSchema),
     slots: telegramSlotsStateSchema,
     input: Type.Optional(telegramInputStateSchema),
     topics: Type.Array(Type.String()),
@@ -44,15 +56,18 @@ export class TelegramSceneStorage {
     private blocker: { id: string | undefined } | undefined;
     private readonly session: TelegramSession;
     private readonly findScene: (name: string) => TelegramScene | undefined;
+    private readonly screens: TelegramSceneScreens;
     private readonly log: FastifyBaseLogger;
 
     constructor(
         session: TelegramSession,
         findScene: (name: string) => TelegramScene | undefined,
+        screens: TelegramSceneScreens,
         log: FastifyBaseLogger,
     ) {
         this.session = session;
         this.findScene = findScene;
+        this.screens = screens;
         this.log = log;
     }
 
@@ -103,6 +118,7 @@ export class TelegramSceneStorage {
         };
         const instance = this.toInstance(id, scene, record);
 
+        this.screens.start(instance);
         this.instances.set(id, instance);
 
         return instance;
@@ -203,7 +219,12 @@ export class TelegramSceneStorage {
         expiresAt: number,
     ): void {
         const topics = [
-            ...new Set(instance.scene.watch(instance.record.state)),
+            ...new Set(
+                instance.scene.watch(
+                    instance.record.state,
+                    instance.record.screen,
+                ),
+            ),
         ];
 
         this.unindexTopics(
@@ -264,7 +285,11 @@ export class TelegramSceneStorage {
     ): TelegramSceneInstance | undefined {
         const scene = this.findScene(record.name);
 
-        if (scene && Value.Check(scene.state, record.state)) {
+        if (
+            scene &&
+            Value.Check(scene.state, record.state) &&
+            this.screens.isValid(scene, record.screen, record.stack)
+        ) {
             return this.toInstance(id, scene, record);
         }
 

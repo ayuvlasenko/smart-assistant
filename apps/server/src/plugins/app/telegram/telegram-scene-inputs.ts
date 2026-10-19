@@ -1,7 +1,9 @@
 import { Update } from "@grammyjs/types";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { UserEntity } from "../users/user-entity.js";
 import { TelegramContext } from "./telegram-context.js";
+import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
@@ -41,6 +43,17 @@ export class TelegramSceneInputs {
     ) {
         this.telegramMetrics = telegramMetrics;
         this.buttons = buttons;
+    }
+
+    canUse(instance: TelegramSceneInstance, user: UserEntity): boolean {
+        const name = instance.record.input?.name;
+        const input =
+            name === undefined ? undefined : instance.scene.inputs[name];
+
+        return (
+            isAllowed(instance.scene.guard, user) &&
+            isAllowed(input?.guard, user)
+        );
     }
 
     isActive(instance: TelegramSceneInstance): boolean {
