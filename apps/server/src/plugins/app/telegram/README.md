@@ -407,15 +407,9 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
     "name": "invites",
     "startedAt": 1760500000000,
     "state": { "draft": { "grants": [], "maxUses": 1, "validForDays": null } },
-    "screen": {
-        "name": "users",
-        "params": { "inviteId": "66f1c2…", "page": 0 }
-    },
-    "stack": [
-        { "name": "list", "params": { "page": 2 } },
-        { "name": "invite", "params": { "inviteId": "66f1c2…" } }
-    ],
-    "confirming": { "name": "revoke", "value": null },
+    "screen": { "name": "invite", "params": { "inviteId": "66f1c2…" } },
+    "stack": [{ "name": "list", "params": { "page": 2 } }],
+    "confirming": { "name": "revoke", "value": "66f1c2…" },
     "buttons": { "nextId": 7, "messages": [] },
     "messages": [{ "messageId": 812, "kind": "text", "hash": "Qm9…" }],
     "topics": ["invites.invite:66f1c2…"]
