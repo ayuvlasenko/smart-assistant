@@ -20,7 +20,7 @@ const roundsPageSize = 5;
 
 export function renderPokerHistory(
     view: PokerRoomView,
-    { isClosed }: { isClosed: boolean },
+    { isClosed, page }: { isClosed: boolean; page: number },
 ): TelegramMessageContent {
     const { ctx, scene, room, deck } = view;
     const { t } = ctx;
@@ -37,25 +37,25 @@ export function renderPokerHistory(
         rounds,
         telegramMessageTextLimit - measureTelegramHtml(header.join("\n")),
     );
-    const page = pages[scene.state.page] ?? [];
+    const pageRounds = pages[page] ?? [];
 
     return buildPokerMessage(
         [
             ...header,
-            ...(page.length
-                ? page.flatMap((round, index) => [
+            ...(pageRounds.length
+                ? pageRounds.flatMap((round, index) => [
                       ...(index ? [""] : []),
                       ...round,
                   ])
                 : [escapeTelegramHtml(t("poker:historyEmpty"))]),
         ],
         [
-            pageButtons(scene.state.page, pages.length, 1, (text, target) =>
+            pageButtons(page, pages.length, 1, (text, target) =>
                 scene.button(text, "page", target),
             ),
             isClosed
                 ? [scene.button(t("poker:hideButton"), "hide", null)]
-                : [scene.button(t("poker:backButton"), "show", "round")],
+                : [scene.backButton(t("poker:backButton"))],
         ],
     );
 }

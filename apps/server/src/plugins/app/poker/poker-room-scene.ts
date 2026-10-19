@@ -25,9 +25,11 @@ import { renderPokerRound } from "./poker-round-screen.js";
 import {
     pokerRoomButtonValues,
     PokerRoomSceneControl,
+    pokerRoomScreens,
     PokerRoomState,
     pokerRoomStateSchema,
     PokerRoomUrlResolver,
+    PokerRoomView,
 } from "./poker-schemas.js";
 
 const roundTitleLength = 100;
@@ -37,13 +39,7 @@ export function pokerRoomTopic(roomId: string): string {
 }
 
 export function buildPokerRoomState(roomId: string): PokerRoomState {
-    return {
-        roomId,
-        screen: "round",
-        page: 0,
-        titleRound: null,
-        isClosing: false,
-    };
+    return { roomId, titleRound: null };
 }
 
 export function createPokerRoomScene(
@@ -53,6 +49,45 @@ export function createPokerRoomScene(
 ): TelegramScene<typeof pokerRoomStateSchema> {
     const load = (ctx: TelegramContext, scene: PokerRoomSceneControl) =>
         pokerRoomsService.find(ctx.user, new ObjectId(scene.state.roomId));
+    const renderRoom = async (
+        ctx: TelegramContext,
+        scene: PokerRoomSceneControl,
+        renderOpen: (view: PokerRoomView) => TelegramMessageContent,
+    ): Promise<TelegramMessageContent[]> => {
+        const room = await load(ctx, scene);
+
+        if (!room) {
+            return [
+                buildPokerMessage(
+                    [escapeTelegramHtml(ctx.t("poker:roomMissing"))],
+                    [],
+                ),
+            ];
+        }
+
+        const view = await buildView(
+            ctx,
+            scene,
+            room,
+            pokerRoomsService,
+            access,
+            resolveRoomUrl,
+        );
+
+        if (readPokerRoomStatus(room, new Date()) === "closed") {
+            return [
+                renderPokerHistory(view, {
+                    isClosed: true,
+                    page:
+                        scene.screen.name === "history"
+                            ? scene.screen.params.page
+                            : 0,
+                }),
+            ];
+        }
+
+        return [renderOpen(view)];
+    };
 
     return defineScene({
         name: "pokerRoom",
@@ -61,23 +96,28 @@ export function createPokerRoomScene(
         guard: access.guard("use", "PokerRoom"),
         key: (state) => state.roomId,
         watch: (state) => [pokerRoomTopic(state.roomId)],
-        slots: {
-            room: async (ctx, scene) => {
-                const room = await load(ctx, scene);
-
-                return room
-                    ? render(
-                          ctx,
-                          scene,
-                          room,
-                          pokerRoomsService,
-                          access,
-                          resolveRoomUrl,
-                      )
-                    : buildPokerMessage(
-                          [escapeTelegramHtml(ctx.t("poker:roomMissing"))],
-                          [],
-                      );
+        root: { name: "round", params: {} },
+        screens: {
+            round: {
+                params: pokerRoomScreens.round,
+                render: (ctx, scene) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerRound(view, { isMenu: false }),
+                    ),
+            },
+            menu: {
+                params: pokerRoomScreens.menu,
+                render: (ctx, scene) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerRound(view, { isMenu: true }),
+                    ),
+            },
+            history: {
+                params: pokerRoomScreens.history,
+                render: (ctx, scene, { page }) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerHistory(view, { isClosed: false, page }),
+                    ),
             },
         },
         buttons: {
@@ -89,8 +129,6 @@ export function createPokerRoomScene(
                     if (room) {
                         await pokerRoomsService.vote(ctx.user, room, vote);
                     }
-
-                    scene.state.isClosing = false;
                 },
             },
             reveal: {
@@ -101,8 +139,6 @@ export function createPokerRoomScene(
                     if (room) {
                         await pokerRoomsService.reveal(ctx.user, room, round);
                     }
-
-                    scene.state.isClosing = false;
                 },
             },
             startRound: {
@@ -117,54 +153,41 @@ export function createPokerRoomScene(
                             options,
                         );
                     }
-
-                    scene.state.screen = "round";
-                    scene.state.isClosing = false;
                 },
             },
             askTitle: {
                 value: pokerRoomButtonValues.askTitle,
                 handle: async (ctx, scene, round) => {
                     scene.state.titleRound = round;
-                    scene.state.screen = "round";
-                    scene.state.isClosing = false;
+                    await scene.reset();
                     await scene.ask("title");
                 },
             },
             close: {
                 value: pokerRoomButtonValues.close,
                 guard: access.guard("update", "PokerRoom"),
+                confirm: true,
                 handle: async (ctx, scene) => {
-                    if (!scene.state.isClosing) {
-                        scene.state.isClosing = true;
-                        return;
-                    }
-
                     const room = await load(ctx, scene);
 
                     if (room) {
                         await pokerRoomsService.close(ctx.user, room);
                     }
-
-                    scene.state.isClosing = false;
                 },
             },
             hide: {
                 value: pokerRoomButtonValues.hide,
                 handle: (ctx, scene) => scene.end({ messages: "delete" }),
             },
-            show: {
-                value: pokerRoomButtonValues.show,
-                handle: async (ctx, scene, screen) => {
-                    scene.state.screen = screen;
-                    scene.state.page = 0;
-                    scene.state.isClosing = false;
-                },
-            },
             page: {
                 value: pokerRoomButtonValues.page,
                 handle: async (ctx, scene, page) => {
-                    scene.state.page = page;
+                    if (scene.screen.name === "history") {
+                        scene.screen.params.page = page;
+                        return;
+                    }
+
+                    await scene.replace("history", { page });
                 },
             },
         },
@@ -205,15 +228,15 @@ export function createPokerRoomScene(
     });
 }
 
-async function render(
+async function buildView(
     ctx: TelegramContext,
     scene: PokerRoomSceneControl,
     room: PokerRoomEntity,
     pokerRoomsService: PokerRoomsService,
     access: AccessControl<PokerSubjects>,
     resolveRoomUrl: PokerRoomUrlResolver,
-): Promise<TelegramMessageContent> {
-    const view = {
+): Promise<PokerRoomView> {
+    return {
         ctx,
         scene,
         room,
@@ -227,12 +250,4 @@ async function render(
         roomUrl: await resolveRoomUrl(room.token),
         canClose: access.can(ctx.user, "update", subject("PokerRoom", room)),
     };
-
-    if (readPokerRoomStatus(room, new Date()) === "closed") {
-        return renderPokerHistory(view, { isClosed: true });
-    }
-
-    return scene.state.screen === "history"
-        ? renderPokerHistory(view, { isClosed: false })
-        : renderPokerRound(view);
 }

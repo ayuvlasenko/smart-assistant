@@ -17,12 +17,6 @@ const pokerDeckNameSchema = Type.Union(
 
 const pageSchema = Type.Integer({ minimum: 0 });
 
-const pokerRoomScreenSchema = Type.Union([
-    Type.Literal("round"),
-    Type.Literal("menu"),
-    Type.Literal("history"),
-]);
-
 export const pokerStateSchema = Type.Object({
     userId: objectIdSchema,
     draft: Type.Object({
@@ -53,11 +47,14 @@ const roundNumberSchema = Type.Integer({ minimum: 1 });
 
 export const pokerRoomStateSchema = Type.Object({
     roomId: objectIdSchema,
-    screen: pokerRoomScreenSchema,
-    page: Type.Integer({ minimum: 0 }),
     titleRound: Type.Union([roundNumberSchema, Type.Null()]),
-    isClosing: Type.Boolean(),
 });
+
+export const pokerRoomScreens = {
+    round: Type.Object({}),
+    menu: Type.Object({}),
+    history: Type.Object({ page: pageSchema }),
+};
 
 export const pokerRoomButtonValues = {
     vote: Type.Object({ round: roundNumberSchema, card: Type.String() }),
@@ -69,8 +66,7 @@ export const pokerRoomButtonValues = {
     askTitle: roundNumberSchema,
     close: Type.Null(),
     hide: Type.Null(),
-    show: pokerRoomScreenSchema,
-    page: Type.Integer({ minimum: 0 }),
+    page: pageSchema,
 };
 
 export type PokerState = Static<typeof pokerStateSchema>;
@@ -88,7 +84,9 @@ export type PokerSceneControl = TelegramSceneControl<
 
 export type PokerRoomSceneControl = TelegramSceneControl<
     PokerRoomState,
-    typeof pokerRoomButtonValues
+    typeof pokerRoomButtonValues,
+    TelegramSceneInputSchemas,
+    typeof pokerRoomScreens
 >;
 
 export type PokerRoomUrlResolver = (token: string) => Promise<string>;

@@ -18,11 +18,14 @@ import { PokerRoomView } from "./poker-schemas.js";
 
 const maxCardsPerRow = 6;
 
-export function renderPokerRound(view: PokerRoomView): TelegramMessageContent {
+export function renderPokerRound(
+    view: PokerRoomView,
+    { isMenu }: { isMenu: boolean },
+): TelegramMessageContent {
     const isVoting = view.room.round.status === "voting";
     const lines = isVoting ? describeVoting(view) : describeRevealed(view);
 
-    if (view.scene.state.screen === "menu") {
+    if (isMenu) {
         return buildPokerMessage(lines, readMenuKeyboard(view));
     }
 
@@ -101,7 +104,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         [voted && voted >= total ? { ...reveal, style: "success" } : reveal],
         [
             readCopyLinkButton(view),
-            scene.button(t("poker:moreButton"), "show", "menu"),
+            scene.screenButton(t("poker:moreButton"), "menu"),
         ],
     ];
 }
@@ -127,7 +130,7 @@ function readRevealedKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         ],
         [
             readCopyLinkButton(view),
-            scene.button(t("poker:moreButton"), "show", "menu"),
+            scene.screenButton(t("poker:moreButton"), "menu"),
         ],
     ];
 }
@@ -147,16 +150,18 @@ function readMenuKeyboard({
                 "askTitle",
                 room.round.number,
             ),
-            scene.button(t("poker:historyButton"), "show", "history"),
+            scene.screenButton(t("poker:historyButton"), "history", {
+                page: 0,
+            }),
         ],
         [
-            scene.button(t("poker:backButton"), "show", "round"),
+            scene.backButton(t("poker:backButton")),
             ...(canClose
                 ? [
                       {
                           ...scene.button(
                               t(
-                                  scene.state.isClosing
+                                  scene.isConfirming("close")
                                       ? "poker:confirmCloseButton"
                                       : "poker:closeButton",
                               ),

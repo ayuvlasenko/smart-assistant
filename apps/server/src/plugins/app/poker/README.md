@@ -16,7 +16,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 ## Constraints
 
 - Every participant has their own copy of the room message, and the bot can only edit a message, never share one. A vote changes the message of every participant.
-- The slot engine never edits a `media` message into another kind, and we do not know whether Telegram edits a `text` message into a `rich` one, see [Slots](../telegram/README.md#slots). Every poker slot is `text` with `parse_mode: "HTML"` on every screen, so a slot keeps its kind and the engine edits its message instead of deleting it and sending a new one.
+- The engine never edits a `media` message into another kind, and we do not know whether Telegram edits a `text` message into a `rich` one, see [Screens and messages](../telegram/README.md#screens-and-messages). Every poker message is `text` with `parse_mode: "HTML"` on every screen, so a message keeps its kind and the engine edits it instead of deleting it and sending a new one.
 - A `rich` message was tried first and dropped: Telegram clients stretch a rich table over the whole width and draw headings in a large serif font, so a small room looked sparse. HTML text keeps the room compact. The history uses plain lines too: a quote per round drew a heavy bar around each round and did not fold short rounds.
 - The Bot API allows about one message per second in one chat, see [Rate limits](../telegram/README.md#rate-limits). A room of ten participants gets ten edits for one vote.
 - A message holds at most 4096 characters of text after the HTML is parsed, and Telegram does not split a longer one: it refuses the message. A large room would reach the limit on its own, so a list of voters shows ten labels and `+N` for the rest, a history page holds only the rounds that fit, and `buildPokerMessage` drops the last lines of any text that is still too long and ends it with `…`. `measureTelegramHtml` counts the text without tags, in UTF-16 code units, the unit the Bot API uses for text entities, so an emoji counts as two.
@@ -45,7 +45,7 @@ The flow of a user:
 3. Another user opens the room link, `https://t.me/<bot>?start=poker_<token>`, and joins. `📋 Copy link` stands under the main action of the room, in one row with `⋯ More`, and copies this link to the clipboard of the participant through `copy_text`, so the participant pastes it into any chat.
 4. A participant presses a card to vote and presses the same card again to take the vote back. The cards stand in even rows of at most six, so the six cards of `fibonacciShort` fit one row and the 11 cards of `fibonacci` take two. The own card is blue, without a mark in its text. The others see `✅` for a vote, `⏳` for a wait, and `💤` for an idle participant, never the card.
 5. Any participant presses `👁 Reveal · 2/3`, which counts the votes against the active participants and turns green when everyone voted. With auto reveal the button reads `⚡ Reveal · 2/3`; the message text says nothing about it. The message shows the cards and the [round summary](#the-round-summary). `🔁 Revote` starts a round with the same title; `➡️ Next round`, blue, starts a round without a title.
-6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `‹ Back` with `🔒 Close` beside it for the creator. `✏️ Round title` asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
+6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `‹ Back` with `🔒 Close` beside it for the creator. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
 
 The colours come from the `style` field of an inline button: `primary`, `success` and `danger`. A client without it shows plain buttons, and then the own card does not stand out.
 
@@ -102,7 +102,7 @@ The round number in the filter is the round the user saw, never the round of a f
 1. Each press loads the room and calls `PokerRoomsService.startRound` with round number 3 from its button.
 2. `PokerRoomsRepository.startRound` runs an update pipeline with the filter `round.number: 3`, `round.status: "revealed"`, the user in `participants`, and an open room.
 3. The first update matches. Its pipeline appends `$round` to `rounds` and sets a new `round` with number 4, so the round that moves into the history is the stored one, with its last title. A revote copies `$round.title` inside the same pipeline, so a rename between the load and the update is not lost.
-4. The second update finds `round.number: 4` and matches nothing. The service returns `null`, emits nothing, and the press only redraws the slot of the user.
+4. The second update finds `round.number: 4` and matches nothing. The service returns `null`, emits nothing, and the press only redraws the screen of the user.
 
 A title sent for round 3 after round 4 started matches nothing in the same way, and so does a press on a message that the redraw has not reached yet.
 
@@ -157,15 +157,15 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 
 **Walk-through.** The creator presses `🔒 Close`.
 
-1. The first press only sets `isClosing` in the scene state, and the button turns into `🔒 Sure?`. Any other button of the room resets it.
+1. `close` is a button with `confirm: true`, so the first press only marks it in the scene record, and the button turns into `🔒 Sure?`. Any other button of the room and any move cancel it.
 2. The second press calls `PokerRoomsService.close`. It checks `update PokerRoom` on the loaded room, then `PokerRoomsRepository.close` sets `closedAt` with the filter `createdBy` and an open room.
-3. The service emits `poker.roomChanged`, and the slot of every participant redraws as the history of a closed room.
+3. The service emits `poker.roomChanged`, and the screen of every participant redraws as the history of a closed room.
 
 **Edge cases.**
 
 - Every update filter requires an open room, so nobody can vote in a closed room.
 - A closed room leaves the open list of every participant and moves to `🗄 Closed rooms` of its creator.
-- The `pokerRoom` scene of a closed room shows only the history, without cards and without a back button. `✖️ Hide` ends the scene of that user with `scene.end({ messages: "delete" })`, so the message leaves the chat; opening the room again from `🗄 Closed rooms` brings it back.
+- The `pokerRoom` scene of a closed room shows only the history on any screen, without cards and without a back button. Its page buttons replace the current screen with the history, so the pages work from the round and the menu too. `✖️ Hide` ends the scene of that user with `scene.end({ messages: "delete" })`, so the message leaves the chat; opening the room again from `🗄 Closed rooms` brings it back.
 - The link of a closed room answers `This room is closed.` to a new user. A participant who opens it gets the history.
 - The `pokerRoom` scene has a TTL of one day as well, so its record expires with an idle room.
 
@@ -173,17 +173,18 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 
 **Problem.** A vote of one participant must redraw the room message of every other participant, and a closed or new room must redraw their room lists. A handler may not write to the sessions of other users.
 
-**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the slot of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
+**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
 
-**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB:
+**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `history` with its page.
 
 ```json
 {
-    "roomId": "6710a3…",
-    "screen": "round",
-    "page": 0,
-    "titleRound": null,
-    "isClosing": false
+    "state": { "roomId": "6710a3…", "titleRound": null },
+    "screen": { "name": "history", "params": { "page": 1 } },
+    "stack": [
+        { "name": "round", "params": {} },
+        { "name": "menu", "params": {} }
+    ]
 }
 ```
 
@@ -191,8 +192,8 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 
 1. The button handler loads the room, calls `PokerRoomsService.vote`, and the update stores the vote.
 2. The service emits `poker.roomChanged`. The handlers plugin publishes `poker.room:<roomId>`.
-3. The engine of the voter draws the slot of the voter at the end of the update.
-4. The background run takes the session lock of each of the other two participants, loads the room again and edits their slots.
+3. The engine of the voter draws the screen of the voter at the end of the update.
+4. The background run takes the session lock of each of the other two participants, loads the room again and edits their screens.
 
 **Edge cases.** The redraw reads the room under the session lock of each participant, after the lock is free. When several votes come while an edit waits for the rate limiter, the next redraw already shows all of them, and the redraws after it find the same content hash and call no API. So each chat gets at most about one edit per second, whatever the number of votes. Two large active rooms can still reach the limit of the bot, see `docs/backlog/background-delivery-waits-for-rate-limit-under-session-lock.md`.
 
@@ -219,7 +220,7 @@ The screen shows no mean. One outlier moves the mean far, and planning poker aim
 
 1. The name is `firstName`, else `@username`, else `Participant`, cut to 20 graphemes with `…`. `Intl.Segmenter` cuts by graphemes, so an emoji or a letter with a diacritic stays whole.
 2. When two participants have the same name, the label adds `(@username)` of each one who has it.
-3. The label of the viewer ends with `(you)`. The slot of each participant is drawn for that participant, so every user finds their own line.
+3. The label of the viewer ends with `(you)`. The screen of each participant is drawn for that participant, so every user finds their own line.
 
 A label is plain text. Names and titles come from users, so every screen passes them through `escapeTelegramHtml` before it puts them into the HTML of the message.
 
