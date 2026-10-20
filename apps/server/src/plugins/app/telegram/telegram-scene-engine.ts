@@ -296,7 +296,7 @@ export class TelegramSceneEngine {
         }
 
         const storage = this.updateFor(ctx).storage;
-        const id = await this.instanceIdFor(storage, scene, state);
+        const id = await this.instanceIdFor(storage, scene, state, source);
 
         if (id === source.id) {
             throw new Error(
@@ -308,16 +308,16 @@ export class TelegramSceneEngine {
             return false;
         }
 
+        await this.inputs.cancel(ctx, this.sceneControl(ctx, source), source, {
+            silent: true,
+        });
+        await this.end(ctx, source, "keep", id);
+
         const target =
             (await storage.load(id)) ??
             (await this.create(ctx, scene, id, state));
 
         await this.messages.handOver(ctx, source, target);
-        await this.inputs.cancel(ctx, this.sceneControl(ctx, source), source, {
-            silent: true,
-        });
-        source.record.confirming = undefined;
-        await this.end(ctx, source, "keep", target);
         this.updateFor(ctx).touch(target);
 
         return true;
@@ -327,10 +327,13 @@ export class TelegramSceneEngine {
         storage: TelegramSceneStorage,
         scene: TelegramScene,
         state: SceneState,
+        source?: TelegramSceneInstance,
     ): Promise<string> {
         const blocker = await storage.blocking();
 
-        return blocker?.scene === scene && scene.key(state) === undefined
+        return blocker?.scene === scene &&
+            blocker.id !== source?.id &&
+            scene.key(state) === undefined
             ? blocker.id
             : storage.idFor(scene, state);
     }
@@ -418,7 +421,7 @@ export class TelegramSceneEngine {
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
         messages: TelegramSceneMessagesRelease,
-        handedOverTo?: TelegramSceneInstance,
+        handedOverTo?: string,
     ): Promise<void> {
         await this.messages.release(ctx, instance, messages);
         this.updateFor(ctx).storage.remove(instance);
@@ -427,7 +430,7 @@ export class TelegramSceneEngine {
             {
                 scene: instance.scene.name,
                 sceneId: instance.id,
-                handedOverTo: handedOverTo?.id,
+                handedOverTo,
             },
             "Telegram scene ended",
         );

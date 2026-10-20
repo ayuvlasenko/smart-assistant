@@ -191,7 +191,7 @@ A screen without params takes no second argument: `scene.push("form")`. Each mov
 
 **Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a notice that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
 
-**Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, gives a notice with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene. See [Blocking scenes](#blocking-scenes).
+**Blocking scenes.** Mark a scene `blocking: true` with a `title` only when the user must finish it before anything else starts, such as a wizard. While it runs, `sceneEngine.start` refuses every other scene, gives a notice with the titles of both scenes, and returns `false`, so check the result before the handler continues. The buttons of other scenes keep working, but their `ask` gets the same refusal. `/cancel` ends a blocking scene, and the scene itself can end with `scene.handOver` to start the next one. See [Blocking scenes](#blocking-scenes).
 
 **Access.** Put `guard: access.guard(action, subject)` on every command, deep link, scene, scene button and scene input that needs a permission. The guard only shapes the chat; the service still checks every read and write. `plugins/app/access/README.md` explains the model.
 
@@ -521,10 +521,10 @@ Once it sent a new message, it sends every later position again too, and deletes
 
 **Walk-through.** The user presses an item in the list.
 
-1. The engine checks the guard of the other scene, then the blocking scene and the waiting input, like `start`. The scene that hands over does not count as a blocker, so a blocking wizard can hand its messages to the scene it built.
-2. When the instance of the other scene runs already, the engine takes it with its screen and stack. Otherwise it creates the instance and runs its `start` hook. The first scene has not changed yet, so a failed `start` hook leaves it as it was.
-3. The engine deletes the messages of a running instance, or removes their buttons when the bot cannot delete them. Then it gives the instance the messages of the first scene with empty hashes.
-4. The engine cancels the waiting input of the first scene silently, with `cleanup`, clears its confirmation and ends it with `keep`. The log `Telegram scene ended` carries `handedOverTo` with the id of the other instance.
+1. The engine checks the guard of the other scene, then the blocking scene and the waiting input, like `start`. The scene that hands over does not count as a blocker, so a blocking wizard can hand its messages to the scene it built. For the same reason, a blocking scene without a `key` that hands over to its own definition gets a new instance, not itself.
+2. The engine cancels the waiting input of the first scene silently, with `cleanup`, and ends it with `keep`. The log `Telegram scene ended` carries `handedOverTo` with the id of the other instance. From now on the first scene neither blocks nor holds an input, so the `start` hook of the other scene can call `ask`.
+3. When the instance of the other scene runs already, the engine takes it with its screen and stack. Otherwise it creates the instance and runs its `start` hook.
+4. The engine deletes the messages of a running instance, or removes their buttons when the bot cannot delete them. Then it gives the instance the messages of the first scene with empty hashes.
 5. After the update, the render edits message 812 into the item. When the kinds do not allow an edit, it sends a new message and deletes the old one. It deletes the extra positions and sends the missing ones at the end.
 
 **Edge cases.**
@@ -533,6 +533,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 - A handover to the same instance, such as a keyed scene to itself, throws: it is a bug in the caller.
 - A scene without messages hands over an empty array, so the other scene sends its messages as after `start`.
 - The old buttons of the first scene answer `buttonExpired`: its record is gone, and the edit puts the buttons of the other scene on the message.
+- When the `start` hook of the other scene fails, the first scene has already ended. The message keeps its content, and its buttons answer `buttonExpired`.
 - When the handler fails after `handOver`, the record of the other scene is saved, but the screen is not drawn. The message keeps the content of the first scene until the next touch of the other scene finds the empty hash and draws it.
 - After `handOver`, changes through the `scene` object of the first scene are lost, as after `end`.
 
@@ -575,7 +576,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 
 **Problem.** Some flows, such as a wizard, must finish before the user starts anything else.
 
-**Idea.** A scene with `blocking: true` writes its id into the `blocking` field of the session, which expires with the scene. While the field points to a running scene, the engine refuses every other scene start and every other input.
+**Idea.** A scene with `blocking: true` writes its id into the `blocking` field of the session, which expires with the scene. While the field points to a running scene, the engine refuses every other scene start and every other input. The blocking scene itself can still end with `scene.handOver`, which releases the block and starts the other scene.
 
 ```mermaid
 flowchart TD
