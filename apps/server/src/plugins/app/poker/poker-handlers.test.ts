@@ -102,7 +102,7 @@ void describe("Poker access", () => {
 });
 
 void describe("Poker rooms", () => {
-    void it("creates a room through the form in place of the list", async (t) => {
+    void it("creates a room through the form and shows it below the list", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655111 });
 
@@ -112,13 +112,15 @@ void describe("Poker rooms", () => {
         });
 
         const room = await readRoom();
-        const [roomMessage, ...rest] = await bot.readMessageTexts(creator.id);
+        const [list, roomMessage, ...rest] = await bot.readMessageTexts(
+            creator.id,
+        );
 
         assert.equal(room.title, "Sprint 42");
         assert.equal(room.deck, "tShirt");
+        assert.ok(list?.startsWith(en.listTitle));
         assert.ok(roomMessage);
         assert.ok(roomMessage.startsWith("Sprint 42 · Round 1 · voting"));
-        assert.deepEqual(readSentRoomTexts(bot), []);
         assert.ok(
             (await readCallbackTexts(bot, creator)).includes(revealLabel(0, 1)),
         );
@@ -139,24 +141,6 @@ void describe("Poker rooms", () => {
                 `^https://t\\.me/\\w+\\?start=poker_${await readToken()}$`,
             ),
         );
-    });
-
-    void it("opens a running room from the list in place of the list", async (t) => {
-        const bot = await buildBot(t);
-        const creator = buildTelegramPrivateChat({ id: 987655112 });
-
-        await createRoomThroughForm(bot, creator);
-        await bot.sendText(creator, "/poker");
-        await bot.pressButton(
-            creator,
-            `#1 ${await readRoomTime(bot)} · 👥 1 · round 1`,
-        );
-
-        const [roomMessage, ...rest] = await bot.readMessageTexts(creator.id);
-
-        assert.ok(roomMessage?.includes("Round 1 · voting"));
-        assert.deepEqual(rest, []);
-        assert.deepEqual(readSentRoomTexts(bot), []);
     });
 
     void it("returns to the page of the room list after the form", async (t) => {
@@ -447,7 +431,6 @@ void describe("Poker rooms", () => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655191 });
         await createRoomThroughForm(bot, creator);
-        await bot.sendText(creator, "/poker");
 
         const roomButton = `#1 ${await readRoomTime(bot)} · 👥 1 · round 1`;
 
@@ -679,11 +662,7 @@ async function readListKeyboard(
     bot: PokerBot,
     chat: Chat.PrivateChat,
 ): Promise<KeyboardButton[][]> {
-    return (
-        (await readKeyboards(bot, chat)).find((keyboard) =>
-            keyboard.flat().some(({ text }) => text === en.newRoomButton),
-        ) ?? []
-    );
+    return (await readKeyboards(bot, chat)).at(0) ?? [];
 }
 
 async function readKeyboards(
@@ -726,10 +705,6 @@ async function readKeyboards(
                 (markup as { inline_keyboard?: KeyboardButton[][] } | undefined)
                     ?.inline_keyboard ?? [],
         );
-}
-
-function readSentRoomTexts(bot: PokerBot): string[] {
-    return bot.readSentTexts().filter((text) => text.includes("· Round "));
 }
 
 function revealLabel(voted: number, total: number): string {

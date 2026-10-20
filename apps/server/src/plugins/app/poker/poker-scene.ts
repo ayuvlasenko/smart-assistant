@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
+import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
 import { defaultPokerDeckName } from "./poker-decks.js";
@@ -35,11 +36,12 @@ export function buildPokerState(userId: string): PokerState {
 export function createPokerScene(
     pokerRoomsService: PokerRoomsService,
     access: AccessControl<PokerSubjects>,
+    sceneEngine: TelegramSceneEngine,
     roomScene: TelegramScene<typeof pokerRoomStateSchema>,
 ): TelegramScene<typeof pokerStateSchema> {
     const canCreate = access.guard("create", "PokerRoom");
-    const openRoom = (scene: PokerSceneControl, roomId: string) =>
-        scene.handOver(roomScene, buildPokerRoomState(roomId));
+    const openRoom = (ctx: TelegramContext, roomId: string) =>
+        sceneEngine.start(ctx, roomScene, buildPokerRoomState(roomId));
     const view = (ctx: TelegramContext, scene: PokerSceneControl) => ({
         ctx,
         scene,
@@ -94,7 +96,7 @@ export function createPokerScene(
             },
             open: {
                 value: pokerButtonValues.open,
-                handle: (ctx, scene, roomId) => openRoom(scene, roomId),
+                handle: (ctx, scene, roomId) => openRoom(ctx, roomId),
             },
             create: {
                 value: pokerButtonValues.create,
@@ -138,7 +140,7 @@ export function createPokerScene(
 
                     scene.state.draft = buildDraft();
                     await scene.reset();
-                    await openRoom(scene, room._id.toHexString());
+                    await openRoom(ctx, room._id.toHexString());
                 },
             },
         },
