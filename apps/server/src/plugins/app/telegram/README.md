@@ -14,6 +14,7 @@ The first part of this file says how to write bot code in a domain: commands, de
 - [Scene instances](#scene-instances)
 - [Buttons](#buttons)
 - [Screens and messages](#screens-and-messages)
+- [Message handover](#message-handover)
 - [Inputs](#inputs)
 - [Blocking scenes](#blocking-scenes)
 - [Updates for other users](#updates-for-other-users)
@@ -165,15 +166,15 @@ events.on("reports.reportChanged", ({ data }) => {
 - `screens` lists what the scene can show. A screen has `params`, a TypeBox object, and `render`, which returns the messages of the screen. A screen without params declares `params: Type.Object({})`. `root` is the screen that a new instance starts on. See [Screens and messages](#screens-and-messages).
 - `ttl` is how long the scene lives after its last use. An optional `maxAge` limits its whole life from the start. A scene lives until it calls `scene.end()` or its time runs out, and a user can have many scenes at once.
 - `key(state)` makes one instance per business entity, such as the id of the entity. A second `start` with the same key shows the running scene again and keeps its state.
-- Create a scene in a factory, `create<Name>Scene(dependencies)`, that receives the services it needs. A handler that starts another scene gets `telegramSceneEngine` from the factory too and calls `sceneEngine.start(ctx, otherScene, state)` from the closure.
+- Create a scene in a factory, `create<Name>Scene(dependencies)`, that receives the services it needs. A handler that starts another scene gets `telegramSceneEngine` from the factory too and calls `sceneEngine.start(ctx, otherScene, state)` from the closure. A handler that replaces its scene with another one calls `scene.handOver(otherScene, state)` and needs no engine.
 
-**Handlers.** A scene handler gets the context and the scene as separate arguments, `(ctx, scene)` or `(ctx, scene, value)`; a step gets `(ctx, input)`. The context only talks to Telegram. The scene object holds `state`, `button`, `ask` and `end`.
+**Handlers.** A scene handler gets the context and the scene as separate arguments, `(ctx, scene)` or `(ctx, scene, value)`; a step gets `(ctx, input)`. The context only talks to Telegram. The scene object holds `state`, `button`, `ask`, `end` and `handOver`.
 
 **Change the state last.** The engine saves every scene that the update touched, also when a handler fails, so a failed handler keeps the changes it made before the error. Call the domain and check the data first, then change `scene.state`. A failed input step drops the input.
 
 **Buttons.** Create every inline button with `scene.button(text, name, value)` for a handler in `buttons`, or with `input.button(text, value)` inside a step. Never write `callback_data` by hand: the scene keeps the value, and `callback_data` holds only a reference. The buttons of every running scene work at the same time. See [Buttons](#buttons).
 
-**Screens.** Show everything the scene draws as screens. `render` returns an array of `TelegramMessageContent` (`text`, `rich` or `media`), and the engine matches the array to the messages of the scene by position: it edits a message in place, sends the new ones at the end and deletes the rest. A handler only changes the state or the screen; the engine draws the current screen after the update. Never keep a message id in the state. A reply sent in a handler comes before the screen messages. Choose what happens to the messages when the scene ends with `scene.end({ messages: "keep" | "removeButtons" | "delete" })`. See [Screens and messages](#screens-and-messages).
+**Screens.** Show everything the scene draws as screens. `render` returns an array of `TelegramMessageContent` (`text`, `rich` or `media`), and the engine matches the array to the messages of the scene by position: it edits a message in place, sends the new ones at the end and deletes the rest. A handler only changes the state or the screen; the engine draws the current screen after the update. Never keep a message id in the state. A reply sent in a handler comes before the screen messages. Choose what happens to the messages when the scene ends with `scene.end({ messages: "keep" | "removeButtons" | "delete" })`, or end the scene with `scene.handOver(otherScene, state)`: the other scene takes the messages and edits them in place. Check the `false` that `handOver` returns, as with `start`. See [Screens and messages](#screens-and-messages) and [Message handover](#message-handover).
 
 **Navigation.** `scene.screen` is the current screen, `{ name, params }`; a check of `name` narrows the type of `params`, and a handler may change the params in place. The scene keeps a stack of the previous screens:
 
@@ -510,6 +511,31 @@ Once it sent a new message, it sends every later position again too, and deletes
 - `scene.end({ messages })` chooses what happens to the messages: `keep`, `removeButtons` or `delete`.
 - A scene without `screens` draws no messages, for example a scene that only asks a question.
 
+## Message handover
+
+**Problem.** A scene that opens another scene, such as a list that opens an item, leaves its own message in the chat, and the other scene sends a new message below it. The chat grows by one message on every open. A handler cannot move the message to the other scene by itself, because it never keeps a message id.
+
+**Idea.** `scene.handOver(otherScene, state)` ends the scene and gives its `messages` to the instance of the other scene. The engine draws the other scene into those messages by position, so the list message becomes the item in place.
+
+**Data.** Only the `messages` of the two records change. Before the handover the list record holds `[{ "messageId": 812, "kind": "text", "hash": "Qm9…" }]`. After it the item record holds `[{ "messageId": 812, "kind": "text", "hash": "" }]`, and the list record is gone. The empty hash never matches the hash of a content, so the render edits the message.
+
+**Walk-through.** The user presses an item in the list.
+
+1. The engine checks the guard of the other scene, then the blocking scene and the waiting input, like `start`. The scene that hands over does not count as a blocker, so a blocking wizard can hand its messages to the scene it built.
+2. When the instance of the other scene runs already, the engine takes it with its screen and stack. Otherwise it creates the instance and runs its `start` hook. The first scene has not changed yet, so a failed `start` hook leaves it as it was.
+3. The engine deletes the messages of a running instance, or removes their buttons when the bot cannot delete them. Then it gives the instance the messages of the first scene with empty hashes.
+4. The engine cancels the waiting input of the first scene silently, with `cleanup`, clears its confirmation and ends it with `keep`. The log `Telegram scene ended` carries `handedOverTo` with the id of the other instance.
+5. After the update, the render edits message 812 into the item. When the kinds do not allow an edit, it sends a new message and deletes the old one. It deletes the extra positions and sends the missing ones at the end.
+
+**Edge cases.**
+
+- When the guard of the other scene or a blocking scene refuses, `handOver` returns `false`, and the first scene keeps its state and its messages. A blocking scene gives the usual notice.
+- A handover to the same instance, such as a keyed scene to itself, throws: it is a bug in the caller.
+- A scene without messages hands over an empty array, so the other scene sends its messages as after `start`.
+- The old buttons of the first scene answer `buttonExpired`: its record is gone, and the edit puts the buttons of the other scene on the message.
+- When the handler fails after `handOver`, the record of the other scene is saved, but the screen is not drawn. The message keeps the content of the first scene until the next touch of the other scene finds the empty hash and draws it.
+- After `handOver`, changes through the `scene` object of the first scene are lost, as after `end`.
+
 ## Inputs
 
 **Problem.** A typed message has no reference to a scene. When two scenes wait for text at the same time, the bot cannot know which one the text answers.
@@ -698,34 +724,34 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 
 ## Files
 
-| File                                                               | Owns                                                                 | Section                                                     |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `telegram-update-handler.ts`                                       | One webhook update from start to end                                 | [An incoming update](#an-incoming-update)                   |
-| `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver` | [Updates for other users](#updates-for-other-users)         |
-| `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                           | [Session and lock](#session-and-lock)                       |
-| `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events          | [Buttons](#buttons)                                         |
-| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists             | [Screens and messages](#screens-and-messages)               |
-| `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, timeout, logs  | [Rate limits](#rate-limits)                                 |
-| `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                    | [Rate limits](#rate-limits)                                 |
-| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                           | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-deep-links.ts`                                           | The deep link payload                                                | [Deep links](#deep-links)                                   |
-| `telegram-guard.ts`                                                | The guard type                                                       | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                          | [Scene instances](#scene-instances)                         |
-| `telegram-scene-engine.ts`                                         | Start, find and end instances; route presses and input text          | [Scene instances](#scene-instances)                         |
-| `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                 | [Scene instances](#scene-instances)                         |
-| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them             | [Scene instances](#scene-instances)                         |
-| `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                  | [Buttons](#buttons)                                         |
-| `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler      | [Buttons](#buttons)                                         |
-| `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                          | [Screens and messages](#screens-and-messages)               |
-| `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position                        | [Screens and messages](#screens-and-messages)               |
-| `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                         | [Inputs](#inputs)                                           |
-| `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                   | [Inputs](#inputs)                                           |
-| `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                      |                                                             |
-| `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                               | [Blocking scenes](#blocking-scenes)                         |
-| `telegram-bot-service.ts`                                          | The webhook, the command menus, the bot username, deep link URLs     | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                               |                                                             |
-| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                    |                                                             |
-| `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                          |                                                             |
+| File                                                               | Owns                                                                   | Section                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `telegram-update-handler.ts`                                       | One webhook update from start to end                                   | [An incoming update](#an-incoming-update)                   |
+| `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver`   | [Updates for other users](#updates-for-other-users)         |
+| `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                             | [Session and lock](#session-and-lock)                       |
+| `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events            | [Buttons](#buttons)                                         |
+| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists               | [Screens and messages](#screens-and-messages)               |
+| `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, timeout, logs    | [Rate limits](#rate-limits)                                 |
+| `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                      | [Rate limits](#rate-limits)                                 |
+| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                             | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-deep-links.ts`                                           | The deep link payload                                                  | [Deep links](#deep-links)                                   |
+| `telegram-guard.ts`                                                | The guard type                                                         | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                            | [Scene instances](#scene-instances)                         |
+| `telegram-scene-engine.ts`                                         | Start, find, hand over and end instances; route presses and input text | [Scene instances](#scene-instances)                         |
+| `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                   | [Scene instances](#scene-instances)                         |
+| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them               | [Scene instances](#scene-instances)                         |
+| `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                    | [Buttons](#buttons)                                         |
+| `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler        | [Buttons](#buttons)                                         |
+| `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                            | [Screens and messages](#screens-and-messages)               |
+| `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position, and their handover      | [Screens and messages](#screens-and-messages)               |
+| `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                           | [Inputs](#inputs)                                           |
+| `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                     | [Inputs](#inputs)                                           |
+| `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                        |                                                             |
+| `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                 | [Blocking scenes](#blocking-scenes)                         |
+| `telegram-bot-service.ts`                                          | The webhook, the command menus, the bot username, deep link URLs       | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                 |                                                             |
+| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                      |                                                             |
+| `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                            |                                                             |
 
 To read the code in order:
 

@@ -72,6 +72,10 @@ export interface TelegramSceneControl<
     reset(): Promise<void>;
     ask(name: keyof TInputs & string): Promise<void>;
     end(options?: { messages?: TelegramSceneMessagesRelease }): Promise<void>;
+    handOver<TStateSchema extends TObject>(
+        scene: TelegramScene<TStateSchema>,
+        state: Static<TStateSchema>,
+    ): Promise<boolean>;
 }
 
 export interface TelegramInputControl<TPayload> {

@@ -92,6 +92,19 @@ export class TelegramSceneMessages {
         }
     }
 
+    async handOver(
+        ctx: TelegramContext,
+        source: TelegramSceneInstance,
+        target: TelegramSceneInstance,
+    ): Promise<void> {
+        await this.release(ctx, target, "delete");
+        target.record.messages = source.record.messages.map((message) => ({
+            ...message,
+            hash: "",
+        }));
+        source.record.messages = [];
+    }
+
     private async discard(
         ctx: TelegramContext,
         messageId: number,

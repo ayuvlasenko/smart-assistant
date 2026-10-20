@@ -89,12 +89,7 @@ export class TelegramSceneEngine {
         scene: TelegramScene,
         state: SceneState,
     ): Promise<boolean> {
-        if (this.scenes.get(scene.name) !== scene) {
-            throw new Error(`Telegram scene "${scene.name}" is not registered`);
-        }
-
-        if (!isAllowed(scene.guard, ctx.user)) {
-            this.recordForbidden(ctx, scene);
+        if (!this.canEnter(ctx, scene)) {
             return false;
         }
 
@@ -109,19 +104,10 @@ export class TelegramSceneEngine {
 
         if (existing) {
             this.updateFor(ctx).touch(existing, { reshow: true });
-            this.updateFor(ctx).removeCommandMessage(ctx.update);
-            return true;
+        } else {
+            await this.create(ctx, scene, id, state);
         }
 
-        const instance = storage.create(id, scene, state);
-
-        this.telegramMetrics.recordSceneEvent(scene.name, "start");
-        ctx.log.info(
-            { scene: scene.name, sceneId: id },
-            "Telegram scene started",
-        );
-
-        await scene.start(ctx, this.sceneControl(ctx, instance));
         this.updateFor(ctx).removeCommandMessage(ctx.update);
 
         return true;
@@ -267,6 +253,76 @@ export class TelegramSceneEngine {
         await this.messages.render(ctx, instance, contents, { reshow });
     }
 
+    private canEnter(ctx: TelegramContext, scene: TelegramScene): boolean {
+        if (this.scenes.get(scene.name) !== scene) {
+            throw new Error(`Telegram scene "${scene.name}" is not registered`);
+        }
+
+        if (!isAllowed(scene.guard, ctx.user)) {
+            this.recordForbidden(ctx, scene);
+            return false;
+        }
+
+        return true;
+    }
+
+    private async create(
+        ctx: TelegramContext,
+        scene: TelegramScene,
+        id: string,
+        state: SceneState,
+    ): Promise<TelegramSceneInstance> {
+        const instance = this.updateFor(ctx).storage.create(id, scene, state);
+
+        this.telegramMetrics.recordSceneEvent(scene.name, "start");
+        ctx.log.info(
+            { scene: scene.name, sceneId: id },
+            "Telegram scene started",
+        );
+
+        await scene.start(ctx, this.sceneControl(ctx, instance));
+
+        return instance;
+    }
+
+    private async handOver(
+        ctx: TelegramContext,
+        source: TelegramSceneInstance,
+        scene: TelegramScene,
+        state: SceneState,
+    ): Promise<boolean> {
+        if (!this.canEnter(ctx, scene)) {
+            return false;
+        }
+
+        const storage = this.updateFor(ctx).storage;
+        const id = await this.instanceIdFor(storage, scene, state);
+
+        if (id === source.id) {
+            throw new Error(
+                `Telegram scene "${scene.name}" cannot hand its messages over to itself`,
+            );
+        }
+
+        if (!(await this.canStart(ctx, scene, id, source))) {
+            return false;
+        }
+
+        const target =
+            (await storage.load(id)) ??
+            (await this.create(ctx, scene, id, state));
+
+        await this.messages.handOver(ctx, source, target);
+        await this.inputs.cancel(ctx, this.sceneControl(ctx, source), source, {
+            silent: true,
+        });
+        source.record.confirming = undefined;
+        await this.end(ctx, source, "keep", target);
+        this.updateFor(ctx).touch(target);
+
+        return true;
+    }
+
     private async instanceIdFor(
         storage: TelegramSceneStorage,
         scene: TelegramScene,
@@ -283,10 +339,11 @@ export class TelegramSceneEngine {
         ctx: TelegramContext,
         scene: TelegramScene,
         id: string,
+        source?: TelegramSceneInstance,
     ): Promise<boolean> {
         const blocker = await this.updateFor(ctx).storage.blocking();
 
-        if (blocker && blocker.id !== id) {
+        if (blocker && blocker.id !== id && blocker.id !== source?.id) {
             await this.rejectBlocked(ctx, scene, blocker, scene.title?.(ctx.t));
             return false;
         }
@@ -295,7 +352,7 @@ export class TelegramSceneEngine {
             ? await this.focusedInput(ctx)
             : undefined;
 
-        if (focused && focused.id !== id) {
+        if (focused && focused.id !== id && focused.id !== source?.id) {
             await this.rejectBlocked(ctx, scene, focused);
             return false;
         }
@@ -361,12 +418,17 @@ export class TelegramSceneEngine {
         ctx: TelegramContext,
         instance: TelegramSceneInstance,
         messages: TelegramSceneMessagesRelease,
+        handedOverTo?: TelegramSceneInstance,
     ): Promise<void> {
         await this.messages.release(ctx, instance, messages);
         this.updateFor(ctx).storage.remove(instance);
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "end");
         ctx.log.info(
-            { scene: instance.scene.name, sceneId: instance.id },
+            {
+                scene: instance.scene.name,
+                sceneId: instance.id,
+                handedOverTo: handedOverTo?.id,
+            },
             "Telegram scene ended",
         );
     }
@@ -488,6 +550,8 @@ export class TelegramSceneEngine {
             ask: (name) => this.ask(ctx, instance, name),
             end: (options) =>
                 this.end(ctx, instance, options?.messages ?? "keep"),
+            handOver: (scene, state) =>
+                this.handOver(ctx, instance, scene, state),
         };
     }
 

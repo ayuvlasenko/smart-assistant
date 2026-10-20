@@ -1,4 +1,9 @@
-import { type Static, Type } from "@sinclair/typebox";
+import {
+    type Static,
+    type TObject,
+    type TString,
+    Type,
+} from "@sinclair/typebox";
 import { Redis } from "ioredis";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
@@ -37,6 +42,8 @@ import {
     goto,
     next,
     stay,
+    TelegramScene,
+    TelegramSceneBlocking,
 } from "./telegram-scene.js";
 import { TelegramSessionStoreOptions } from "./telegram-session-store.js";
 
@@ -946,6 +953,149 @@ void describe("TelegramSceneEngine blocking scenes", () => {
     });
 });
 
+void describe("TelegramSceneEngine hand over", () => {
+    void it("edits the messages of the scene into the next scene", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers);
+        const chat = buildTelegramPrivateChat({ id: 987654480 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Open A");
+
+        assert.deepEqual(handOvers, [true]);
+        assert.deepEqual(bot.readSentTexts(), ["menu"]);
+        assert.deepEqual(
+            bot.telegramApiService.editMessageText.mock.calls.map((call) => [
+                call.arguments[0].message_id,
+                call.arguments[0].text,
+            ]),
+            [[1, "Item a"]],
+        );
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["Item a"]);
+    });
+
+    void it("moves a running keyed scene into the messages of the scene", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654481 });
+
+        await bot.sendText(chat, "/item");
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Open A");
+
+        assert.deepEqual(bot.readSentTexts(), ["Item a", "menu"]);
+        assert.deepEqual(
+            bot.telegramApiService.editMessageText.mock.calls.map((call) => [
+                call.arguments[0].message_id,
+                call.arguments[0].text,
+            ]),
+            [[2, "Item a"]],
+        );
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["Item a"]);
+    });
+
+    void it("hands the messages of a blocking scene over and releases the block", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654482 });
+
+        await bot.sendText(chat, "/wizard");
+        await bot.pressButton(chat, "Open A");
+        await bot.sendText(chat, "/menu");
+
+        assert.deepEqual(bot.readSentTexts(), ["wizard", "menu"]);
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "Item a",
+            "menu",
+        ]);
+    });
+
+    void it("cancels the answer of the scene and cleans it up silently", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654483 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Name");
+        await bot.pressButton(chat, "Open A");
+        await bot.sendText(chat, "Ada");
+
+        assert.deepEqual(bot.readSentTexts(), ["menu", "Name?"]);
+        assert.deepEqual(
+            bot.telegramApiService.deleteMessages.mock.calls.map(
+                (call) => call.arguments[0].message_ids,
+            ),
+            [[await readSentMessageId(bot, "Name?")]],
+        );
+    });
+
+    void it("keeps the scene and its messages when the guard of the next scene refuses", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers, {
+            canOpenItem: false,
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654484 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Open A");
+        await bot.pressButton(chat, "Name");
+
+        assert.deepEqual(handOvers, [false]);
+        assert.deepEqual(bot.readSentTexts(), ["menu", "Name?"]);
+        assert.equal(
+            bot.telegramApiService.editMessageText.mock.callCount(),
+            0,
+        );
+    });
+
+    void it("keeps the scene and its messages when another blocking scene runs", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers);
+        const chat = buildTelegramPrivateChat({ id: 987654485 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.sendText(chat, "/wall");
+        await bot.pressButton(chat, "Open A");
+
+        assert.deepEqual(handOvers, [false]);
+        assert.equal(readAnswerTexts(bot).at(-1), blockedText("Wall"));
+        assert.deepEqual(await bot.readMessageTexts(chat.id), ["menu"]);
+    });
+
+    void it("refuses to hand the messages over to the same scene", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654486 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Self");
+
+        assert.deepEqual(bot.readSentTexts(), [
+            "menu",
+            telegramLocales.en.error,
+        ]);
+        assert.equal(
+            bot.telegramApiService.editMessageText.mock.callCount(),
+            0,
+        );
+    });
+
+    void it("expires the buttons of the scene that handed its messages over", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654487 });
+
+        await bot.sendText(chat, "/menu");
+
+        const [nameButton] = bot.readLastKeyboard().flat();
+
+        assert.ok(nameButton);
+
+        await bot.pressButton(chat, "Open A");
+        await bot.sendCallback(chat, nameButton.callback_data, 1);
+
+        assert.equal(
+            readAnswerTexts(bot).at(-1),
+            telegramLocales.en.buttonExpired,
+        );
+    });
+});
+
 void describe("TelegramSceneEngine command messages", () => {
     void it("deletes the command that starts a scene", async (t) => {
         const bot = await buildCounterBot(t);
@@ -1634,6 +1784,133 @@ function defineSurveyScene() {
             },
         },
     });
+}
+
+async function buildHandOverBot(
+    t: TestContext,
+    handOvers: boolean[] = [],
+    { canOpenItem = true }: { canOpenItem?: boolean } = {},
+): Promise<TelegramSceneBot> {
+    const itemScene = defineScene({
+        name: "item",
+        state: Type.Object({ itemId: Type.String() }),
+        ttl: 60_000,
+        guard: () => canOpenItem,
+        key: (state) => state.itemId,
+        root: { name: "item", params: {} },
+        screens: {
+            item: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => [
+                    { kind: "text", text: `Item ${scene.state.itemId}` },
+                ],
+            },
+        },
+    });
+    const menuScene = defineMenuScene("menu", itemScene, handOvers, {});
+    const wizardScene = defineMenuScene("wizard", itemScene, handOvers, {
+        blocking: true,
+        title: () => "Wizard",
+    });
+    const wallScene = defineScene({
+        name: "wall",
+        title: () => "Wall",
+        blocking: true,
+        state: Type.Object({}),
+        ttl: 60_000,
+    });
+
+    return buildTelegramSceneBot({
+        databaseName,
+        mongoClient,
+        t,
+        registerRoutes: (router, sceneEngine) => {
+            router.scene(itemScene);
+            router.scene(menuScene);
+            router.scene(wizardScene);
+            router.scene(wallScene);
+            router.command("item", (ctx) =>
+                sceneEngine.start(ctx, itemScene, { itemId: "a" }),
+            );
+            router.command("menu", (ctx) =>
+                sceneEngine.start(ctx, menuScene, {}),
+            );
+            router.command("wizard", (ctx) =>
+                sceneEngine.start(ctx, wizardScene, {}),
+            );
+            router.command("wall", (ctx) =>
+                sceneEngine.start(ctx, wallScene, {}),
+            );
+        },
+    });
+}
+
+function defineMenuScene(
+    name: string,
+    itemScene: TelegramScene<TObject<{ itemId: TString }>>,
+    handOvers: boolean[],
+    blocking: TelegramSceneBlocking,
+): TelegramScene {
+    const menuScene: TelegramScene = defineScene({
+        name,
+        ...blocking,
+        state: Type.Object({}),
+        ttl: 60_000,
+        key: () => name,
+        root: { name: "menu", params: {} },
+        screens: {
+            menu: {
+                params: Type.Object({}),
+                render: async (ctx, scene) => [
+                    {
+                        kind: "text",
+                        text: name,
+                        keyboard: [
+                            [
+                                scene.button("Name", "name", null),
+                                scene.button("Open A", "open", "a"),
+                            ],
+                            [scene.button("Self", "self", null)],
+                        ],
+                    },
+                ],
+            },
+        },
+        buttons: {
+            name: {
+                value: Type.Null(),
+                handle: (ctx, scene) => scene.ask("name"),
+            },
+            open: {
+                value: Type.String(),
+                handle: async (ctx, scene, itemId) => {
+                    handOvers.push(await scene.handOver(itemScene, { itemId }));
+                },
+            },
+            self: {
+                value: Type.Null(),
+                handle: (ctx, scene) => scene.handOver(menuScene, {}),
+            },
+        },
+        inputs: {
+            name: {
+                payload: Type.Object({ name: Type.String() }),
+                cleanup: true,
+                steps: (step) => [
+                    step("name", message("text"), {
+                        enter: async (ctx) => {
+                            await ctx.reply("Name?");
+                        },
+                        handle: async (ctx) =>
+                            complete({ name: ctx.update.message.text }),
+                    }),
+                ],
+                complete: async () => undefined,
+            },
+        },
+    });
+
+    return menuScene;
 }
 
 function blockedText(currentTitle: string, nextTitle?: string): string {
