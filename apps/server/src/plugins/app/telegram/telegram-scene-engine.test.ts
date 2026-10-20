@@ -1026,6 +1026,51 @@ void describe("TelegramSceneEngine hand over", () => {
         );
     });
 
+    void it("lets the next scene ask in its start hook after a blocking scene hands over", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers);
+        const chat = buildTelegramPrivateChat({ id: 987654488 });
+
+        await bot.sendText(chat, "/wizard");
+        await bot.pressButton(chat, "Survey");
+
+        assert.deepEqual(handOvers, [true]);
+        assert.deepEqual(bot.readSentTexts(), ["wizard", "Answer?"]);
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "Survey",
+            "Answer?",
+        ]);
+    });
+
+    void it("hands over to a blocking scene while the scene waits for an answer", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers);
+        const chat = buildTelegramPrivateChat({ id: 987654489 });
+
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Name");
+        await bot.pressButton(chat, "Survey");
+
+        assert.deepEqual(handOvers, [true]);
+        assert.deepEqual(bot.readSentTexts(), ["menu", "Name?", "Answer?"]);
+        assert.ok(!readAnswerTexts(bot).includes(telegramLocales.en.inputBusy));
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "Survey",
+            "Answer?",
+        ]);
+    });
+
+    void it("hands a blocking scene without a key over to a new instance of its scene", async (t) => {
+        const bot = await buildHandOverBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654490 });
+
+        await bot.sendText(chat, "/setup");
+        await bot.pressButton(chat, "Self");
+        await bot.pressButton(chat, "Name");
+
+        assert.deepEqual(bot.readSentTexts(), ["setup", "Name?"]);
+    });
+
     void it("keeps the scene and its messages when the guard of the next scene refuses", async (t) => {
         const handOvers: boolean[] = [];
         const bot = await buildHandOverBot(t, handOvers, {
@@ -1807,11 +1852,51 @@ async function buildHandOverBot(
             },
         },
     });
-    const menuScene = defineMenuScene("menu", itemScene, handOvers, {});
-    const wizardScene = defineMenuScene("wizard", itemScene, handOvers, {
+    const surveyScene = defineScene({
+        name: "survey",
+        title: () => "Survey",
         blocking: true,
-        title: () => "Wizard",
+        state: Type.Object({}),
+        key: () => "survey",
+        ttl: 60_000,
+        start: (ctx, scene) => scene.ask("answer"),
+        root: { name: "survey", params: {} },
+        screens: {
+            survey: {
+                params: Type.Object({}),
+                render: async () => [{ kind: "text", text: "Survey" }],
+            },
+        },
+        inputs: {
+            answer: {
+                payload: Type.Object({ answer: Type.String() }),
+                steps: (step) => [
+                    step("answer", message("text"), {
+                        enter: async (ctx) => {
+                            await ctx.reply("Answer?");
+                        },
+                        handle: async (ctx) =>
+                            complete({ answer: ctx.update.message.text }),
+                    }),
+                ],
+                complete: async () => undefined,
+            },
+        },
     });
+    const targets = { itemScene, surveyScene, handOvers };
+    const menuScene = defineMenuScene("menu", targets, {}, { isKeyed: true });
+    const wizardScene = defineMenuScene(
+        "wizard",
+        targets,
+        { blocking: true, title: () => "Wizard" },
+        { isKeyed: true },
+    );
+    const setupScene = defineMenuScene(
+        "setup",
+        targets,
+        { blocking: true, title: () => "Setup" },
+        { isKeyed: false },
+    );
     const wallScene = defineScene({
         name: "wall",
         title: () => "Wall",
@@ -1828,6 +1913,8 @@ async function buildHandOverBot(
             router.scene(itemScene);
             router.scene(menuScene);
             router.scene(wizardScene);
+            router.scene(setupScene);
+            router.scene(surveyScene);
             router.scene(wallScene);
             router.command("item", (ctx) =>
                 sceneEngine.start(ctx, itemScene, { itemId: "a" }),
@@ -1838,6 +1925,9 @@ async function buildHandOverBot(
             router.command("wizard", (ctx) =>
                 sceneEngine.start(ctx, wizardScene, {}),
             );
+            router.command("setup", (ctx) =>
+                sceneEngine.start(ctx, setupScene, {}),
+            );
             router.command("wall", (ctx) =>
                 sceneEngine.start(ctx, wallScene, {}),
             );
@@ -1847,16 +1937,24 @@ async function buildHandOverBot(
 
 function defineMenuScene(
     name: string,
-    itemScene: TelegramScene<TObject<{ itemId: TString }>>,
-    handOvers: boolean[],
+    {
+        itemScene,
+        surveyScene,
+        handOvers,
+    }: {
+        itemScene: TelegramScene<TObject<{ itemId: TString }>>;
+        surveyScene: TelegramScene;
+        handOvers: boolean[];
+    },
     blocking: TelegramSceneBlocking,
+    { isKeyed }: { isKeyed: boolean },
 ): TelegramScene {
     const menuScene: TelegramScene = defineScene({
         name,
         ...blocking,
+        ...(isKeyed ? { key: () => name } : {}),
         state: Type.Object({}),
         ttl: 60_000,
-        key: () => name,
         root: { name: "menu", params: {} },
         screens: {
             menu: {
@@ -1870,7 +1968,10 @@ function defineMenuScene(
                                 scene.button("Name", "name", null),
                                 scene.button("Open A", "open", "a"),
                             ],
-                            [scene.button("Self", "self", null)],
+                            [
+                                scene.button("Survey", "survey", null),
+                                scene.button("Self", "self", null),
+                            ],
                         ],
                     },
                 ],
@@ -1885,6 +1986,12 @@ function defineMenuScene(
                 value: Type.String(),
                 handle: async (ctx, scene, itemId) => {
                     handOvers.push(await scene.handOver(itemScene, { itemId }));
+                },
+            },
+            survey: {
+                value: Type.Null(),
+                handle: async (ctx, scene) => {
+                    handOvers.push(await scene.handOver(surveyScene, {}));
                 },
             },
             self: {
@@ -1906,6 +2013,9 @@ function defineMenuScene(
                     }),
                 ],
                 complete: async () => undefined,
+                cancel: async (ctx) => {
+                    await ctx.reply("Name cancelled");
+                },
             },
         },
     });
