@@ -101,7 +101,6 @@ export default fp(
         const pokerScene = createPokerScene(
             pokerRoomsService,
             access,
-            sceneEngine,
             roomScene,
         );
 

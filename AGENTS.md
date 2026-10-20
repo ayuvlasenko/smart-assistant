@@ -79,7 +79,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Lay out every keyboard by [Button layout](apps/server/src/plugins/app/telegram/README.md#button-layout): navigation row last with `‹ Back` on the left, at most two buttons in a row, values in the text and not on the buttons.
 - Show every message of a scene through a screen in `screens`, and move between screens with `scene.push`, `replace`, `back` and `reset`. Keep the fields of one screen, such as an id or a page, in its params; `scene.state` keeps only what outlives a screen, such as a draft. Never keep a message id or the current screen in the state. See [Screens and messages](apps/server/src/plugins/app/telegram/README.md#screens-and-messages).
 - Ask for a destructive action with `confirm: true` on its button. Never build the two presses with a flag in the state: the engine cancels a pending confirmation on every other press and move.
-- Check the `false` that `sceneEngine.start` returns: a blocking scene refuses other scenes.
+- Check the `false` that `sceneEngine.start` and `scene.handOver` return: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.
 - Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, never by hand.
 - When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
