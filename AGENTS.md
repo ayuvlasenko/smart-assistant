@@ -89,6 +89,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 
 ## Rules
 
+- Recommend the design that is right for the architecture, not the one that is cheapest to build. State the cost as a fact for the decision, never as the reason for it; mention a cheaper workaround only as a trade-off.
 - Use only TypeScript syntax that Node type stripping can erase: declare class fields and assign them in the constructor instead of parameter properties, and avoid `enum` and `namespace`. `erasableSyntaxOnly` in `apps/server/tsconfig.json` enforces it.
 - A constructor takes each dependency as its own parameter and assigns it to a field; do not wrap the dependencies in one `<Class>Dependencies` object.
 - Prefer `interface` over `type` for object shapes; use `type` for unions, intersections, mapped types and other cases where `interface` does not fit.
