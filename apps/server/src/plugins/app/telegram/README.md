@@ -34,7 +34,7 @@ Most of the code below exists because of these limits of the Bot API:
 - The bot can delete a message only during 48 hours after it was sent. In a private chat this covers the messages of the user too.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
 - The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
-- The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method.
+- The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method; a test showed that deletes do not count against the message limit of the chat, see [Rate limits](#rate-limits).
 
 ## Writing bot code
 
@@ -352,6 +352,7 @@ The session is saved also when the handler throws, so the changes made before th
 
 ```text
 rate-limit:telegram:<botId>:chat:42                    hash: tokens, updatedAt (ms)
+rate-limit:telegram:<botId>:chat:42:deletes            hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global                     hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global:class:interactive   hash: tokens, updatedAt
 rate-limit:telegram:<botId>:global:class:background    hash: tokens, updatedAt
@@ -365,12 +366,13 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 
 | Limit                                    | Rate         | Burst | Methods                                      |
 | ---------------------------------------- | ------------ | ----- | -------------------------------------------- |
-| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`, `deleteMessage(s)`         |
+| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`                             |
+| `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                           |
 | `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                             |
 | `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                              |
 | none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook` |
 
-We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
+We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
 
 **Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 
@@ -379,7 +381,7 @@ We do not know whether Telegram counts edits in the global limit, so edits take 
 3. `RateLimiter.acquire` takes a chat token. When the bucket is empty, the script returns the time to the next token, and the call sleeps and tries again. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one.
 4. For the global bucket the call joins the queue of its class in `RateLimitQueue`, one queue per bucket in the pod. A single loop serves the queues. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
 5. The call sends the request with `AbortSignal.any([signal, timeout])`.
-6. On `429` the call records `retry_after`, empties the chat bucket for `retry_after` seconds, so every call of that chat waits, and goes back to step 3. A method without buckets just sleeps `retry_after`. There is no retry limit: the signal of the scope ends the wait.
+6. On `429` the call records `retry_after`, empties the first bucket of the method, such as `chatMessages` for an edit or `chatDeletes` for a delete, for `retry_after` seconds, so every call of that chat that takes the bucket waits, and goes back to step 3. A method without buckets just sleeps `retry_after`. There is no retry limit: the signal of the scope ends the wait.
 
 **Edge cases.**
 
