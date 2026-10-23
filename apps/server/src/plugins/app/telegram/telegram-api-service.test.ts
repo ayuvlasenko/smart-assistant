@@ -107,6 +107,23 @@ void describe("TelegramApiService", () => {
         );
     });
 
+    void it("deletes a message while the chat has no tokens for new messages", async (t) => {
+        const { telegramApiService } = await buildApiService(
+            t,
+            Array.from({ length: 4 }, () => ({ ok: true, result: true })),
+        );
+
+        for (let sent = 0; sent < 3; sent++) {
+            await telegramApiService.sendMessage({ chat_id: 1, text: "hello" });
+        }
+
+        const startedAt = performance.now();
+
+        await telegramApiService.deleteMessage({ chat_id: 1, message_id: 1 });
+
+        assert.ok(performance.now() - startedAt < 500);
+    });
+
     void it("records the rate limiter wait of setMyCommands", async (t) => {
         const { metrics, telegramApiService } = await buildApiService(t, [
             { ok: true, result: true },

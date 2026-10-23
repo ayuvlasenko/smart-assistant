@@ -21,6 +21,16 @@ const chatMessages: TelegramRateLimit = {
     },
 };
 
+const chatDeletes: TelegramRateLimit = {
+    ratePerSecond: 30,
+    burst: 30,
+    scopeOf: (params) => {
+        const chatId = chatIdOf(params);
+
+        return chatId === undefined ? undefined : `chat:${chatId}:deletes`;
+    },
+};
+
 const botMessages: TelegramRateLimit = {
     ratePerSecond: 25,
     burst: 5,
@@ -46,8 +56,8 @@ const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
         editMessageText: [chatMessages, botMessages],
         editMessageMedia: [chatMessages, botMessages],
         editMessageReplyMarkup: [chatMessages, botMessages],
-        deleteMessage: [chatMessages],
-        deleteMessages: [chatMessages],
+        deleteMessage: [chatDeletes],
+        deleteMessages: [chatDeletes],
         setMyCommands: [botCommands],
     };
 
