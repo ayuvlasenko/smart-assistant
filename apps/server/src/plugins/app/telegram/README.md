@@ -366,13 +366,13 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 
 | Limit                                    | Rate         | Burst | Methods                                      |
 | ---------------------------------------- | ------------ | ----- | -------------------------------------------- |
-| `chatMessages`, `chat:<chat_id>`         | 1 per second | 3     | `send*`, `edit*`                             |
+| `chatMessages`, `chat:<chat_id>`         | 1 per second | 20    | `send*`, `edit*`                             |
 | `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                           |
 | `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                             |
 | `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                              |
 | none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook` |
 
-We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
+The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a test in one private chat, Telegram took 100 `sendMessage` calls before the first `429` and refilled them within a minute, so `chatMessages` lets 20 calls through at once: enough for a screen of several messages or fast paging, and well under that test. We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
 
 **Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 

@@ -13,7 +13,7 @@ interface TelegramRateLimit {
 
 const chatMessages: TelegramRateLimit = {
     ratePerSecond: 1,
-    burst: 3,
+    burst: 20,
     scopeOf: (params) => {
         const chatId = chatIdOf(params);
 
