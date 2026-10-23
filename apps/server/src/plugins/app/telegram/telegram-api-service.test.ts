@@ -108,12 +108,16 @@ void describe("TelegramApiService", () => {
     });
 
     void it("deletes a message while the chat has no tokens for new messages", async (t) => {
+        const chatMessagesBurst = 20;
         const { telegramApiService } = await buildApiService(
             t,
-            Array.from({ length: 4 }, () => ({ ok: true, result: true })),
+            Array.from({ length: chatMessagesBurst + 2 }, () => ({
+                ok: true,
+                result: true,
+            })),
         );
 
-        for (let sent = 0; sent < 3; sent++) {
+        for (let sent = 0; sent <= chatMessagesBurst; sent++) {
             await telegramApiService.sendMessage({ chat_id: 1, text: "hello" });
         }
 
