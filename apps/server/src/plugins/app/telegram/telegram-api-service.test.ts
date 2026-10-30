@@ -107,25 +107,23 @@ void describe("TelegramApiService", () => {
         );
     });
 
-    void it("deletes a message while the chat has no tokens for new messages", async (t) => {
-        const chatMessagesBurst = 20;
-        const { telegramApiService } = await buildApiService(
-            t,
-            Array.from({ length: chatMessagesBurst + 2 }, () => ({
-                ok: true,
-                result: true,
-            })),
-        );
-
-        for (let sent = 0; sent <= chatMessagesBurst; sent++) {
-            await telegramApiService.sendMessage({ chat_id: 1, text: "hello" });
-        }
-
+    void it("deletes a message while a 429 pauses the messages of the chat", async (t) => {
+        const { telegramApiService } = await buildApiService(t, [
+            rateLimitedResponse,
+            { ok: true, result: true },
+            { ok: true, result: true },
+        ]);
+        const pausedSend = telegramApiService.sendMessage({
+            chat_id: 1,
+            text: "hello",
+        });
+        await setTimeout(100);
         const startedAt = performance.now();
 
         await telegramApiService.deleteMessage({ chat_id: 1, message_id: 1 });
 
         assert.ok(performance.now() - startedAt < 500);
+        assert.equal((await pausedSend).ok, true);
     });
 
     void it("records the rate limiter wait of setMyCommands", async (t) => {
