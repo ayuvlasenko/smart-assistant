@@ -1,6 +1,6 @@
 ---
 name: write-docs
-description: Write, update or restructure the developer documentation of this repository - a domain README under apps/server/src/plugins/app/<domain>/ or the root AGENTS.md. Use it whenever a change adds or alters a mechanism, a public API of a domain, a Valkey key, a limit or a project rule and the docs must follow; whenever the user asks to document how something works, write or fix a README, add a rule for agents, or clean up, shorten or restructure AGENTS.md, even when the user writes in Russian or only says "дока", "readme" or "agents md". Not for code comments, commit messages, PR text or docs/backlog items.
+description: How this repository documents itself — what belongs in AGENTS.md, in a README.md and in neither, and how to check a doc against the code. Use it for any work on AGENTS.md or on any README.md in the repo — writing, updating, shortening, restructuring, reviewing a line, or deciding where a rule or a fact should live. Use it also whenever a code change makes something a doc describes untrue, such as a mechanism, an API, stored data, a limit or a rule, even if nobody mentioned the docs. Not for code comments, commit messages, PR text or docs/backlog items.
 ---
 
 # Write docs
