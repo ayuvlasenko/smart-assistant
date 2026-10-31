@@ -1,7 +1,5 @@
 # AGENTS.md
 
-Smart Assistant is a Telegram bot with permissions and invites. The server is in `apps/server/`: Fastify 5, MongoDB with the plain driver, TypeBox for schemas, Valkey for sessions and locks.
-
 ## Commands
 
 Run all commands from the project root:
@@ -35,20 +33,15 @@ After the first push of a pull request, wait for the CI `deploy` job with `gh pr
 
 ## Documentation
 
-- `apps/server/src/plugins/app/telegram/README.md`: how to write commands, deep links and scenes, the Bot UX rules, and how the transport and the scene engine work. Read it before you write or change bot code.
-- `apps/server/src/plugins/app/access/README.md`: the permission model and how to add a permission to a domain.
-- `apps/server/src/plugins/app/invites/README.md`: invites, their activation and the bootstrap of the first admin.
-- `apps/server/src/plugins/app/poker/README.md`: planning poker rooms, their conditional updates, idle participants and the round summary.
-- `apps/server/src/plugins/app/settings/README.md`: settings that an admin changes in `/settings`, how a domain registers one and how the pods read it.
+- Before you change a domain, read its `README.md` if it has one.
 - `docs/backlog/`: known problems that are not being fixed now, one file per item.
 
-Keep a README in line with the code you change. A README explains how a mechanism works and why; this file keeps only the rules. Follow the `write-docs` skill in `.agents/skills/` when you write or restructure documentation; `.claude/skills` links to the same folder.
+Keep a README in line with the code you change. A README explains how a mechanism works and why; this file keeps only the rules. Follow the `write-docs` skill in `.agents/skills/` when you write or restructure documentation.
 
 ## Architecture
 
 - The Telegram bot uses `@grammyjs/types` for types and plain `fetch` for Bot API calls. Do not add a bot framework or any other Telegram library; the update routing and scenes are implemented in the project.
 - The bot works in private chats only. Do not add group-specific behavior such as reply targets or forum topics.
-- Fastify autoload loads directories in order: `plugins/external/` (third-party plugin wrappers), then `plugins/app/` (services and repositories), then `routes/` (HTTP routes with `autoHooks` and `cascadeHooks`).
 - Services are classes registered as Fastify decorators through `fastify-plugin` with explicit `dependencies`. Read them with `fastify.getDecorator<T>()`, and read the config with `fastify.getDecorator<Env>("config")`. Use module augmentation only for third-party plugin types, never for app-owned decorators.
 - A route file matches its parent directory name, such as `telegram/telegram.ts` for the prefix `/api/telegram`.
 
@@ -56,15 +49,14 @@ Keep a README in line with the code you change. A README explains how a mechanis
 
 - Each domain lives in `plugins/app/<domain>/` with its services, repositories, entities, schemas, scenes, steps and tests. Keep exactly one level: no subdirectories inside a domain and no `index.ts`.
 - A service or repository file exports its class and registers it as a plugin with `export default fp(...)`. Only plugin files use `export default`; every other file uses named exports, because autoload loads any default-exported plugin.
-- Shared infrastructure (`cache-service.ts`, `lock-service.ts` with `lock-errors.ts`, `rate-limiter.ts` with `rate-limit-queue.ts`, `app-logger.ts`, `metrics-service.ts` with `http-metrics.ts` and `mongo-metrics.ts`, `unhandled-rejection-reporter.ts`) stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
+- Code that several domains share and that is not a domain itself stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
 - The env schema and its `Env` type stay in `src/env.ts`. Any other schema stays in the single file that uses it, or in `<domain>-schemas.ts` when several files of a domain use it.
 
 ### Files
 
 - Name a file and a directory in kebab case, after the main export of the file, with the domain prefix, so every file name is unique: `users-repository.ts` (`UsersRepository`), `user-entity.ts`, `create-account-scene.ts` (`createAccountScene`), `choose-account-step.ts`. A test is `<file>.test.ts` next to the file.
 - A file holds one abstraction: its main export, the types of its own public API, and private helpers. A type, schema, constant or function that describes another abstraction's data lives in that abstraction's file.
-- Split a file by abstraction, never by kind of code: no `*-types.ts`, `*-constants.ts`, `*-utils.ts`, and no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload), `<domain>-schemas.ts` and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input.
-- Order a file: imports; the types, schemas, constants and `declare module` augmentations; the main export; private helpers in the order of their first use. A file that exports a class ends with `export default fp(...)`. `telegram-router.ts` is the reference.
+- Split a file by abstraction, never by kind of code, and add no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload), `<domain>-schemas.ts` and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input. `local/file-layout` flags a file named after a kind of code, such as `*-types.ts`, and the order of the code inside a file; `telegram-router.ts` is the reference.
 - A source file over about 400 lines holds a second abstraction: move it to its own file. `pnpm --filter server lint` warns about the layout rules through `max-lines` and `local/file-layout` in `apps/server/eslint-rules/`. Fix a warning in the code you touch.
 - Throw a class from `<domain>-errors.ts` when code catches the error by type or reads its fields, such as `TelegramApiError`. Throw a plain `Error` for a bug or a wrong configuration that only stops the start or the update.
 
@@ -105,13 +97,11 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 
 ## Infrastructure
 
-- Node 26 and pnpm workspaces with a custom registry, npm.bambom.org. The pnpm version is pinned in `mise.toml` and in `packageManager`; keep both in sync. pnpm settings live in `pnpm-workspace.yaml`, and `.npmrc` keeps only the registry.
+- Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
-- The chart in `deploy/` does not deploy Valkey. `server-secrets-base` points every resource to `valkey-dev.valkey.svc.cluster.local`, which keeps data in memory, and `server-secrets-main` overrides it for production with `valkey.valkey.svc.cluster.local`, which persists data and never evicts keys.
+- Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
-- `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development. Preview pods share one bot token, so they do not set the webhook and the default commands on start. `POST /api/telegram/webhook/refresh` points the bot at a preview; preview also serves Swagger UI at `/api/docs`.
-- `TIME_ZONE` is an IANA time zone, `UTC` by default, for users without their own `timeZone`. An invalid value stops the server on start.
+- `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
 - `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret.
-- An unhandled promise rejection does not stop the server: `unhandled-rejection-reporter.ts` logs it and counts it in `unhandled_rejections_total`. An uncaught exception still closes the server through `close-with-grace` in `server.ts`.
 - `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.
