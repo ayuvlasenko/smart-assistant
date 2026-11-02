@@ -75,7 +75,10 @@ export async function renderInvite(
                       {
                           text: t("invites:copyLinkButton"),
                           copy_text: {
-                              text: await resolveInviteUrl(invite.token),
+                              text: await resolveInviteUrl(
+                                  ctx.user.botId,
+                                  invite.token,
+                              ),
                           },
                       },
                   ]

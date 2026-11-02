@@ -92,8 +92,8 @@ export default fp(
         const roomScene = createPokerRoomScene(
             pokerRoomsService,
             access,
-            (token) =>
-                telegramBotService.resolveDeepLinkUrl({
+            (botId, token) =>
+                telegramBotService.resolveDeepLinkUrl(botId, {
                     name: pokerDeepLinkName,
                     value: token,
                 }),
@@ -164,7 +164,7 @@ export default fp(
                 roomParticipants.observe(data.userIds.length);
             }
 
-            telegramChats.publish([
+            telegramChats.publish(data.botId, [
                 pokerRoomTopic(data.roomId.toHexString()),
                 ...data.userIds.map((userId) =>
                     pokerRoomsTopic(userId.toHexString()),

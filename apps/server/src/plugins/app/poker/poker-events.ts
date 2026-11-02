@@ -11,6 +11,7 @@ export type PokerRoomChange =
 
 export interface PokerEvents {
     "poker.roomChanged": {
+        botId: string;
         roomId: ObjectId;
         userIds: ObjectId[];
         change: PokerRoomChange;

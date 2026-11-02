@@ -204,6 +204,7 @@ export class SettingsService {
             "Setting changed",
         );
         await this.eventEmitter.emit("settings.settingChanged", {
+            botId: actor.botId,
             name: setting.name,
         });
     }

@@ -197,6 +197,7 @@ void describe("TelegramSceneButtons", () => {
         const bot = await buildGreetBot(t);
 
         await bot.telegramUpdateHandler.handle(
+            bot.telegramBots.root,
             buildTelegramCallbackQueryUpdate({
                 from: buildTelegramUser({ id: 987654388 }),
                 data: "stored:1",

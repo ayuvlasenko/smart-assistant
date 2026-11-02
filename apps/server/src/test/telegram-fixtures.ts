@@ -26,7 +26,14 @@ import {
     UserFromGetMe,
 } from "@grammyjs/types";
 import { TelegramMethodResult } from "../plugins/app/telegram/telegram-api-service.js";
+import { telegramBotIdOf } from "../plugins/app/telegram/telegram-bots.js";
+import { telegramWebhookSecret } from "../plugins/app/telegram/telegram-webhook-secret.js";
 import { TELEGRAM_SECRET_HEADER } from "../routes/api/telegram/telegram.js";
+
+export const testTelegramBotId = telegramBotIdOf(
+    process.env.TELEGRAM_BOT_TOKEN ?? "",
+);
+export const testTelegramWebhookPath = `/api/telegram/webhook/${testTelegramBotId}`;
 
 export type TelegramTextMessage = Message.TextMessage & Update.NonChannel;
 export type TelegramChannelTextMessage = Message.TextMessage & Update.Channel;
@@ -529,7 +536,10 @@ export function buildTelegramGetMeResponse(
 }
 
 export function buildTelegramWebhookHeaders(
-    secret = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN ?? "test",
+    secret = telegramWebhookSecret(
+        process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN ?? "test",
+        testTelegramBotId,
+    ),
 ): Record<typeof TELEGRAM_SECRET_HEADER, string> {
     return {
         [TELEGRAM_SECRET_HEADER]: secret,

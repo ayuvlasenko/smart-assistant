@@ -11,6 +11,7 @@ import {
 } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
+import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
 import { UserEntity } from "../users/user-entity.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import {
@@ -486,6 +487,7 @@ async function createUser(
     nextTelegramId += 1;
 
     const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
+        botId: testTelegramBotId,
         telegramId: String(nextTelegramId),
         isBanned: false,
         languageCode: "en",

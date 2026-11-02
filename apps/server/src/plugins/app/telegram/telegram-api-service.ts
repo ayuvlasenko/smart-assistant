@@ -1,14 +1,7 @@
 import { ApiMethods, ApiResponse } from "@grammyjs/types";
-import {
-    FastifyBaseLogger,
-    FastifyInstance,
-    FastifyPluginOptions,
-} from "fastify";
-import fp from "fastify-plugin";
+import { FastifyBaseLogger } from "fastify";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
-import { Env } from "../../../env.js";
-import { AppLogger } from "../app-logger.js";
 import { RateLimitBucket, RateLimiter } from "../rate-limiter.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { telegramRateLimitBuckets } from "./telegram-rate-limits.js";
@@ -40,10 +33,6 @@ export type TelegramApiClient = Pick<
     | "editMessageMedia"
     | "deleteMessage"
 >;
-
-export interface TelegramApiPluginOptions extends FastifyPluginOptions {
-    telegramApiService?: TelegramApiClient;
-}
 
 export type TelegramApiPriority = "interactive" | "background";
 
@@ -279,29 +268,3 @@ export class TelegramApiService {
         }
     }
 }
-
-export default fp(
-    async function (fastify: FastifyInstance, opts: TelegramApiPluginOptions) {
-        const appLogger = fastify.getDecorator<AppLogger>("appLogger");
-
-        fastify.decorate(
-            "telegramApiService",
-            opts.telegramApiService ??
-                new TelegramApiService(
-                    fastify.getDecorator<Env>("config").TELEGRAM_BOT_TOKEN,
-                    appLogger.child({ module: "telegram-api" }),
-                    fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-                    fastify.getDecorator<RateLimiter>("rateLimiter"),
-                ),
-        );
-    },
-    {
-        name: "telegram-api-service",
-        dependencies: [
-            "@fastify/env",
-            "app-logger",
-            "rate-limiter",
-            "telegram-metrics",
-        ],
-    },
-);

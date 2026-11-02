@@ -6,7 +6,9 @@ import { Update } from "@grammyjs/types";
 import { FastifyRequest } from "fastify";
 import { Env } from "../../../env.js";
 import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { TelegramBots } from "../../../plugins/app/telegram/telegram-bots.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
+import { isTelegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
@@ -20,6 +22,16 @@ const telegramWebhookHeadersSchema = Type.Object({
     [TELEGRAM_SECRET_HEADER]: Type.String(),
 });
 
+const telegramWebhookParamsSchema = Type.Object({
+    botId: Type.String(),
+});
+
+const telegramBotWebhookSchema = Type.Object({
+    botId: Type.String(),
+    webhookUrl: Type.String(),
+    botUrl: Type.String(),
+});
+
 const telegramUpdateSchema = Type.Unsafe<Update>({ type: "object" });
 
 const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
@@ -28,14 +40,26 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     const telegramUpdateHandler = fastify.getDecorator<TelegramUpdateHandler>(
         "telegramUpdateHandler",
     );
+    const telegramBots = fastify.getDecorator<TelegramBots>("telegramBots");
 
     const config = fastify.getDecorator<Env>("config");
-    const isValidSecret = (request: FastifyRequest) =>
-        request.headers[TELEGRAM_SECRET_HEADER] ===
-        config.TELEGRAM_WEBHOOK_SECRET_TOKEN;
+    const isValidSecret = (request: FastifyRequest) => {
+        const botId = readBotId(request.params);
+        const secret = request.headers[TELEGRAM_SECRET_HEADER];
+
+        return (
+            botId !== undefined &&
+            typeof secret === "string" &&
+            isTelegramWebhookSecret(
+                config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                botId,
+                secret,
+            )
+        );
+    };
 
     fastify.post(
-        "/webhook",
+        "/webhook/:botId(^\\d+$)",
         {
             config: {
                 rateLimit: {
@@ -45,6 +69,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 },
             },
             schema: {
+                params: telegramWebhookParamsSchema,
                 body: telegramUpdateSchema,
                 headers: telegramWebhookHeadersSchema,
                 response: {
@@ -58,8 +83,18 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
+            const bot = telegramBots.find(request.params.botId);
+
+            if (!bot) {
+                request.log.warn(
+                    { botId: request.params.botId },
+                    "Telegram update for an unknown bot, skipping",
+                );
+                return;
+            }
+
             try {
-                await telegramUpdateHandler.handle(request.body);
+                await telegramUpdateHandler.handle(bot, request.body);
             } catch (err) {
                 request.log.error({ err }, "Failed to handle Telegram update");
             }
@@ -79,23 +114,25 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 schema: {
                     tags: ["telegram"],
                     summary:
-                        "Point the preview bot webhook at this environment",
+                        "Point the webhooks of the preview bots at this environment",
                     response: {
                         200: Type.Object({
-                            webhookUrl: Type.String(),
-                            botUrl: Type.String(),
+                            bots: Type.Array(telegramBotWebhookSchema),
                         }),
                     },
                 },
             },
-            async () => {
-                const botUrl = await telegramBotService.resolveBotUrl();
-                const webhookUrl = await telegramBotService.refreshWebhook();
-
-                return { webhookUrl, botUrl };
-            },
+            async () => ({ bots: await telegramBotService.refreshWebhooks() }),
         );
     }
 };
 
 export default plugin;
+
+function readBotId(params: unknown): string | undefined {
+    if (typeof params !== "object" || params === null || !("botId" in params)) {
+        return undefined;
+    }
+
+    return typeof params.botId === "string" ? params.botId : undefined;
+}

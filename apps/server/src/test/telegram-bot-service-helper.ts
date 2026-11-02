@@ -23,10 +23,12 @@ import settingsRepositoryPlugin from "../plugins/app/settings/settings-repositor
 import settingsServicePlugin, {
     SettingsService,
 } from "../plugins/app/settings/settings-service.js";
-import telegramApiPlugin from "../plugins/app/telegram/telegram-api-service.js";
 import telegramPlugin, {
     TelegramBotService,
 } from "../plugins/app/telegram/telegram-bot-service.js";
+import telegramBotsPlugin, {
+    TelegramBots,
+} from "../plugins/app/telegram/telegram-bots.js";
 import telegramChatsPlugin, {
     TelegramChats,
 } from "../plugins/app/telegram/telegram-chats.js";
@@ -88,6 +90,7 @@ export interface TelegramBotServiceTestApp {
     telegramChats: TelegramChats;
     telegramApiService: TelegramApiServiceMock;
     telegramBotService: TelegramBotService;
+    telegramBots: TelegramBots;
     telegramUpdateHandler: TelegramUpdateHandler;
     usersRepository: UsersRepository;
 }
@@ -142,7 +145,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(lockPlugin);
     app.register(rateLimiterPlugin);
     app.register(telegramMetricsPlugin);
-    app.register(telegramApiPlugin, { telegramApiService });
+    app.register(telegramBotsPlugin, { telegramApiService });
     app.register(telegramSessionStorePlugin, {
         telegramSessionStore: sessionStoreOptions,
     });
@@ -200,6 +203,7 @@ export async function buildTelegramBotServiceTestApp({
         telegramApiService,
         telegramBotService:
             app.getDecorator<TelegramBotService>("telegramBotService"),
+        telegramBots: app.getDecorator<TelegramBots>("telegramBots"),
         telegramUpdateHandler: app.getDecorator<TelegramUpdateHandler>(
             "telegramUpdateHandler",
         ),

@@ -110,7 +110,7 @@ export class PokerRoomsService {
 
         const room = await this.pokerRoomsRepository.create(data, now);
 
-        await this.emitChanged(room, "created");
+        await this.emitChanged(actor, room, "created");
 
         return room;
     }
@@ -163,7 +163,7 @@ export class PokerRoomsService {
             );
 
             if (joined) {
-                await this.emitChanged(joined, "joined");
+                await this.emitChanged(actor, joined, "joined");
 
                 return { status: "joined", room: joined };
             }
@@ -234,7 +234,7 @@ export class PokerRoomsService {
             return (await this.reveal(actor, voted, round)) ?? voted;
         }
 
-        await this.emitChanged(voted, "voted");
+        await this.emitChanged(actor, voted, "voted");
 
         return voted;
     }
@@ -249,7 +249,7 @@ export class PokerRoomsService {
         );
 
         if (revealed) {
-            await this.emitChanged(revealed, "revealed");
+            await this.emitChanged(actor, revealed, "revealed");
         }
 
         return revealed;
@@ -266,7 +266,7 @@ export class PokerRoomsService {
         );
 
         if (started) {
-            await this.emitChanged(started, "roundStarted");
+            await this.emitChanged(actor, started, "roundStarted");
         }
 
         return started;
@@ -283,7 +283,7 @@ export class PokerRoomsService {
         );
 
         if (renamed) {
-            await this.emitChanged(renamed, "roundRenamed");
+            await this.emitChanged(actor, renamed, "roundRenamed");
         }
 
         return renamed;
@@ -302,7 +302,7 @@ export class PokerRoomsService {
         });
 
         if (closed) {
-            await this.emitChanged(closed, "closed");
+            await this.emitChanged(actor, closed, "closed");
         }
 
         return closed;
@@ -324,10 +324,12 @@ export class PokerRoomsService {
     }
 
     private async emitChanged(
+        actor: UserEntity,
         room: PokerRoomEntity,
         change: PokerRoomChange,
     ): Promise<void> {
         await this.eventEmitter.emit("poker.roomChanged", {
+            botId: actor.botId,
             roomId: room._id,
             change,
             userIds: [

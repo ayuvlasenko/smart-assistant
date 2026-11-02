@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
+import { telegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
 import { REQUEST_ID_HEADER } from "../../../request-logging.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLogCollector } from "../../../test/log-collector.js";
@@ -11,6 +12,8 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
+    testTelegramBotId,
+    testTelegramWebhookPath,
 } from "../../../test/telegram-fixtures.js";
 import { TELEGRAM_SECRET_HEADER } from "./telegram.js";
 
@@ -27,7 +30,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const response = await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
             body: buildTelegramTextMessageUpdate({
                 message: {
@@ -44,7 +47,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const response = await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders("invalid-secret"),
             body: buildTelegramTextMessageUpdate(),
         });
@@ -57,12 +60,75 @@ void describe("POST /api/telegram/webhook", () => {
         });
     });
 
+    void it("returns 401 when the secret of another bot is sent", async (t) => {
+        const { app } = await buildTestApp({ t });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/42",
+            headers: buildTelegramWebhookHeaders(),
+            body: buildTelegramTextMessageUpdate(),
+        });
+
+        assert.equal(response.statusCode, 401);
+    });
+
+    void it("returns 401 when the master secret itself is sent", async (t) => {
+        const { app } = await buildTestApp({ t });
+
+        const response = await app.inject({
+            method: "POST",
+            url: testTelegramWebhookPath,
+            headers: buildTelegramWebhookHeaders(
+                app.getDecorator<Env>("config").TELEGRAM_WEBHOOK_SECRET_TOKEN,
+            ),
+            body: buildTelegramTextMessageUpdate(),
+        });
+
+        assert.equal(response.statusCode, 401);
+    });
+
+    void it("skips an update of an unknown bot with a valid secret", async (t) => {
+        const logs = createLogCollector();
+        const { app, telegramApiService } = await buildTestApp({
+            logger: logs.logger,
+            t,
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/42",
+            headers: buildTelegramWebhookHeaders(
+                telegramWebhookSecret(
+                    app.getDecorator<Env>("config")
+                        .TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    "42",
+                ),
+            ),
+            body: buildTelegramTextMessageUpdate({
+                message: { text: "/start" },
+            }),
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    (entry) =>
+                        entry.msg ===
+                        "Telegram update for an unknown bot, skipping",
+                ),
+        );
+    });
+
     void it("returns 400 when secret header is missing", async (t) => {
         const { app } = await buildTestApp({ t });
 
         const response = await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             body: buildTelegramTextMessageUpdate(),
         });
 
@@ -91,7 +157,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const response = await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
             body: buildTelegramTextMessageUpdate({
                 message: {
@@ -120,7 +186,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const response = await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
             body: buildTelegramTextMessageUpdate({
                 message: {
@@ -152,7 +218,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         await app.inject({
             method: "POST",
-            url: "/api/telegram/webhook",
+            url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
             body: buildTelegramTextMessageUpdate({
                 message: {
@@ -186,10 +252,16 @@ void describe("POST /api/telegram/webhook/refresh", () => {
 
         assert.equal(response.statusCode, 200);
         assert.deepEqual(response.json(), {
-            webhookUrl: resolveTelegramWebhookUrl(
-                app.getDecorator<Env>("config"),
-            ),
-            botUrl: "https://t.me/bipbopbot",
+            bots: [
+                {
+                    botId: testTelegramBotId,
+                    webhookUrl: resolveTelegramWebhookUrl(
+                        app.getDecorator<Env>("config"),
+                        testTelegramBotId,
+                    ),
+                    botUrl: "https://t.me/bipbopbot",
+                },
+            ],
         });
         assert.deepEqual(
             telegramApiService.setWebhook.mock.calls.map(
@@ -200,10 +272,13 @@ void describe("POST /api/telegram/webhook/refresh", () => {
                     {
                         url: resolveTelegramWebhookUrl(
                             app.getDecorator<Env>("config"),
+                            testTelegramBotId,
                         ),
-                        secret_token:
+                        secret_token: telegramWebhookSecret(
                             app.getDecorator<Env>("config")
                                 .TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                            testTelegramBotId,
+                        ),
                     },
                 ],
             ],

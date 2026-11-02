@@ -53,7 +53,10 @@ export type InvitesSceneControl = TelegramSceneControl<
     typeof invitesScreens
 >;
 
-export type InviteUrlResolver = (token: string) => Promise<string>;
+export type InviteUrlResolver = (
+    botId: string,
+    token: string,
+) => Promise<string>;
 
 export interface InvitesView {
     ctx: TelegramContext;

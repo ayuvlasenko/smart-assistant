@@ -15,6 +15,7 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
+    testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
@@ -59,14 +60,19 @@ void describe("Invites bootstrap", () => {
         await sendAsStranger(bot, third, "/start invite_wrong-token");
 
         const admin = await bot.usersRepository.findOneByTelegramId(
+            testTelegramBotId,
             String(first.id),
         );
 
         assert.equal(admin?.isBanned, false);
         assert.deepEqual(admin.grants, [adminGrant]);
         assert.equal(
-            (await bot.usersRepository.findOneByTelegramId(String(second.id)))
-                ?.isBanned,
+            (
+                await bot.usersRepository.findOneByTelegramId(
+                    testTelegramBotId,
+                    String(second.id),
+                )
+            )?.isBanned,
             true,
         );
         assert.deepEqual(readSentTextsTo(bot, first), [
@@ -446,6 +452,7 @@ async function sendAsStranger(
     const [command] = text.split(" ");
 
     await bot.telegramUpdateHandler.handle(
+        bot.telegramBots.root,
         buildTelegramTextMessageUpdate({
             update_id: strangerUpdateId,
             message: {

@@ -42,33 +42,36 @@ export class UsersRepository {
     }
 
     async existsWithGrant(
+        botId: string,
         grant: string,
         session?: ClientSession,
     ): Promise<boolean> {
         const count = await this.mongo.db
             .collection<UserEntity>("users")
-            .countDocuments({ grants: grant }, { session, limit: 1 });
+            .countDocuments({ botId, grants: grant }, { session, limit: 1 });
 
         return count > 0;
     }
 
     findOneByTelegramId(
+        botId: string,
         telegramId: string,
         session?: ClientSession,
     ): Promise<UserEntity | null> {
         return this.mongo.db
             .collection<UserEntity>("users")
-            .findOne({ telegramId }, { session });
+            .findOne({ botId, telegramId }, { session });
     }
 
     async findOneByTelegramIdOrCreate(
-        data: Pick<UserEntity, "telegramId" | "isBanned"> & UserProfile,
+        data: Pick<UserEntity, "botId" | "telegramId" | "isBanned"> &
+            UserProfile,
         session?: ClientSession,
     ): Promise<UserLookup> {
         const result = await this.mongo.db
             .collection<UserEntity>("users")
             .findOneAndUpdate(
-                { telegramId: data.telegramId },
+                { botId: data.botId, telegramId: data.telegramId },
                 {
                     $setOnInsert: {
                         _id: new ObjectId(),

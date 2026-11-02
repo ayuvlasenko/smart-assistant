@@ -11,16 +11,19 @@ import {
     buildTelegramBotServiceTestApp,
     BuildTelegramBotServiceTestAppOptions,
 } from "../../../test/telegram-bot-service-helper.js";
+import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { Language } from "../i18n-service.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramLocales } from "./telegram-locales.js";
+import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
 let mongo!: Db;
 
 const webhookClaimSchema = Type.String();
+const webhookClaimKey = `telegram:${testTelegramBotId}:webhook:set`;
 
 before(async () => {
     const testMongo = await buildTestMongo();
@@ -40,29 +43,35 @@ after(async () => {
 });
 
 void describe("TelegramBotService", () => {
-    void it("builds a resource-specific webhook URL when no explicit override is set", () => {
-        const webhookUrl = resolveTelegramWebhookUrl({
-            DOMAIN: "https://smart-assistant.bambom.org",
-            RESOURCE_NAME: "pr-123",
-        });
+    void it("builds a resource-specific webhook URL of the bot when no explicit override is set", () => {
+        const webhookUrl = resolveTelegramWebhookUrl(
+            {
+                DOMAIN: "https://smart-assistant.bambom.org",
+                RESOURCE_NAME: "pr-123",
+            },
+            "42",
+        );
 
         assert.equal(
             webhookUrl,
-            "https://smart-assistant.bambom.org/api/telegram/webhook/pr-123",
+            "https://smart-assistant.bambom.org/api/telegram/webhook/pr-123/42",
         );
     });
 
-    void it("uses the explicit webhook URL override when it is present", () => {
-        const webhookUrl = resolveTelegramWebhookUrl({
-            DOMAIN: "https://smart-assistant.bambom.org",
-            RESOURCE_NAME: "pr-123",
-            TELEGRAM_WEBHOOK_URL:
-                "https://proxy3020.bambom.org/api/telegram/webhook/custom",
-        });
+    void it("appends the bot id to the explicit webhook URL override", () => {
+        const webhookUrl = resolveTelegramWebhookUrl(
+            {
+                DOMAIN: "https://smart-assistant.bambom.org",
+                RESOURCE_NAME: "pr-123",
+                TELEGRAM_WEBHOOK_URL:
+                    "https://proxy3020.bambom.org/api/telegram/webhook/",
+            },
+            "42",
+        );
 
         assert.equal(
             webhookUrl,
-            "https://proxy3020.bambom.org/api/telegram/webhook/custom",
+            "https://proxy3020.bambom.org/api/telegram/webhook/42",
         );
     });
 
@@ -74,7 +83,7 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await telegramBotService.setWebhookOnStart();
+        await telegramBotService.setWebhooksOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
         assert.deepEqual(
@@ -83,18 +92,18 @@ void describe("TelegramBotService", () => {
                 {
                     url: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
+                        testTelegramBotId,
                     ),
-                    secret_token:
+                    secret_token: telegramWebhookSecret(
                         app.getDecorator<Env>("config")
                             .TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                        testTelegramBotId,
+                    ),
                 },
             ],
         );
         assert.equal(
-            typeof (await cache.get(
-                "telegram:webhook:set",
-                webhookClaimSchema,
-            )),
+            typeof (await cache.get(webhookClaimKey, webhookClaimSchema)),
             "string",
         );
     });
@@ -107,11 +116,11 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await cache.set("telegram:webhook:set", "other-pod", {
+        await cache.set(webhookClaimKey, "other-pod", {
             ttlMilliseconds: 3_600_000,
         });
 
-        await telegramBotService.setWebhookOnStart();
+        await telegramBotService.setWebhooksOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
@@ -133,13 +142,13 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhookOnStart(), {
+        await assert.rejects(() => telegramBotService.setWebhooksOnStart(), {
             name: "TelegramApiError",
             method: "setWebhook",
             description: "bad webhook",
         });
         assert.equal(
-            await cache.get("telegram:webhook:set", webhookClaimSchema),
+            await cache.get(webhookClaimKey, webhookClaimSchema),
             undefined,
         );
     });
@@ -157,11 +166,11 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhookOnStart(), {
+        await assert.rejects(() => telegramBotService.setWebhooksOnStart(), {
             message: "network failure",
         });
         assert.equal(
-            await cache.get("telegram:webhook:set", webhookClaimSchema),
+            await cache.get(webhookClaimKey, webhookClaimSchema),
             undefined,
         );
     });
@@ -175,38 +184,48 @@ void describe("TelegramBotService", () => {
                 environment: "preview",
             });
 
-        await telegramBotService.setWebhookOnStart();
+        await telegramBotService.setWebhooksOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
         assert.equal(
-            await cache.get("telegram:webhook:set", webhookClaimSchema),
+            await cache.get(webhookClaimKey, webhookClaimSchema),
             undefined,
         );
     });
 
     void it("sets the webhook on every direct call without touching the guard", async (t) => {
-        const { app, cache, telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-            });
+        const {
+            app,
+            cache,
+            telegramApiService,
+            telegramBotService,
+            telegramBots,
+        } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+        });
 
-        await cache.set("telegram:webhook:set", "other-pod", {
+        await cache.set(webhookClaimKey, "other-pod", {
             ttlMilliseconds: 3_600_000,
         });
 
-        const firstUrl = await telegramBotService.setWebhook();
-        const secondUrl = await telegramBotService.setWebhook();
+        const firstUrl = await telegramBotService.setWebhook(telegramBots.root);
+        const secondUrl = await telegramBotService.setWebhook(
+            telegramBots.root,
+        );
 
         assert.equal(
             firstUrl,
-            resolveTelegramWebhookUrl(app.getDecorator<Env>("config")),
+            resolveTelegramWebhookUrl(
+                app.getDecorator<Env>("config"),
+                testTelegramBotId,
+            ),
         );
         assert.equal(secondUrl, firstUrl);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
         assert.equal(
-            await cache.get("telegram:webhook:set", webhookClaimSchema),
+            await cache.get(webhookClaimKey, webhookClaimSchema),
             "other-pod",
         );
     });
@@ -382,7 +401,7 @@ void describe("TelegramBotService chat commands", () => {
 
         assert.deepEqual(readScopes(), ["chat"]);
 
-        await telegramBotService.refreshWebhook();
+        await telegramBotService.refreshWebhooks();
         await telegramBotService.syncCommands(user);
         await telegramBotService.syncCommands(user);
 
@@ -460,7 +479,7 @@ void describe("telegram plugin on listen", () => {
         const skipEntry = await logs.waitForEntry(
             (entry) =>
                 entry.msg ===
-                "Telegram webhook is not set on preview start, claim it with POST /api/telegram/webhook/refresh",
+                "Telegram webhooks are not set on preview start, claim them with POST /api/telegram/webhook/refresh",
         );
 
         assert.equal(skipEntry.module, "telegram");
