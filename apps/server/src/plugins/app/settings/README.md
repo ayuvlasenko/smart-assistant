@@ -36,7 +36,10 @@ settingsService.register({
     settings: [pokerMaxParticipantsSetting],
 });
 
-const maxParticipants = settingsService.read(pokerMaxParticipantsSetting);
+const maxParticipants = settingsService.read(
+    pokerMaxParticipantsSetting,
+    room.botId,
+);
 ```
 
 - Name a setting `<domain>.<name>` and keep its title in `<domain>-locales.ts`. The `emoji` starts the button of the setting in the menu, like the buttons of other screens; the line of the value shows the title without it.
@@ -49,13 +52,15 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 
 **Problem.** `read` runs inside guards, on every update, and must not wait for a database. A value that only lives in the memory of one pod would differ between the pods.
 
-**Idea.** MongoDB keeps the values, and every pod keeps a snapshot of all of them in memory. `read` takes the value from the snapshot, and the pod reads the snapshot again every 10 seconds.
+**Idea.** MongoDB keeps the values, and every pod keeps a snapshot of all of them in memory. `read` takes the value from the snapshot, and the pod reads the snapshot again every 10 seconds. Every bot has its own values, so `read` takes the bot id, from the user or the entity at hand.
 
-**Data.** One document per changed setting in `settings`; a setting that nobody changed has no document and reads its default.
+**Data.** One document per changed setting of a bot in `settings`, with a unique index on `botId` and `name`; a setting that nobody changed in a bot has no document there and reads its default.
 
 ```json
 {
-    "_id": "poker.maxParticipants",
+    "_id": "6710a3…",
+    "botId": "8123456789",
+    "name": "poker.maxParticipants",
     "value": 12,
     "version": 3,
     "updatedBy": "66f1c2…",
@@ -67,7 +72,7 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 
 1. The number input of the `settings` scene calls `SettingsService.write`. It checks `update Setting`, which only `admin` has, and checks the value against the setting: the range of a number, the options of the choices.
 2. `SettingsRepository.save` upserts the document, and the service logs `Setting changed`.
-3. Pod A puts the value into its snapshot at once and emits `settings.settingChanged`. `settings-handlers.ts` publishes the topic `settings`, so the menu of every admin redraws.
+3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the menu of every admin of the bot redraws.
 4. Pod B reads all documents on its next refresh, at most 10 seconds later, and replaces its snapshot.
 
 **Edge cases.**

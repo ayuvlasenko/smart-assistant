@@ -88,6 +88,7 @@ export class InvitesService {
     async create(actor: UserEntity, draft: InviteDraft): Promise<InviteEntity> {
         const grants = [...new Set(draft.grants)];
         const data = {
+            botId: actor.botId,
             createdBy: actor._id,
             grants,
             maxUses: draft.maxUses,
@@ -128,6 +129,7 @@ export class InvitesService {
     ): Promise<InviteActivationResult> {
         const now = new Date();
         const activated = await this.invitesRepository.activate(
+            user.botId,
             token,
             user._id,
             now,
@@ -243,30 +245,38 @@ export class InvitesService {
         ) {
             return {
                 invite: "none",
-                revoked:
-                    await this.invitesRepository.revokeBootstrapInvites(now),
+                revoked: await this.invitesRepository.revokeBootstrapInvites(
+                    botId,
+                    now,
+                ),
             };
         }
 
         const revoked = await this.invitesRepository.revokeBootstrapInvites(
+            botId,
             now,
             token,
         );
 
         return {
-            invite: await this.prepareBootstrapInvite(token, now),
+            invite: await this.prepareBootstrapInvite(botId, token, now),
             revoked,
         };
     }
 
     private async prepareBootstrapInvite(
+        botId: string,
         token: string,
         now: Date,
     ): Promise<InvitesBootstrap["invite"]> {
-        const invite = await this.invitesRepository.findOneByToken(token);
+        const invite = await this.invitesRepository.findOneByToken(
+            botId,
+            token,
+        );
 
         if (!invite) {
             await this.invitesRepository.create({
+                botId,
                 token,
                 grants: [adminGrant],
                 maxUses: 1,
@@ -292,7 +302,10 @@ export class InvitesService {
         token: string,
         now: Date,
     ): Promise<InviteActivationResult> {
-        const invite = await this.invitesRepository.findOneByToken(token);
+        const invite = await this.invitesRepository.findOneByToken(
+            user.botId,
+            token,
+        );
 
         if (!invite) {
             return { status: "notFound" };

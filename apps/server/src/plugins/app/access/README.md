@@ -42,6 +42,27 @@ The `admin` grant is registered by this domain and gives `manage all`.
 
 `isBanned` is not a grant. It is the gate in front of the bot: a banned user reaches only the deep links registered with `allowBanned`, such as an invite link. A banned user also gets an empty ability, even when the user still holds grants: a write on behalf of a banned user throws `ForbiddenError`, and a read through `accessibleBy` returns nothing. Lifting the ban keeps the grants the user had before.
 
+## Rules stay inside the bot
+
+**Problem.** Every bot is a separate tenant: it has its own users, and their documents share the collections with the documents of other bots. An `admin` holds `manage all`, and a rule such as `can("use", "PokerRoom")` has no condition, so without a limit these rules reach the documents of every bot.
+
+**Idea.** `AccessService` adds `botId: user.botId` to the conditions of every allowing rule after the grants define them. A domain never writes the bot into its rules.
+
+**Data.** The rules of a user of bot `42` with `admin` and a grant `can(["read", "update"], "Invite", { createdBy: user._id })`:
+
+```text
+can manage all                 { botId: "42" }
+can read, update Invite        { createdBy: <id of the user>, botId: "42" }
+```
+
+**Walk-through.**
+
+1. `buildAbility` runs `define` of every grant of the user.
+2. It copies every rule that is not a `cannot` with `botId` added to its conditions, and builds the ability from the copies.
+3. `accessibleBy` turns the conditions into the query, so a list holds only the documents of the user's bot. `assert` on a document of another bot throws `ForbiddenError`, also when the repository loaded the document by id without a filter.
+
+**Edge cases.** A check against a subject name ignores the conditions, so a guard such as `guard("use", "Ping")` answers as before. A document that is checked with `subject(name, document)` must carry `botId`, or no allowing rule matches it; `PokerRoom`, `Invite` and `Setting` carry it. A `cannot` rule keeps its conditions as they are: CASL skips a `cannot` rule with conditions on a check against a subject name, so a condition added to it would let a guard through. A lookup that skips `accessibleBy`, such as a search by token, does not pass through these rules and takes the bot id as an argument.
+
 ## Default grants
 
 **Problem.** An open bot gives every user some grants, such as `poker.create`, without an invite. Writing them into every user document would leave the old users without a grant added later, and a grant removed from the defaults would stay with everybody who came before.
@@ -50,7 +71,7 @@ The `admin` grant is registered by this domain and gives `manage all`.
 
 **Walk-through.**
 
-1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` a function that reads the setting.
+1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` a function that reads the setting of a bot. Every bot has its own default grants.
 2. An update loads the user and asks a guard. The service builds the ability from `user.grants` together with the default grants, so the new defaults apply from the next update of every user.
 3. `admin` never comes from the defaults: the menu does not offer it, and the service drops it when it reads the setting.
 
@@ -70,7 +91,7 @@ A guard only shapes what the user can reach in the chat, so it checks the subjec
 
 Never check a loaded document against the subject name. With a string, CASL answers whether the user may act on at least one document of the subject and ignores the conditions of the rules, so `can("update", "Report", { ownerId: user._id })` would let the user update every report. Load the document first and tag it with `subject("Report", report)` from `@casl/ability`. A new document is checked the same way, with `subject` around the data it is going to have.
 
-For a list, put `accessibleBy` into the query. It takes the rules of the user for the action and the subject and turns them into a MongoDB query: `{}` for an unconditional rule, the conditions for conditional ones joined with `$or`, a `cannot` rule as `$nor` joined with `$and`, and `{ $expr: { $eq: [0, 1] } }`, which matches nothing, when the user has no rule. So the page and the count include only the documents the user may see. It is a port of `accessibleBy` from `@casl/mongoose`, which supports the plain MongoDB driver but imports `mongoose` and needs it as a peer dependency; for a 15-line helper on top of `rulesToCondition` from `@casl/ability/extra`, the project keeps its own copy instead of a second MongoDB driver. Combine it with other conditions through `$and`, never by spreading it into another object, or a key such as `$or` can overwrite the restriction.
+For a list, put `accessibleBy` into the query. It takes the rules of the user for the action and the subject and turns them into a MongoDB query: the conditions of the allowing rules, each with the bot of the user, joined with `$or`, a `cannot` rule as `$nor` joined with `$and`, and `{ $expr: { $eq: [0, 1] } }`, which matches nothing, when the user has no rule. So the page and the count include only the documents the user may see. It is a port of `accessibleBy` from `@casl/mongoose`, which supports the plain MongoDB driver but imports `mongoose` and needs it as a peer dependency; for a 15-line helper on top of `rulesToCondition` from `@casl/ability/extra`, the project keeps its own copy instead of a second MongoDB driver. Combine it with other conditions through `$and`, never by spreading it into another object, or a key such as `$or` can overwrite the restriction.
 
 `holds(user, grant)` answers a different question: whether the user may hand a grant to somebody else. It does not look at rules. It is true when the user is not banned and holds the grant name itself or `admin`. The invite form offers only these grants, and `InvitesService.create` checks them again, so a user cannot grant more than the user has.
 
@@ -108,6 +129,8 @@ For a list, put `accessibleBy` into the query. It takes the rules of the user fo
 
 3. Put `guard: access.guard("read", "Report")` on every command, deep link, scene, scene button and scene input that needs it.
 4. Give the service the typed view as its dependency. Read through `access.accessibleBy(actor, "read", "Report")` and check every write with `access.assert(actor, "update", subject("Report", report))` on the loaded document. `InvitesService` is the reference.
+
+5. Give every document of the domain a `botId` from the actor, and pass the bot id to every lookup that skips `accessibleBy`. See [Rules stay inside the bot](#rules-stay-inside-the-bot).
 
 The new grant shows up in the invite form at once. `define` gets the user, so a rule can depend on the user's own data, for example `can("update", "Report", { ownerId: user._id })`.
 

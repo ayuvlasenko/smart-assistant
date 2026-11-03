@@ -7,6 +7,7 @@ export interface InviteActivation {
 }
 
 export interface InviteEntity extends BaseEntity {
+    botId: string;
     token: string;
     createdBy?: ObjectId;
     grants: string[];

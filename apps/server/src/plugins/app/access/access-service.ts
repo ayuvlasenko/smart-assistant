@@ -4,6 +4,7 @@ import {
     ForbiddenError,
     ForcedSubject,
     MongoAbility,
+    RawRuleOf,
     RuleOf,
 } from "@casl/ability";
 import { rulesToCondition } from "@casl/ability/extra";
@@ -85,7 +86,8 @@ export class AccessService {
     private readonly sections: AccessSection[] = [];
     private readonly grants = new Map<string, AccessGrant>();
     private readonly abilities = new WeakMap<UserEntity, AnyAbility>();
-    private defaultGrantsReader: (() => readonly string[]) | undefined;
+    private defaultGrantsReader:
+        ((botId: string) => readonly string[]) | undefined;
     private readonly control: AccessControl<AnySubjects> = {
         register: (section) => {
             this.register(section);
@@ -111,7 +113,7 @@ export class AccessService {
         return this.control;
     }
 
-    useDefaultGrants(read: () => readonly string[]): void {
+    useDefaultGrants(read: (botId: string) => readonly string[]): void {
         this.defaultGrantsReader = read;
     }
 
@@ -182,16 +184,27 @@ export class AccessService {
             }
         }
 
-        return builder.build();
+        return createMongoAbility(
+            builder.rules.map((rule) => limitToBot(rule, user.botId)),
+        );
     }
 
     private effectiveGrants(user: UserEntity): Set<string> {
-        const defaults = (this.defaultGrantsReader?.() ?? []).filter(
+        const defaults = (this.defaultGrantsReader?.(user.botId) ?? []).filter(
             (name) => name !== adminGrant,
         );
 
         return new Set([...user.grants, ...defaults]);
     }
+}
+
+function limitToBot(
+    rule: RawRuleOf<AnyAbility>,
+    botId: string,
+): RawRuleOf<AnyAbility> {
+    return rule.inverted
+        ? rule
+        : { ...rule, conditions: { ...rule.conditions, botId } };
 }
 
 function ruleToQuery(rule: RuleOf<AnyAbility>): Document {

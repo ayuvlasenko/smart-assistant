@@ -12,6 +12,7 @@ import {
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { adminGrant } from "../access/access-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import {
@@ -138,6 +139,17 @@ void describe("PokerRoomsService create and join", () => {
         assert.deepEqual(await bot.pokerRoomsService.join(member, room.token), {
             status: "closed",
         });
+    });
+
+    void it("doesn't find a room of another bot, also for its admin", async (t) => {
+        const bot = await buildBot(t);
+        const { room } = await createRoomWithCreator(bot);
+        const admin = await createUser(bot, [adminGrant], "42");
+
+        assert.deepEqual(await bot.pokerRoomsService.join(admin, room.token), {
+            status: "notFound",
+        });
+        assert.equal(await bot.pokerRoomsService.find(admin, room._id), null);
     });
 });
 
@@ -483,11 +495,12 @@ function buildBot(t: TestContext): Promise<PokerBot> {
 async function createUser(
     bot: PokerBot,
     grants: string[],
+    botId = testTelegramBotId,
 ): Promise<UserEntity> {
     nextTelegramId += 1;
 
     const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
-        botId: testTelegramBotId,
+        botId,
         telegramId: String(nextTelegramId),
         isBanned: false,
         languageCode: "en",

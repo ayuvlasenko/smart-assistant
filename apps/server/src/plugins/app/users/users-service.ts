@@ -37,7 +37,7 @@ export class UsersService {
     ): Promise<UserLookup> {
         return this.usersRepository.findOneByTelegramIdOrCreate({
             ...data,
-            isBanned: this.settingsService.read(autoBanSetting),
+            isBanned: this.settingsService.read(autoBanSetting, data.botId),
         });
     }
 

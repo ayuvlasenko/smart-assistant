@@ -156,6 +156,7 @@ function buildRoom(participants: [UserEntity, string][]): PokerRoomEntity {
         version: 0,
         createdAt: now,
         updatedAt: now,
+        botId: "1",
         token: "token",
         createdBy: new ObjectId(),
         deck: "fibonacciModified",

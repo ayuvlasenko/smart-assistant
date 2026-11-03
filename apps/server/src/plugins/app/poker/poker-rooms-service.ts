@@ -18,7 +18,8 @@ import {
     pokerParticipantEmojis,
 } from "./poker-participant-emojis.js";
 import {
-    listActivePokerParticipants,
+    findPokerParticipant,
+    hasEveryPokerParticipantVoted,
     PokerParticipant,
     PokerRoomEntity,
     PokerRoomStatus,
@@ -92,6 +93,7 @@ export class PokerRoomsService {
     ): Promise<PokerRoomEntity> {
         const now = new Date();
         const data = {
+            botId: actor.botId,
             token: randomBytes(roomTokenBytes).toString("base64url"),
             createdBy: actor._id,
             ...(draft.title === undefined ? {} : { title: draft.title }),
@@ -110,7 +112,7 @@ export class PokerRoomsService {
 
         const room = await this.pokerRoomsRepository.create(data, now);
 
-        await this.emitChanged(actor, room, "created");
+        await this.emitChanged(room, "created");
 
         return room;
     }
@@ -121,7 +123,10 @@ export class PokerRoomsService {
             attempt <= pokerParticipantEmojis.length;
             attempt += 1
         ) {
-            const room = await this.pokerRoomsRepository.findOneByToken(token);
+            const room = await this.pokerRoomsRepository.findOneByToken(
+                actor.botId,
+                token,
+            );
 
             if (!room) {
                 return { status: "notFound" };
@@ -129,7 +134,7 @@ export class PokerRoomsService {
 
             this.access.assert(actor, "use", subject("PokerRoom", room));
 
-            if (findParticipant(room, actor._id)) {
+            if (findPokerParticipant(room, actor._id)) {
                 return { status: "alreadyJoined", room };
             }
 
@@ -141,6 +146,7 @@ export class PokerRoomsService {
 
             const maxParticipants = this.settingsService.read(
                 pokerMaxParticipantsSetting,
+                room.botId,
             );
 
             if (room.participants.length >= maxParticipants) {
@@ -163,7 +169,7 @@ export class PokerRoomsService {
             );
 
             if (joined) {
-                await this.emitChanged(actor, joined, "joined");
+                await this.emitChanged(joined, "joined");
 
                 return { status: "joined", room: joined };
             }
@@ -230,11 +236,11 @@ export class PokerRoomsService {
             return null;
         }
 
-        if (voted.autoReveal && hasEveryoneVoted(voted)) {
+        if (voted.autoReveal && hasEveryPokerParticipantVoted(voted)) {
             return (await this.reveal(actor, voted, round)) ?? voted;
         }
 
-        await this.emitChanged(actor, voted, "voted");
+        await this.emitChanged(voted, "voted");
 
         return voted;
     }
@@ -249,7 +255,7 @@ export class PokerRoomsService {
         );
 
         if (revealed) {
-            await this.emitChanged(actor, revealed, "revealed");
+            await this.emitChanged(revealed, "revealed");
         }
 
         return revealed;
@@ -266,7 +272,7 @@ export class PokerRoomsService {
         );
 
         if (started) {
-            await this.emitChanged(actor, started, "roundStarted");
+            await this.emitChanged(started, "roundStarted");
         }
 
         return started;
@@ -283,7 +289,7 @@ export class PokerRoomsService {
         );
 
         if (renamed) {
-            await this.emitChanged(actor, renamed, "roundRenamed");
+            await this.emitChanged(renamed, "roundRenamed");
         }
 
         return renamed;
@@ -302,7 +308,7 @@ export class PokerRoomsService {
         });
 
         if (closed) {
-            await this.emitChanged(actor, closed, "closed");
+            await this.emitChanged(closed, "closed");
         }
 
         return closed;
@@ -324,12 +330,11 @@ export class PokerRoomsService {
     }
 
     private async emitChanged(
-        actor: UserEntity,
         room: PokerRoomEntity,
         change: PokerRoomChange,
     ): Promise<void> {
         await this.eventEmitter.emit("poker.roomChanged", {
-            botId: actor.botId,
+            botId: room.botId,
             roomId: room._id,
             change,
             userIds: [
@@ -340,24 +345,6 @@ export class PokerRoomsService {
             ],
         });
     }
-}
-
-function findParticipant(
-    room: PokerRoomEntity,
-    userId: ObjectId,
-): PokerParticipant | undefined {
-    return room.participants.find((participant) =>
-        participant.userId.equals(userId),
-    );
-}
-
-function hasEveryoneVoted(room: PokerRoomEntity): boolean {
-    const active = listActivePokerParticipants(room);
-
-    return (
-        active.length > 0 &&
-        active.every(({ userId }) => room.round.votes[userId.toHexString()])
-    );
 }
 
 export default fp(

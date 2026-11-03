@@ -243,6 +243,27 @@ void describe("InvitesService activate", () => {
         );
     });
 
+    void it("doesn't find the invite of another bot", async (t) => {
+        const bot = await buildBot(t);
+        const invite = await createInvite(bot, { grants: [pingGrant] });
+        const { user: stranger } =
+            await bot.usersRepository.findOneByTelegramIdOrCreate({
+                botId: "42",
+                telegramId: "987654716",
+                isBanned: true,
+                languageCode: "en",
+            });
+
+        assert.deepEqual(
+            await bot.invitesService.activate(stranger, invite.token),
+            { status: "notFound" },
+        );
+        assert.equal(
+            (await bot.usersRepository.findOneById(stranger._id))?.isBanned,
+            true,
+        );
+    });
+
     void it("lets only as many users in at the same time as the limit allows", async (t) => {
         const bot = await buildBot(t);
         const invite = await createInvite(bot, {
@@ -404,8 +425,10 @@ void describe("InvitesService lists", () => {
 void describe("InvitesService bootstrap", () => {
     void it("creates a single-use admin invite from INVITE_TOKEN while there is no admin", async (t) => {
         const bot = await buildBot(t, { INVITE_TOKEN: "bootstrap-token" });
-        const invite =
-            await bot.invitesRepository.findOneByToken("bootstrap-token");
+        const invite = await bot.invitesRepository.findOneByToken(
+            testTelegramBotId,
+            "bootstrap-token",
+        );
 
         assert.deepEqual(invite?.grants, [adminGrant]);
         assert.equal(invite.maxUses, 1);
@@ -518,6 +541,7 @@ void describe("InvitesService bootstrap", () => {
         const admin = await createUser(bot, "987654743", [adminGrant]);
 
         await mongo.collection("invites").insertOne({
+            botId: testTelegramBotId,
             token: "orphan-token",
             grants: [adminGrant],
             maxUses: 1,
@@ -542,8 +566,12 @@ void describe("InvitesService bootstrap", () => {
             },
         );
         assert.ok(
-            (await bot.invitesRepository.findOneByToken("orphan-token"))
-                ?.revokedAt,
+            (
+                await bot.invitesRepository.findOneByToken(
+                    testTelegramBotId,
+                    "orphan-token",
+                )
+            )?.revokedAt,
         );
         assert.equal(
             (await bot.invitesRepository.findOneById(adminInvite._id))
@@ -562,8 +590,12 @@ void describe("InvitesService bootstrap", () => {
             },
         );
         assert.ok(
-            (await bot.invitesRepository.findOneByToken("fresh-token"))
-                ?.revokedAt,
+            (
+                await bot.invitesRepository.findOneByToken(
+                    testTelegramBotId,
+                    "fresh-token",
+                )
+            )?.revokedAt,
         );
     });
 });
@@ -605,6 +637,7 @@ function createInvite(
         Partial<Pick<InviteEntity, "maxUses" | "expiresAt">>,
 ): Promise<InviteEntity> {
     return bot.invitesRepository.create({
+        botId: testTelegramBotId,
         token: new ObjectId().toHexString(),
         ...data,
     });

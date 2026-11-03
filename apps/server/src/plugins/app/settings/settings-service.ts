@@ -64,7 +64,7 @@ export class SettingsService {
     private readonly access: AccessControl<SettingsSubjects>;
     private readonly eventEmitter: Emittery<SettingsEvents>;
     private readonly log: FastifyBaseLogger;
-    private values = new Map<string, unknown>();
+    private values = new Map<string, Map<string, unknown>>();
     private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(
@@ -109,9 +109,12 @@ export class SettingsService {
         return this.settings.get(name);
     }
 
-    read<TSetting extends Setting>(setting: TSetting): SettingValue<TSetting> {
+    read<TSetting extends Setting>(
+        setting: TSetting,
+        botId: string,
+    ): SettingValue<TSetting> {
         return (
-            readValue(setting, this.values.get(setting.name)) ??
+            readValue(setting, this.values.get(botId)?.get(setting.name)) ??
             (setting.defaultValue as SettingValue<TSetting>)
         );
     }
@@ -127,7 +130,12 @@ export class SettingsService {
             throw new Error(`Value of setting "${setting.name}" is not valid`);
         }
 
-        await this.settingsRepository.save(setting.name, value, actor._id);
+        await this.settingsRepository.save(
+            actor.botId,
+            setting.name,
+            value,
+            actor._id,
+        );
         await this.apply(actor, setting, value);
     }
 
@@ -135,6 +143,7 @@ export class SettingsService {
         this.assertCanUpdate(actor, setting);
 
         const value = await this.settingsRepository.toggleFlag(
+            actor.botId,
             setting.name,
             setting.defaultValue,
             actor._id,
@@ -157,6 +166,7 @@ export class SettingsService {
         }
 
         const value = await this.settingsRepository.toggleChoice(
+            actor.botId,
             setting.name,
             choice,
             setting.defaultValue,
@@ -168,8 +178,19 @@ export class SettingsService {
 
     async refresh(): Promise<void> {
         const documents = await this.settingsRepository.findAll();
+        const values = new Map<string, Map<string, unknown>>();
 
-        this.values = new Map(documents.map(({ _id, value }) => [_id, value]));
+        for (const { botId, name, value } of documents) {
+            values.set(
+                botId,
+                (values.get(botId) ?? new Map<string, unknown>()).set(
+                    name,
+                    value,
+                ),
+            );
+        }
+
+        this.values = values;
     }
 
     startRefresh(): void {
@@ -189,7 +210,7 @@ export class SettingsService {
         this.access.assert(
             actor,
             "update",
-            subject("Setting", { _id: setting.name }),
+            subject("Setting", { botId: actor.botId, name: setting.name }),
         );
     }
 
@@ -198,7 +219,13 @@ export class SettingsService {
         setting: Setting,
         value: unknown,
     ): Promise<void> {
-        this.values.set(setting.name, value);
+        this.values.set(
+            actor.botId,
+            (this.values.get(actor.botId) ?? new Map<string, unknown>()).set(
+                setting.name,
+                value,
+            ),
+        );
         this.log.info(
             { setting: setting.name, value, userId: actor._id },
             "Setting changed",

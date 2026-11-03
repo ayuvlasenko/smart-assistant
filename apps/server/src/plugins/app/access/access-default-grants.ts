@@ -32,8 +32,8 @@ export default fp(
             title: (t) => t("access:section"),
             settings: [defaultGrants],
         });
-        accessService.useDefaultGrants(() =>
-            settingsService.read(defaultGrants),
+        accessService.useDefaultGrants((botId) =>
+            settingsService.read(defaultGrants, botId),
         );
     },
     {

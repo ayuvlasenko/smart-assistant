@@ -16,12 +16,13 @@ export class SettingsRepository {
     }
 
     async save(
+        botId: string,
         name: string,
         value: unknown,
         updatedBy: ObjectId,
     ): Promise<void> {
         await this.collection().updateOne(
-            { _id: name },
+            { botId, name },
             {
                 $set: { value, updatedBy, updatedAt: new Date() },
                 $inc: { version: 1 },
@@ -31,16 +32,18 @@ export class SettingsRepository {
     }
 
     async toggleFlag(
+        botId: string,
         name: string,
         defaultValue: boolean,
         updatedBy: ObjectId,
     ): Promise<unknown> {
-        return this.update(name, updatedBy, {
+        return this.update(botId, name, updatedBy, {
             $not: [{ $ifNull: ["$value", defaultValue] }],
         });
     }
 
     async toggleChoice(
+        botId: string,
         name: string,
         choice: string,
         defaultValue: string[],
@@ -50,7 +53,7 @@ export class SettingsRepository {
             $cond: [{ $isArray: "$value" }, "$value", defaultValue],
         };
 
-        return this.update(name, updatedBy, {
+        return this.update(botId, name, updatedBy, {
             $cond: [
                 { $in: [choice, current] },
                 { $setDifference: [current, [choice]] },
@@ -60,12 +63,13 @@ export class SettingsRepository {
     }
 
     private async update(
+        botId: string,
         name: string,
         updatedBy: ObjectId,
         value: Document,
     ): Promise<unknown> {
         const setting = await this.collection().findOneAndUpdate(
-            { _id: name },
+            { botId, name },
             [
                 {
                     $set: {

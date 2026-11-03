@@ -20,6 +20,7 @@ export interface PokerRound {
 }
 
 export interface PokerRoomEntity extends BaseEntity {
+    botId: string;
     token: string;
     createdBy: ObjectId;
     title?: string;
@@ -84,5 +85,23 @@ export function listActivePokerParticipants(
 ): PokerParticipant[] {
     return room.participants.filter(
         (participant) => !isPokerParticipantIdle(room, participant),
+    );
+}
+
+export function findPokerParticipant(
+    room: PokerRoomEntity,
+    userId: ObjectId,
+): PokerParticipant | undefined {
+    return room.participants.find((participant) =>
+        participant.userId.equals(userId),
+    );
+}
+
+export function hasEveryPokerParticipantVoted(room: PokerRoomEntity): boolean {
+    const active = listActivePokerParticipants(room);
+
+    return (
+        active.length > 0 &&
+        active.every(({ userId }) => room.round.votes[userId.toHexString()])
     );
 }

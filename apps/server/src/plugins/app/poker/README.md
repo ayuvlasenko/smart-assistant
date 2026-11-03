@@ -72,6 +72,7 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
 ```json
 {
     "_id": "6710a3…",
+    "botId": "8123456789",
     "token": "2V0ICkuAaR3tX2xuOiiHow",
     "createdBy": "66f1c2…",
     "title": "Sprint 42",
@@ -128,7 +129,7 @@ Every change also sets `lastActivityAt` and increments `version`.
 **Walk-through.**
 
 1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets the `/start` answer.
-2. The service loads the room by token. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
+2. The service loads the room by the bot of the user and the token, so a link of another bot gives `notFound` too. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
 3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
 4. The update filter requires an open room, `participants.userId` without the user, no element at the index `maxParticipants - 1` of `participants`, and `participants.emoji` without the emoji. A match gives `joined` and emits `poker.roomChanged`.
 5. A miss goes back to step 2. After 41 attempts, one more than the pool, the service throws.

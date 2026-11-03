@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
+import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import {
@@ -67,9 +68,9 @@ void describe("SettingsService", () => {
     void it("reads the default value of a setting nobody changed", async (t) => {
         const settingsService = await buildSettings(t);
 
-        assert.equal(settingsService.read(flag), true);
-        assert.equal(settingsService.read(limit), 5);
-        assert.deepEqual(settingsService.read(colours), []);
+        assert.equal(settingsService.read(flag, testTelegramBotId), true);
+        assert.equal(settingsService.read(limit, testTelegramBotId), 5);
+        assert.deepEqual(settingsService.read(colours, testTelegramBotId), []);
     });
 
     void it("stores a value of an admin and shows it to another pod after a refresh", async (t) => {
@@ -79,13 +80,13 @@ void describe("SettingsService", () => {
         await writer.write(admin, limit, 8);
         await writer.write(admin, colours, ["blue"]);
 
-        assert.equal(writer.read(limit), 8);
-        assert.equal(reader.read(limit), 5);
+        assert.equal(writer.read(limit, testTelegramBotId), 8);
+        assert.equal(reader.read(limit, testTelegramBotId), 5);
 
         await reader.refresh();
 
-        assert.equal(reader.read(limit), 8);
-        assert.deepEqual(reader.read(colours), ["blue"]);
+        assert.equal(reader.read(limit, testTelegramBotId), 8);
+        assert.deepEqual(reader.read(colours, testTelegramBotId), ["blue"]);
     });
 
     void it("toggles against the stored value, also on a pod whose snapshot is stale", async (t) => {
@@ -97,14 +98,17 @@ void describe("SettingsService", () => {
         await first.toggle(admin, flag);
         await stale.toggle(admin, flag);
 
-        assert.deepEqual(stale.read(colours), ["red", "blue"]);
-        assert.equal(stale.read(flag), true);
+        assert.deepEqual(stale.read(colours, testTelegramBotId), [
+            "red",
+            "blue",
+        ]);
+        assert.equal(stale.read(flag, testTelegramBotId), true);
 
         await stale.toggleChoice(admin, colours, "red");
         await first.refresh();
 
-        assert.deepEqual(first.read(colours), ["blue"]);
-        assert.equal(first.read(flag), true);
+        assert.deepEqual(first.read(colours, testTelegramBotId), ["blue"]);
+        assert.equal(first.read(flag, testTelegramBotId), true);
         await assert.rejects(
             first.toggleChoice(admin, colours, "green"),
             /not an option/,
@@ -130,22 +134,48 @@ void describe("SettingsService", () => {
             settingsService.write(admin, colours, ["green"]),
             /not valid/,
         );
-        assert.equal(settingsService.read(flag), true);
+        assert.equal(settingsService.read(flag, testTelegramBotId), true);
+    });
+
+    void it("keeps the values of every bot apart", async (t) => {
+        const settingsService = await buildSettings(t);
+        const otherAdmin = buildUserEntity({
+            botId: "42",
+            grants: [adminGrant],
+        });
+
+        await settingsService.write(admin, limit, 8);
+        await settingsService.write(otherAdmin, limit, 3);
+        await settingsService.toggle(otherAdmin, flag);
+
+        assert.equal(settingsService.read(limit, testTelegramBotId), 8);
+        assert.equal(settingsService.read(flag, testTelegramBotId), true);
+        assert.equal(settingsService.read(limit, "42"), 3);
+        assert.equal(settingsService.read(flag, "42"), false);
+
+        await settingsService.refresh();
+
+        assert.equal(settingsService.read(limit, testTelegramBotId), 8);
+        assert.equal(settingsService.read(limit, "42"), 3);
     });
 
     void it("drops stored choices that are no longer offered and falls back from a broken value", async (t) => {
         const settingsService = await buildSettings(t);
 
-        await mongo
-            .collection<{ _id: string; value: unknown }>("settings")
-            .insertMany([
-                { _id: colours.name, value: ["red", "removed"] },
-                { _id: limit.name, value: "many" },
-            ]);
+        await mongo.collection("settings").insertMany([
+            {
+                botId: testTelegramBotId,
+                name: colours.name,
+                value: ["red", "removed"],
+            },
+            { botId: testTelegramBotId, name: limit.name, value: "many" },
+        ]);
         await settingsService.refresh();
 
-        assert.deepEqual(settingsService.read(colours), ["red"]);
-        assert.equal(settingsService.read(limit), 5);
+        assert.deepEqual(settingsService.read(colours, testTelegramBotId), [
+            "red",
+        ]);
+        assert.equal(settingsService.read(limit, testTelegramBotId), 5);
     });
 });
 
