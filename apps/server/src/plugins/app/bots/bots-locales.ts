@@ -38,6 +38,8 @@ const en = {
     otherBot: "This token belongs to another bot.",
     tokenReplaced: "The token is replaced.",
     botMissing: "This bot no longer exists.",
+    ownerInviteUnavailable:
+        "The bot is stopped, or Telegram does not accept its token, so it has no owner link now. Start the bot or send a new token with 🔄 Token.",
 } as const;
 
 export const botsLocales: Locales<typeof en> = {
@@ -81,6 +83,8 @@ export const botsLocales: Locales<typeof en> = {
         otherBot: "Цей токен належить іншому боту.",
         tokenReplaced: "Токен замінено.",
         botMissing: "Цього бота більше немає.",
+        ownerInviteUnavailable:
+            "Бот зупинено або Telegram не приймає його токен, тому посилання власника зараз немає. Запустіть бота або надішліть новий токен через 🔄 Токен.",
     },
     ru: {
         section: "Боты",
@@ -121,6 +125,8 @@ export const botsLocales: Locales<typeof en> = {
         otherBot: "Этот токен принадлежит другому боту.",
         tokenReplaced: "Токен заменён.",
         botMissing: "Этого бота больше нет.",
+        ownerInviteUnavailable:
+            "Бот остановлен или Telegram не принимает его токен, поэтому ссылки владельца сейчас нет. Запустите бота или отправьте новый токен через 🔄 Токен.",
     },
 };
 

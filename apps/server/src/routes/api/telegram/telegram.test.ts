@@ -255,6 +255,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             bots: [
                 {
                     botId: testTelegramBotId,
+                    status: "refreshed",
                     webhookUrl: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
                         testTelegramBotId,
@@ -310,7 +311,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         assert.equal(telegramApiService.getMe.mock.callCount(), 1);
     });
 
-    void it("returns 500 when Telegram rejects the webhook", async (t) => {
+    void it("answers 502 with the error of the bot when Telegram rejects the webhook", async (t) => {
         const { app } = await buildTestApp({
             t,
             environment: "preview",
@@ -329,7 +330,16 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             url: "/api/telegram/webhook/refresh",
         });
 
-        assert.equal(response.statusCode, 500);
+        assert.equal(response.statusCode, 502);
+        assert.deepEqual(response.json(), {
+            bots: [
+                {
+                    botId: testTelegramBotId,
+                    status: "failed",
+                    error: "Telegram setWebhook failed: bad webhook",
+                },
+            ],
+        });
     });
 
     void it("keeps the webhook when the bot lookup fails", async (t) => {
@@ -351,7 +361,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             url: "/api/telegram/webhook/refresh",
         });
 
-        assert.equal(response.statusCode, 500);
+        assert.equal(response.statusCode, 502);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
 

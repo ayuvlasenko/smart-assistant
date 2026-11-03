@@ -14,9 +14,9 @@ import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
-import { TelegramBotService } from "./telegram-bot-service.js";
 import { TelegramBot } from "./telegram-bots.js";
 import { TelegramChats } from "./telegram-chats.js";
+import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
     BannedTelegramUserError,
     DuplicateTelegramUpdateError,
@@ -53,7 +53,7 @@ export class TelegramUpdateHandler {
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly telegramBotService: TelegramBotService;
+    private readonly telegramCommandMenus: TelegramCommandMenus;
 
     constructor(
         log: FastifyBaseLogger,
@@ -64,7 +64,7 @@ export class TelegramUpdateHandler {
         lockService: LockService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
-        telegramBotService: TelegramBotService,
+        telegramCommandMenus: TelegramCommandMenus,
     ) {
         this.log = log;
         this.telegramRouter = telegramRouter;
@@ -74,7 +74,7 @@ export class TelegramUpdateHandler {
         this.lockService = lockService;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
-        this.telegramBotService = telegramBotService;
+        this.telegramCommandMenus = telegramCommandMenus;
     }
 
     async handle(bot: TelegramBot, update: Update): Promise<void> {
@@ -128,7 +128,7 @@ export class TelegramUpdateHandler {
 
         run.language = user.languageCode;
 
-        await this.telegramBotService.syncCommands(user);
+        await this.telegramCommandMenus.sync(user);
         await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
     }
@@ -317,7 +317,9 @@ export default fp(
                 fastify.getDecorator<LockService>("lockService"),
                 fastify.getDecorator<I18nService>("i18nService"),
                 fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-                fastify.getDecorator<TelegramBotService>("telegramBotService"),
+                fastify.getDecorator<TelegramCommandMenus>(
+                    "telegramCommandMenus",
+                ),
             ),
         );
     },
@@ -327,8 +329,8 @@ export default fp(
             "app-logger",
             "lock-service",
             "i18n-service",
-            "telegram-bot-service",
             "telegram-chats",
+            "telegram-command-menus",
             "telegram-metrics",
             "telegram-router",
             "users-repository",

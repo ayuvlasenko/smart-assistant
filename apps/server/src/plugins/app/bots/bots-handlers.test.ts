@@ -203,6 +203,65 @@ void describe("/bots", () => {
         );
     });
 
+    void it("offers no owner link for a stopped bot and redraws an open one as unavailable", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657007 });
+        const actor = await allowAdmin(bot, admin);
+
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, en.addButton);
+        await bot.sendText(admin, childToken);
+        await bot.botsService.stop(actor, "42");
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await bot.readMessageTexts(admin.id))
+                .at(-1)
+                ?.includes(en.ownerInviteUnavailable),
+        );
+        assert.equal(
+            await bot.botsService.createOwnerInvite(actor, "42"),
+            null,
+        );
+        assert.equal(
+            await mongo.collection("invites").countDocuments({ botId: "42" }),
+            1,
+        );
+
+        await bot.pressButton(admin, en.backButton);
+        await bot.pressButton(admin, childLabel);
+
+        assert.ok(
+            !(await bot.readButtonLabels(admin.id)).includes(
+                en.ownerInviteButton,
+            ),
+        );
+    });
+
+    void it("shows the owner link as unavailable when Telegram rejects the token of the bot", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657008 });
+        const actor = await allowAdmin(bot, admin);
+
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, en.addButton);
+        await bot.sendText(admin, childToken);
+        bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => ({
+            ok: false,
+            error_code: 401,
+            description: "Unauthorized",
+        }));
+        await bot.cache.delete("telegram:42:username");
+        await bot.botsService.reconnect(actor, "42");
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await bot.readMessageTexts(admin.id))
+                .at(-1)
+                ?.includes(en.ownerInviteUnavailable),
+        );
+    });
+
     void it("refuses a token that it can't store, one that Telegram rejects and one of another bot", async (t) => {
         const bot = await buildBot(t);
         const keyless = await buildBotsBot({ databaseName, mongoClient, t });

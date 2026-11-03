@@ -26,10 +26,22 @@ const telegramWebhookParamsSchema = Type.Object({
     botId: Type.String(),
 });
 
-const telegramBotWebhookSchema = Type.Object({
-    botId: Type.String(),
-    webhookUrl: Type.String(),
-    botUrl: Type.String(),
+const telegramBotWebhookSchema = Type.Union([
+    Type.Object({
+        botId: Type.String(),
+        status: Type.Literal("refreshed"),
+        webhookUrl: Type.String(),
+        botUrl: Type.String(),
+    }),
+    Type.Object({
+        botId: Type.String(),
+        status: Type.Literal("failed"),
+        error: Type.String(),
+    }),
+]);
+
+const telegramBotWebhooksSchema = Type.Object({
+    bots: Type.Array(telegramBotWebhookSchema),
 });
 
 const telegramUpdateSchema = Type.Unsafe<Update>({ type: "object" });
@@ -116,13 +128,22 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                     summary:
                         "Point the webhooks of the preview bots at this environment",
                     response: {
-                        200: Type.Object({
-                            bots: Type.Array(telegramBotWebhookSchema),
-                        }),
+                        200: telegramBotWebhooksSchema,
+                        502: telegramBotWebhooksSchema,
                     },
                 },
             },
-            async () => ({ bots: await telegramBotService.refreshWebhooks() }),
+            async (request, reply) => {
+                const bots = await telegramBotService.refreshWebhooks();
+
+                return reply
+                    .code(
+                        bots.some(({ status }) => status === "failed")
+                            ? 502
+                            : 200,
+                    )
+                    .send({ bots });
+            },
         );
     }
 };

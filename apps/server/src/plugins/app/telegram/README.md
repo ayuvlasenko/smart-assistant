@@ -264,8 +264,9 @@ flowchart TD
 
     domainEvents["Domain events<br/>(emittery)"] -->|"deliver, publish"| chats
 
-    bot[TelegramBotService] -->|"setWebhook, setMyCommands"| api
-    bot -->|listCommands| router
+    bot[TelegramBotService] -->|setWebhook| api
+    menus[TelegramCommandMenus] -->|setMyCommands| api
+    menus -->|listCommands| router
 ```
 
 ## Bots and webhooks
@@ -747,13 +748,13 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **The command menu.** The guards of the commands also build the menu of each chat, so a user sees only the commands the user can run.
 
-1. `TelegramBotService.syncCommands` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
+1. `TelegramCommandMenus.sync` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
 2. It lists the commands whose guard allows the user, in the user's language, and hashes the list together with the menu generation of the bot from `telegram:<botId>:commands:generation`.
 3. When the hash equals `telegram:<botId>:commands:<telegramId>`, it does nothing. Otherwise it calls `setMyCommands` with the chat scope and stores the new hash for one day.
 
 So the menu changes after a new grant, a language change, or a deploy that adds a command, and otherwise costs one API call per user at most once a day. The day only bounds the memory of the hashes: a user who comes back after it gets the same menu set again. A failed sync logs an error and does not fail the update. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set` or `failed`.
 
-**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the default menu of every bot: the commands without a guard, in every language. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their default menus, writes a new generation for every bot and returns the bots with their webhook and bot URLs. The new generation changes every hash, so each chat gets its menu again on its next update.
+**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the default menu of every bot: the commands without a guard, in every language. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their default menus, writes a new generation for every bot and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. The new generation changes every hash, so each chat gets its menu again on its next update.
 
 ## Files
 
@@ -783,7 +784,8 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                     | [Inputs](#inputs)                                           |
 | `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                        |                                                             |
 | `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                 | [Blocking scenes](#blocking-scenes)                         |
-| `telegram-bot-service.ts`                                          | The webhook, the command menus, the bot username, deep link URLs       | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs             | [Bots and webhooks](#bots-and-webhooks)                     |
+| `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                 |                                                             |
 | `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                      |                                                             |
 | `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                            |                                                             |

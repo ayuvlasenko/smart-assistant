@@ -9,13 +9,10 @@ import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramBotServiceTestApp,
-    BuildTelegramBotServiceTestAppOptions,
+    buildTwoBotsTestApp,
 } from "../../../test/telegram-bot-service-helper.js";
 import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
-import { buildUserEntity } from "../../../test/user-fixtures.js";
-import { Language } from "../i18n-service.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
-import { telegramLocales } from "./telegram-locales.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 let databaseName!: string;
@@ -35,6 +32,7 @@ before(async () => {
 
 beforeEach(async () => {
     await mongo.collection("users").deleteMany({});
+    await mongo.collection("bots").deleteMany({});
 });
 
 after(async () => {
@@ -125,7 +123,8 @@ void describe("TelegramBotService", () => {
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
 
-    void it("removes the guard and throws when Telegram rejects webhook setup", async (t) => {
+    void it("removes the guard and logs the bot when Telegram rejects webhook setup", async (t) => {
+        const logs = createLogCollector();
         const telegramApiService = buildTelegramApiServiceMock({
             t,
             setWebhookResponse: {
@@ -140,20 +139,28 @@ void describe("TelegramBotService", () => {
                 mongoClient,
                 t,
                 telegramApiService,
+                logger: logs.logger,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhooksOnStart(), {
-            name: "TelegramApiError",
-            method: "setWebhook",
-            description: "bad webhook",
-        });
+        await telegramBotService.setWebhooksOnStart();
+
         assert.equal(
             await cache.get(webhookClaimKey, webhookClaimSchema),
             undefined,
         );
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    (entry) =>
+                        entry.msg ===
+                            "Failed to set the webhook of a bot on start" &&
+                        entry.botId === testTelegramBotId,
+                ),
+        );
     });
 
-    void it("removes the guard and propagates errors when the webhook request fails", async (t) => {
+    void it("removes the guard when the webhook request fails", async (t) => {
         const telegramApiService = buildTelegramApiServiceMock({ t });
         telegramApiService.setWebhook.mock.mockImplementationOnce(async () => {
             throw new Error("network failure");
@@ -166,13 +173,86 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await assert.rejects(() => telegramBotService.setWebhooksOnStart(), {
-            message: "network failure",
-        });
+        await telegramBotService.setWebhooksOnStart();
+
         assert.equal(
             await cache.get(webhookClaimKey, webhookClaimSchema),
             undefined,
         );
+    });
+
+    void it("sets the webhooks of the other bots when one bot fails", async (t) => {
+        const failing = buildTelegramApiServiceMock({
+            t,
+            setWebhookResponse: {
+                ok: false,
+                error_code: 401,
+                description: "Unauthorized",
+            },
+        });
+        const { child, telegramBotService } = await buildTwoBotsTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            telegramApiService: failing,
+        });
+
+        await telegramBotService.setWebhooksOnStart();
+
+        assert.equal(failing.setWebhook.mock.callCount(), 1);
+        assert.equal(child.setWebhook.mock.callCount(), 1);
+    });
+
+    void it("refreshes the other bots when one bot fails and reports each bot", async (t) => {
+        const failing = buildTelegramApiServiceMock({
+            t,
+            getMeResponse: {
+                ok: false,
+                error_code: 401,
+                description: "Unauthorized",
+            },
+        });
+        const { child, telegramBotService } = await buildTwoBotsTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            telegramApiService: failing,
+            environment: "preview",
+        });
+
+        const webhooks = await telegramBotService.refreshWebhooks();
+
+        assert.deepEqual(
+            webhooks.map(({ botId, status }) => ({ botId, status })),
+            [
+                { botId: testTelegramBotId, status: "failed" },
+                { botId: "42", status: "refreshed" },
+            ],
+        );
+        assert.equal(failing.setWebhook.mock.callCount(), 0);
+        assert.equal(child.setWebhook.mock.callCount(), 1);
+    });
+
+    void it("reports a network failure of a bot without its details", async (t) => {
+        const failing = buildTelegramApiServiceMock({ t });
+
+        failing.getMe.mock.mockImplementation(async () => {
+            throw new Error("connect ECONNREFUSED api.telegram.org");
+        });
+
+        const { telegramBotService } = await buildTwoBotsTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            telegramApiService: failing,
+            environment: "preview",
+        });
+
+        assert.deepEqual((await telegramBotService.refreshWebhooks())[0], {
+            botId: testTelegramBotId,
+            status: "failed",
+            error: "Telegram request failed",
+        });
     });
 
     void it("doesn't set the webhook on start in preview", async (t) => {
@@ -231,223 +311,6 @@ void describe("TelegramBotService", () => {
     });
 });
 
-void describe("TelegramBotService commands on start", () => {
-    void it("sets localized commands for every language on production", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                registerRoutes: (router) => {
-                    router.command("help", async () => undefined, {
-                        description: (translate) =>
-                            translate("telegram:nothingToCancel"),
-                    });
-                },
-            });
-
-        await telegramBotService.setCommandsOnStart();
-
-        assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls.map(
-                (call) => call.arguments,
-            ),
-            [
-                [{ commands: buildExpectedCommands("en") }],
-                ...(["en", "uk", "ru"] as const).map((language) => [
-                    {
-                        commands: buildExpectedCommands(language),
-                        language_code: language,
-                    },
-                ]),
-            ],
-        );
-    });
-
-    void it("doesn't touch commands on preview", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                environment: "preview",
-            });
-
-        await telegramBotService.setCommandsOnStart();
-
-        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
-    });
-});
-
-void describe("TelegramBotService chat commands", () => {
-    void it("keeps guarded commands out of the menu on start", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
-
-        await telegramBotService.setCommandsOnStart();
-
-        assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls[0]?.arguments[0]
-                .commands,
-            buildExpectedCommands("en"),
-        );
-    });
-
-    void it("counts a set menu and an unchanged one", async (t) => {
-        const { metrics, telegramBotService } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
-        const user = buildUserEntity({ telegramId: "987654609" });
-
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands(user);
-
-        const output = await metrics.metrics();
-
-        assert.match(
-            output,
-            /^telegram_command_menu_syncs_total\{result="set"\} 1$/m,
-        );
-        assert.match(
-            output,
-            /^telegram_command_menu_syncs_total\{result="unchanged"\} 1$/m,
-        );
-    });
-
-    void it("sets the commands that the user's grants allow in the user's language for the chat", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
-
-        await telegramBotService.syncCommands(
-            buildUserEntity({
-                telegramId: "987654601",
-                languageCode: "uk",
-                grants: ["vip"],
-            }),
-        );
-        await telegramBotService.syncCommands(
-            buildUserEntity({ telegramId: "987654602" }),
-        );
-
-        assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls.map(
-                (call) => call.arguments,
-            ),
-            [
-                [
-                    {
-                        commands: [
-                            ...buildExpectedCommands("uk"),
-                            {
-                                command: "secret",
-                                description: telegramLocales.uk.error,
-                            },
-                        ],
-                        scope: { type: "chat", chat_id: 987654601 },
-                    },
-                ],
-                [
-                    {
-                        commands: buildExpectedCommands("en"),
-                        scope: { type: "chat", chat_id: 987654602 },
-                    },
-                ],
-            ],
-        );
-    });
-
-    void it("sets the chat commands again only when they change", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
-        const user = buildUserEntity({ telegramId: "987654603" });
-
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands({ ...user, grants: ["vip"] });
-        await telegramBotService.syncCommands({ ...user, languageCode: "ru" });
-
-        assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls.map(
-                (call) => call.arguments[0].commands.length,
-            ),
-            [2, 3, 2],
-        );
-    });
-
-    void it("doesn't set chat commands for banned users", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
-
-        await telegramBotService.syncCommands(
-            buildUserEntity({ telegramId: "987654604", isBanned: true }),
-        );
-
-        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
-    });
-
-    void it("sets the chat commands on preview again after the webhook is refreshed", async (t) => {
-        const { telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                ...buildMenuAppOptions(t),
-                environment: "preview",
-            });
-        const user = buildUserEntity({ telegramId: "987654605" });
-        const readScopes = () =>
-            telegramApiService.setMyCommands.mock.calls.map(
-                (call) => call.arguments[0].scope?.type ?? "default",
-            );
-
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands(user);
-
-        assert.deepEqual(readScopes(), ["chat"]);
-
-        await telegramBotService.refreshWebhooks();
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands(user);
-
-        assert.deepEqual(readScopes(), [
-            "chat",
-            "default",
-            "default",
-            "default",
-            "default",
-            "chat",
-        ]);
-    });
-
-    void it("logs a rejected chat menu, keeps going and tries again next time", async (t) => {
-        const logs = createLogCollector();
-        const telegramApiService = buildTelegramApiServiceMock({ t });
-        const { telegramBotService } = await buildTelegramBotServiceTestApp({
-            ...buildMenuAppOptions(t),
-            telegramApiService,
-            logger: logs.logger,
-        });
-        const user = buildUserEntity({ telegramId: "987654606" });
-
-        telegramApiService.setMyCommands.mock.mockImplementationOnce(
-            async () => ({
-                ok: false,
-                error_code: 400,
-                description: "Bad Request",
-            }),
-        );
-
-        await telegramBotService.syncCommands(user);
-        await telegramBotService.syncCommands(user);
-
-        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 2);
-        assert.ok(
-            logs
-                .readEntries()
-                .some(
-                    (entry) =>
-                        entry.msg === "Failed to set telegram chat commands",
-                ),
-        );
-    });
-});
-
 void describe("telegram plugin on listen", () => {
     void it("sets the webhook once on production", async (t) => {
         const logs = createLogCollector();
@@ -458,9 +321,14 @@ void describe("telegram plugin on listen", () => {
         });
 
         await app.listen({ port: 0, host: "127.0.0.1" });
-        await logs.waitForEntry(
-            (entry) => entry.msg === "Telegram commands set successfully",
-        );
+        await Promise.all([
+            logs.waitForEntry(
+                (entry) => entry.msg === "Telegram webhook set successfully",
+            ),
+            logs.waitForEntry(
+                (entry) => entry.msg === "Telegram commands set successfully",
+            ),
+        ]);
 
         assert.equal(telegramApiService.getMe.mock.callCount(), 0);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
@@ -485,36 +353,3 @@ void describe("telegram plugin on listen", () => {
         assert.equal(skipEntry.module, "telegram");
     });
 });
-
-function buildMenuAppOptions(
-    t: BuildTelegramBotServiceTestAppOptions["t"],
-): BuildTelegramBotServiceTestAppOptions {
-    return {
-        databaseName,
-        mongoClient,
-        t,
-        registerRoutes: (router) => {
-            router.command("help", async () => undefined, {
-                description: (translate) =>
-                    translate("telegram:nothingToCancel"),
-            });
-            router.command("secret", async () => undefined, {
-                description: (translate) => translate("telegram:error"),
-                guard: (user) => user.grants.includes("vip"),
-            });
-        },
-    };
-}
-
-function buildExpectedCommands(language: Language) {
-    return [
-        {
-            command: "cancel",
-            description: telegramLocales[language].cancelCommand,
-        },
-        {
-            command: "help",
-            description: telegramLocales[language].nothingToCancel,
-        },
-    ];
-}

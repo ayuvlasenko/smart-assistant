@@ -12,6 +12,7 @@ import { InviteEntity } from "../invites/invite-entity.js";
 import { InvitesService } from "../invites/invites-service.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
 import { TelegramBots } from "../telegram/telegram-bots.js";
+import { TelegramCommandMenus } from "../telegram/telegram-command-menus.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotEntity, BotsSubjects, isBotToken } from "./bot-entity.js";
 import { BotsEvents } from "./bots-events.js";
@@ -40,6 +41,7 @@ export class BotsService {
     private readonly botsRegistry: BotsRegistry;
     private readonly telegramBots: TelegramBots;
     private readonly telegramBotService: TelegramBotService;
+    private readonly telegramCommandMenus: TelegramCommandMenus;
     private readonly invitesService: InvitesService;
     private readonly access: AccessControl<BotsSubjects>;
     private readonly eventEmitter: Emittery<BotsEvents>;
@@ -50,6 +52,7 @@ export class BotsService {
         botsRegistry: BotsRegistry,
         telegramBots: TelegramBots,
         telegramBotService: TelegramBotService,
+        telegramCommandMenus: TelegramCommandMenus,
         invitesService: InvitesService,
         access: AccessControl<BotsSubjects>,
         eventEmitter: Emittery<BotsEvents>,
@@ -59,6 +62,7 @@ export class BotsService {
         this.botsRegistry = botsRegistry;
         this.telegramBots = telegramBots;
         this.telegramBotService = telegramBotService;
+        this.telegramCommandMenus = telegramCommandMenus;
         this.invitesService = invitesService;
         this.access = access;
         this.eventEmitter = eventEmitter;
@@ -67,6 +71,10 @@ export class BotsService {
 
     isRoot(botId: string): boolean {
         return botId === this.botsRegistry.rootId;
+    }
+
+    isServed(botId: string): boolean {
+        return this.telegramBots.find(botId) !== undefined;
     }
 
     listModules(): readonly AccessSection[] {
@@ -153,7 +161,7 @@ export class BotsService {
     ): Promise<InviteEntity | null> {
         this.access.assert(actor, "update", "Bot");
 
-        if (!(await this.botsRepository.findOneById(botId))) {
+        if (this.isRoot(botId) || !this.isServed(botId)) {
             return null;
         }
 
@@ -304,7 +312,7 @@ export class BotsService {
 
         try {
             await this.telegramBotService.setWebhook(bot);
-            await this.telegramBotService.refreshCommands(bot);
+            await this.telegramCommandMenus.refresh(bot);
         } catch (err) {
             this.log.error(
                 { err, botId },
@@ -321,7 +329,7 @@ export class BotsService {
         }
 
         try {
-            await this.telegramBotService.refreshCommands(bot);
+            await this.telegramCommandMenus.refresh(bot);
         } catch (err) {
             this.log.error(
                 { err, botId },
@@ -344,6 +352,9 @@ export default fp(
                 fastify.getDecorator<BotsRegistry>("botsRegistry"),
                 fastify.getDecorator<TelegramBots>("telegramBots"),
                 fastify.getDecorator<TelegramBotService>("telegramBotService"),
+                fastify.getDecorator<TelegramCommandMenus>(
+                    "telegramCommandMenus",
+                ),
                 fastify.getDecorator<InvitesService>("invitesService"),
                 fastify
                     .getDecorator<AccessService>("accessService")
@@ -366,6 +377,7 @@ export default fp(
             "invites-service",
             "telegram-bot-service",
             "telegram-bots",
+            "telegram-command-menus",
         ],
     },
 );

@@ -1,5 +1,6 @@
 import { InlineKeyboardButton, WebhookInfo } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
+import { TelegramApiError } from "../telegram/telegram-errors.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
@@ -77,7 +78,7 @@ export async function renderBot(
                 scene.screenButton(t("bots:modulesButton"), "modules", {
                     botId: bot._id,
                 }),
-                ...(isRoot
+                ...(isRoot || !botsService.isServed(bot._id)
                     ? []
                     : [
                           scene.button(
@@ -145,7 +146,26 @@ export async function renderBotOwnerInvite(
         return renderMissing(t, scene);
     }
 
-    const url = await resolveInviteUrl(bot._id, token);
+    const url = botsService.isServed(bot._id)
+        ? await resolveInviteUrl(bot._id, token).catch((err: unknown) => {
+              if (err instanceof TelegramApiError) {
+                  ctx.log.warn(
+                      { err, botId: bot._id },
+                      "Failed to build the owner link of a bot",
+                  );
+                  return undefined;
+              }
+
+              throw err;
+          })
+        : undefined;
+
+    if (!url) {
+        return buildBotsMessage(
+            [escapeTelegramHtml(t("bots:ownerInviteUnavailable"))],
+            [[scene.backButton(t("bots:backButton"))]],
+        );
+    }
 
     return buildBotsMessage(
         [

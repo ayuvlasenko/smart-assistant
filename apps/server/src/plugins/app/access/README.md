@@ -142,19 +142,22 @@ For a list, put `accessibleBy` into the query. It takes the rules of the user fo
 2. Register one section with the domain's grants in the domain's plugin, with the titles in `<domain>-locales.ts`. A feature domain passes its subjects as the second argument, so a bot can turn it off, see [Modules](#modules):
 
     ```ts
-    access.register({
-        name: "reports",
-        title: (t) => t("reports:section"),
-        grants: [
-            {
-                name: "reports.read",
-                title: (t) => t("reports:readGrant"),
-                define: ({ can }) => {
-                    can("read", "Report");
+    access.register(
+        {
+            name: "reports",
+            title: (t) => t("reports:section"),
+            grants: [
+                {
+                    name: "reports.read",
+                    title: (t) => t("reports:readGrant"),
+                    define: ({ can }) => {
+                        can("read", "Report");
+                    },
                 },
-            },
-        ],
-    });
+            ],
+        },
+        { subjects: ["Report"] },
+    );
     ```
 
 3. Put `guard: access.guard("read", "Report")` on every command, deep link, scene, scene button and scene input that needs it.
