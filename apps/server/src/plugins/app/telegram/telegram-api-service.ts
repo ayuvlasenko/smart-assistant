@@ -18,6 +18,8 @@ export type TelegramApiClient = Pick<
     TelegramApiService,
     | "getMe"
     | "setWebhook"
+    | "deleteWebhook"
+    | "getWebhookInfo"
     | "sendMessage"
     | "answerCallbackQuery"
     | "setMyCommands"
@@ -76,6 +78,14 @@ export class TelegramApiService {
 
     setWebhook(...args: TelegramMethodArgs<"setWebhook">) {
         return this.call("setWebhook", ...args);
+    }
+
+    deleteWebhook(...args: TelegramMethodArgs<"deleteWebhook">) {
+        return this.call("deleteWebhook", ...args);
+    }
+
+    getWebhookInfo() {
+        return this.call("getWebhookInfo");
     }
 
     sendMessage(...args: TelegramMethodArgs<"sendMessage">) {
@@ -200,7 +210,10 @@ export class TelegramApiService {
         params: unknown,
         signal: AbortSignal,
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
-        const stopRequest = this.telegramMetrics.startApiRequest(method);
+        const stopRequest = this.telegramMetrics.startApiRequest(
+            this.botId,
+            method,
+        );
         let result: ApiResponse<TelegramMethodResult<TMethod>>;
 
         try {

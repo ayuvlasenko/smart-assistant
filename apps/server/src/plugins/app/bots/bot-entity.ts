@@ -23,3 +23,7 @@ export interface BotsSubjects {
 export function botIdOfToken(token: string): string {
     return token.split(":", 1).join("");
 }
+
+export function isBotToken(text: string): boolean {
+    return /^\d{1,20}:[\w-]{30,60}$/.test(text);
+}

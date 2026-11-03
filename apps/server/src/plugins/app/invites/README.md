@@ -73,6 +73,8 @@ flowchart TD
     exists -->|no| create["create invite: token,<br/>grants [admin], maxUses 1"]
 ```
 
+Every other bot gets its first admin from an owner link: `InvitesService.createOwnerInvite` creates an invite of that bot with `admin` and `maxUses: 1`, without `createdBy`, see [Adding a bot](../bots/README.md#adding-a-bot). The service checks no actor there, because the actor is an admin of the root bot and access keeps the invites of the new bot away from it; `BotsService` checks `update Bot` first.
+
 A bootstrap invite is an invite without `createdBy`. So the token works once, for the first user, while no admin exists; a changed or removed token, or an admin from any source, closes every older bootstrap invite. A token that comes back before anybody used it reopens its invite; a token that was used stays closed, and the server logs a warning on every start until `INVITE_TOKEN` changes. Nothing makes the check and the insert atomic: two instances that start at the same moment against a database without an admin can both try to insert, and the unique index on `token` stops the second one.
 
 ## Scene

@@ -25,7 +25,7 @@ import {
     InviteWithoutGrantsError,
 } from "./invites-errors.js";
 import { InvitesEvents } from "./invites-events.js";
-import { InvitesRepository } from "./invites-repository.js";
+import { InviteData, InvitesRepository } from "./invites-repository.js";
 
 export interface InviteDraft {
     grants: string[];
@@ -110,17 +110,11 @@ export class InvitesService {
             }
         }
 
-        const invite = await this.invitesRepository.create({
-            token: randomBytes(inviteTokenBytes).toString("base64url"),
-            ...data,
-        });
+        return this.insert(data);
+    }
 
-        await this.eventEmitter.emit("invites.inviteChanged", {
-            botId: actor.botId,
-            inviteId: invite._id,
-        });
-
-        return invite;
+    createOwnerInvite(botId: string): Promise<InviteEntity> {
+        return this.insert({ botId, grants: [adminGrant], maxUses: 1 });
     }
 
     async activate(
@@ -262,6 +256,22 @@ export class InvitesService {
             invite: await this.prepareBootstrapInvite(botId, token, now),
             revoked,
         };
+    }
+
+    private async insert(
+        data: Omit<InviteData, "token">,
+    ): Promise<InviteEntity> {
+        const invite = await this.invitesRepository.create({
+            token: randomBytes(inviteTokenBytes).toString("base64url"),
+            ...data,
+        });
+
+        await this.eventEmitter.emit("invites.inviteChanged", {
+            botId: invite.botId,
+            inviteId: invite._id,
+        });
+
+        return invite;
     }
 
     private async prepareBootstrapInvite(

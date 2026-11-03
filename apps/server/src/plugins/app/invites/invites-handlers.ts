@@ -20,7 +20,7 @@ import {
 } from "./invites-scene.js";
 import { InvitesService } from "./invites-service.js";
 
-const inviteDeepLinkName = "invite";
+export const inviteDeepLinkName = "invite";
 
 export default fp(
     async function (fastify: FastifyInstance) {

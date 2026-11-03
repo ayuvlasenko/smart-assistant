@@ -32,7 +32,7 @@ void describe("TelegramApiService", () => {
 
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="setMyCommands",result="ok",error_code=""\} 1$/m,
+            /^telegram_api_requests_total\{method="setMyCommands",result="ok",error_code="",bot="123"\} 1$/m,
         );
     });
 
@@ -52,7 +52,7 @@ void describe("TelegramApiService", () => {
         assert.equal(result.ok, false);
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="sendMessage",result="error",error_code="403"\} 1$/m,
+            /^telegram_api_requests_total\{method="sendMessage",result="error",error_code="403",bot="123"\} 1$/m,
         );
         assert.ok(
             logs
@@ -78,7 +78,7 @@ void describe("TelegramApiService", () => {
         });
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code=""\} 1$/m,
+            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code="",bot="123"\} 1$/m,
         );
     });
 
@@ -90,7 +90,7 @@ void describe("TelegramApiService", () => {
         });
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code=""\} 1$/m,
+            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code="",bot="123"\} 1$/m,
         );
     });
 
@@ -159,11 +159,11 @@ void describe("TelegramApiService", () => {
 
         assert.match(
             output,
-            /^telegram_api_requests_total\{method="deleteMessage",result="rate_limited",error_code="429"\} 1$/m,
+            /^telegram_api_requests_total\{method="deleteMessage",result="rate_limited",error_code="429",bot="123"\} 1$/m,
         );
         assert.match(
             output,
-            /^telegram_api_requests_total\{method="deleteMessage",result="ok",error_code=""\} 1$/m,
+            /^telegram_api_requests_total\{method="deleteMessage",result="ok",error_code="",bot="123"\} 1$/m,
         );
         assert.match(
             output,
@@ -194,7 +194,7 @@ void describe("TelegramApiService", () => {
         await assert.rejects(request, reason);
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="getMe",result="aborted",error_code=""\} 1$/m,
+            /^telegram_api_requests_total\{method="getMe",result="aborted",error_code="",bot="123"\} 1$/m,
         );
     });
 

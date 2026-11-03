@@ -291,6 +291,8 @@ X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
 4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
+**Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the bot id in the label `bot`.
+
 **Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The bot id is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
 
 ## An incoming update
@@ -392,13 +394,13 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
-| Limit                                    | Rate         | Burst | Methods                                      |
-| ---------------------------------------- | ------------ | ----- | -------------------------------------------- |
-| `chatMessages`, `chat:<chat_id>`         | 1 per second | 20    | `send*`, `edit*`                             |
-| `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                           |
-| `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                             |
-| `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                              |
-| none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook` |
+| Limit                                    | Rate         | Burst | Methods                                                                         |
+| ---------------------------------------- | ------------ | ----- | ------------------------------------------------------------------------------- |
+| `chatMessages`, `chat:<chat_id>`         | 1 per second | 20    | `send*`, `edit*`                                                                |
+| `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                                                              |
+| `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                                                                |
+| `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                                                                 |
+| none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook`, `deleteWebhook`, `getWebhookInfo` |
 
 The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a test in one private chat, Telegram took 100 `sendMessage` calls before the first `429` and refilled them within a minute, so `chatMessages` lets 20 calls through at once: enough for a screen of several messages or fast paging, and well under that test. We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
 

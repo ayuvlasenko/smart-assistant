@@ -103,7 +103,7 @@ export class TelegramUpdateHandler {
             "Received update",
         );
 
-        const finishUpdate = this.telegramMetrics.startUpdate(update);
+        const finishUpdate = this.telegramMetrics.startUpdate(bot.id, update);
 
         try {
             await this.process(run, telegramUser);

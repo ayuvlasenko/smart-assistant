@@ -65,6 +65,28 @@ export class BotsRepository {
         return this.update(_id, { $set: { modules } });
     }
 
+    toggleModule(_id: string, module: string): Promise<BotEntity | null> {
+        return this.collection().findOneAndUpdate(
+            { _id },
+            [
+                {
+                    $set: {
+                        modules: {
+                            $cond: [
+                                { $in: [module, "$modules"] },
+                                { $setDifference: ["$modules", [module]] },
+                                { $concatArrays: ["$modules", [module]] },
+                            ],
+                        },
+                        updatedAt: "$$NOW",
+                        version: { $add: ["$version", 1] },
+                    },
+                },
+            ],
+            { returnDocument: "after" },
+        );
+    }
+
     updateToken(
         _id: string,
         token: EncryptedBotToken,

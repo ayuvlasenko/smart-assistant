@@ -283,7 +283,10 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
         assert.match(
             await metrics.metrics(),
-            /^telegram_updates_total\{type="message",result="blocked"\} 1$/m,
+            new RegExp(
+                `^telegram_updates_total\\{type="message",result="blocked",bot="${testTelegramBotId}"\\} 1$`,
+                "m",
+            ),
         );
     });
 
@@ -323,7 +326,10 @@ void describe("TelegramUpdateHandler", () => {
         );
         assert.match(
             await metrics.metrics(),
-            /^telegram_updates_total\{type="message",result="lock_hold_timeout"\} 1$/m,
+            new RegExp(
+                `^telegram_updates_total\\{type="message",result="lock_hold_timeout",bot="${testTelegramBotId}"\\} 1$`,
+                "m",
+            ),
         );
     });
 

@@ -1,4 +1,4 @@
-import { BotCommand } from "@grammyjs/types";
+import { BotCommand, WebhookInfo } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import Emittery from "emittery";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
@@ -130,6 +130,33 @@ export class TelegramBotService {
         return url;
     }
 
+    async deleteWebhook(bot: TelegramBot): Promise<void> {
+        const result = await bot.api.deleteWebhook();
+
+        if (!result.ok) {
+            throw new TelegramApiError("deleteWebhook", result);
+        }
+
+        this.log.info({ botId: bot.id }, "Telegram webhook deleted");
+    }
+
+    async readWebhook(bot: TelegramBot): Promise<WebhookInfo> {
+        const result = await bot.api.getWebhookInfo();
+
+        if (!result.ok) {
+            throw new TelegramApiError("getWebhookInfo", result);
+        }
+
+        return result.result;
+    }
+
+    async refreshCommands(bot: TelegramBot): Promise<void> {
+        await this.setDefaultCommands(bot);
+        await this.cache.set(commandsGenerationKeyOf(bot), randomUUID(), {
+            ttlMilliseconds: telegramCommandsGenerationTtlMilliseconds,
+        });
+    }
+
     async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
         const webhooks: TelegramBotWebhook[] = [];
 
@@ -243,10 +270,7 @@ export class TelegramBotService {
         const botUrl = await this.resolveBotUrl(bot.id);
         const webhookUrl = await this.setWebhook(bot);
 
-        await this.setDefaultCommands(bot);
-        await this.cache.set(commandsGenerationKeyOf(bot), randomUUID(), {
-            ttlMilliseconds: telegramCommandsGenerationTtlMilliseconds,
-        });
+        await this.refreshCommands(bot);
 
         return { botId: bot.id, webhookUrl, botUrl };
     }

@@ -19,7 +19,10 @@ import { setTimeout } from "node:timers/promises";
 import { requestLogSerializers } from "../../../request-logging.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import {
     buildSessionKey,
     buildTelegramSceneBot,
@@ -366,7 +369,10 @@ void describe("TelegramSceneEngine inputs", () => {
         }
         assert.match(
             body,
-            /^telegram_updates_total\{type="message",result="handled"\} 4$/m,
+            new RegExp(
+                `^telegram_updates_total\\{type="message",result="handled",bot="${testTelegramBotId}"\\} 4$`,
+                "m",
+            ),
         );
         assert.match(
             body,
