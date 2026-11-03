@@ -164,11 +164,12 @@ export class TelegramBotService {
     }
 
     async syncCommands(user: UserEntity): Promise<void> {
-        if (user.isBanned) {
+        const bot = this.telegramBots.find(user.botId);
+
+        if (user.isBanned || !bot) {
             return;
         }
 
-        const bot = this.telegramBots.get(user.botId);
         const commands = describeCommands(
             this.telegramRouter
                 .listCommands()

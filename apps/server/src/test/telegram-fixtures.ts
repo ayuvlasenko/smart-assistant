@@ -25,12 +25,12 @@ import {
     User,
     UserFromGetMe,
 } from "@grammyjs/types";
+import { botIdOfToken } from "../plugins/app/bots/bot-entity.js";
 import { TelegramMethodResult } from "../plugins/app/telegram/telegram-api-service.js";
-import { telegramBotIdOf } from "../plugins/app/telegram/telegram-bots.js";
 import { telegramWebhookSecret } from "../plugins/app/telegram/telegram-webhook-secret.js";
 import { TELEGRAM_SECRET_HEADER } from "../routes/api/telegram/telegram.js";
 
-export const testTelegramBotId = telegramBotIdOf(
+export const testTelegramBotId = botIdOfToken(
     process.env.TELEGRAM_BOT_TOKEN ?? "",
 );
 export const testTelegramWebhookPath = `/api/telegram/webhook/${testTelegramBotId}`;

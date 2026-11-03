@@ -11,7 +11,7 @@ import {
     adminGrant,
 } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
-import { telegramBotIdOf } from "../telegram/telegram-bots.js";
+import { botIdOfToken } from "../bots/bot-entity.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
@@ -352,7 +352,7 @@ export default fp(
 
         fastify.addHook("onReady", async () => {
             const { invite, revoked } = await invitesService.bootstrap(
-                telegramBotIdOf(config.TELEGRAM_BOT_TOKEN),
+                botIdOfToken(config.TELEGRAM_BOT_TOKEN),
                 config.INVITE_TOKEN,
             );
 

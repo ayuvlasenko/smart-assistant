@@ -8,7 +8,7 @@ import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { telegramApiScope } from "./telegram-api-service.js";
-import { TelegramBots } from "./telegram-bots.js";
+import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
@@ -285,12 +285,15 @@ export class TelegramChats {
         bindings: Record<string, unknown>,
         handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
     ): Promise<void> {
-        const user = await this.usersRepository.findOneByTelegramId(
-            botId,
-            String(userId),
-        );
+        const bot = this.telegramBots.find(botId);
+        const user =
+            bot &&
+            (await this.usersRepository.findOneByTelegramId(
+                botId,
+                String(userId),
+            ));
 
-        if (!user || user.isBanned) {
+        if (!bot || !user || user.isBanned) {
             return;
         }
 
@@ -300,17 +303,18 @@ export class TelegramChats {
             ...bindings,
         });
 
-        await this.withChat({ userId, user, log }, handle);
+        await this.withChat(bot, { userId, user, log }, handle);
     }
 
     private withChat<T>(
+        bot: TelegramBot,
         chat: TelegramChatOptions,
         handle: (ctx: TelegramContext<undefined>) => Promise<T>,
     ): Promise<T> {
         const responder = new TelegramResponder(
             chat.userId,
             undefined,
-            this.telegramBots.get(chat.user.botId).api,
+            bot.api,
             chat.log,
         );
 

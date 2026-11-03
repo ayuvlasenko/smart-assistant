@@ -19,9 +19,10 @@ export default fp(
             title: (t) => t("access:defaultGrantsSetting"),
             emoji: "🔑",
             defaultValue: [],
-            options: () =>
+            options: (botId) =>
                 access
                     .listSections()
+                    .filter(({ name }) => access.isEnabled(botId, name))
                     .flatMap(({ grants }) => grants)
                     .filter(({ name }) => name !== adminGrant)
                     .map(({ name, title }) => ({ value: name, title })),

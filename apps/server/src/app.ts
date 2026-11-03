@@ -10,6 +10,7 @@ import { ObjectId } from "mongodb";
 import { STATUS_CODES } from "node:http";
 import path from "node:path";
 import { TelegramApiClient } from "./plugins/app/telegram/telegram-api-service.js";
+import { TelegramApiFactory } from "./plugins/app/telegram/telegram-bots.js";
 import { requestIdOptions } from "./request-logging.js";
 
 const testFilePattern = /\.(?:test|spec)\.(?:js|ts)$/;
@@ -32,13 +33,15 @@ export default async function serviceApp(
     fastify: FastifyInstance,
     opts: FastifyPluginOptions & {
         telegramApiService?: TelegramApiClient;
+        telegramApiFactory?: TelegramApiFactory;
     },
 ) {
-    const { telegramApiService } = opts;
+    const { telegramApiService, telegramApiFactory } = opts;
     const autoloadOptions = { ...opts };
     delete autoloadOptions.skipOverride;
     delete autoloadOptions.ajv;
     delete autoloadOptions.telegramApiService;
+    delete autoloadOptions.telegramApiFactory;
     delete autoloadOptions.genReqId;
     delete autoloadOptions.requestIdHeader;
 
@@ -51,7 +54,7 @@ export default async function serviceApp(
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/app"),
         ignorePattern: testFilePattern,
-        options: { telegramApiService, ...autoloadOptions },
+        options: { telegramApiService, telegramApiFactory, ...autoloadOptions },
     });
 
     fastify.setErrorHandler((err: FastifyError, request, reply) => {

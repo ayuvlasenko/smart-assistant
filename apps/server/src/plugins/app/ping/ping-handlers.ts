@@ -22,19 +22,22 @@ export default fp(
             .getDecorator<I18nService>("i18nService")
             .addLocales("ping", pingLocales);
 
-        access.register({
-            name: "ping",
-            title: (t) => t("ping:section"),
-            grants: [
-                {
-                    name: pingGrant,
-                    title: (t) => t("ping:useGrant"),
-                    define: ({ can }) => {
-                        can("use", "Ping");
+        access.register(
+            {
+                name: "ping",
+                title: (t) => t("ping:section"),
+                grants: [
+                    {
+                        name: pingGrant,
+                        title: (t) => t("ping:useGrant"),
+                        define: ({ can }) => {
+                            can("use", "Ping");
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            },
+            { subjects: ["Ping"] },
+        );
 
         router.command(
             "ping",

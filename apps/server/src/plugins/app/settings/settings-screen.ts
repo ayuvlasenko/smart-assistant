@@ -12,7 +12,7 @@ import {
 export function renderSettingsList(view: SettingsView): TelegramMessageContent {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
-    const sections = settingsService.listSections();
+    const sections = settingsService.listSections(ctx.user.botId);
     const buttons = sections
         .flatMap(({ settings }) => settings)
         .map((setting) => [
@@ -52,7 +52,7 @@ export function renderSettingsChoices(
         [formatBold(t("settings:title")), "", formatBold(setting.title(t))],
         [
             ...setting
-                .options()
+                .options(ctx.user.botId)
                 .map((option) => [
                     scene.button(
                         `${selected.includes(option.value) ? "✅" : "⬜"} ${option.title(t)}`,
@@ -101,6 +101,7 @@ function formatValue(
                 t,
                 setting,
                 settingsService.read(setting, botId),
+                botId,
             );
     }
 }
@@ -109,9 +110,10 @@ function formatChoices(
     t: Translate,
     setting: ChoicesSetting,
     selected: string[],
+    botId: string,
 ): string {
     const titles = setting
-        .options()
+        .options(botId)
         .filter(({ value }) => selected.includes(value))
         .map(({ title }) => title(t));
 

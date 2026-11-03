@@ -18,6 +18,9 @@ export const envSchema = Type.Object({
     S3_BUCKET: Type.String(),
     S3_ENDPOINT: Type.String(),
     TELEGRAM_BOT_TOKEN: Type.String(),
+    BOTS_ENCRYPTION_KEY: Type.Optional(
+        Type.String({ pattern: "^[A-Za-z0-9+/]{43}=$" }),
+    ),
     INVITE_TOKEN: Type.Optional(
         Type.String({ pattern: "^[A-Za-z0-9_-]{1,57}$" }),
     ),

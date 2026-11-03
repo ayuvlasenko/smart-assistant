@@ -17,6 +17,7 @@ flowchart LR
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Grant               | A named permission, such as `ping.use`. It has a localized `title` and a `define(rules, user)` that adds CASL rules for the user who holds it. |
 | Section             | A group of grants of one domain, with a localized `title`. The invite form shows the grants section by section.                                |
+| Module              | A section that a bot can turn off, with the subjects of its domain. See [Modules](#modules).                                                   |
 | Subject             | A name that rules talk about, such as `Invite` or `Ping`. Each domain declares its subjects in its own interface, such as `InvitesSubjects`.   |
 | Action              | `manage`, `create`, `read`, `update`, `delete` or `use`. `manage` matches every action, and the subject `all` matches every subject.           |
 | `UserEntity.grants` | The names of the grants the user holds. Only the invites domain adds names; an operator can change them in MongoDB.                            |
@@ -62,6 +63,35 @@ can read, update Invite        { createdBy: <id of the user>, botId: "42" }
 3. `accessibleBy` turns the conditions into the query, so a list holds only the documents of the user's bot. `assert` on a document of another bot throws `ForbiddenError`, also when the repository loaded the document by id without a filter.
 
 **Edge cases.** A check against a subject name ignores the conditions, so a guard such as `guard("use", "Ping")` answers as before. A document that is checked with `subject(name, document)` must carry `botId`, or no allowing rule matches it; `PokerRoom`, `Invite` and `Setting` carry it. A `cannot` rule keeps its conditions as they are: CASL skips a `cannot` rule with conditions on a check against a subject name, so a condition added to it would let a guard through. A lookup that skips `accessibleBy`, such as a search by token, does not pass through these rules and takes the bot id as an argument.
+
+## Modules
+
+**Problem.** A bot runs only some feature domains: a poker bot needs no ping, and the root bot needs no poker. The commands, scenes, buttons and service methods of a domain that is off must refuse every user of the bot, its admin too, and must leave its menus.
+
+**Idea.** A feature domain registers its section as a module, with the subjects it owns. For every module that the bot of the user does not have, the ability gets `cannot manage` on those subjects after all the other rules. A later rule wins in CASL, so the module closes over `manage all` too.
+
+**Data.** The second argument of `register` makes the section a module:
+
+```ts
+access.register(
+    {
+        name: "poker",
+        title: (t) => t("poker:section"),
+        grants: [joinGrant, createGrant],
+    },
+    { subjects: ["PokerRoom"] },
+);
+```
+
+The modules of a bot come from the `modules` of its document in `bots`, see [Bots](../bots/README.md). `bots-registry.ts` hands `AccessService.useModules` a function that reads them.
+
+**Walk-through.** An admin of a bot without poker sends `/poker`.
+
+1. `buildAbility` runs `define` of every grant and limits the rules to the bot, see [Rules stay inside the bot](#rules-stay-inside-the-bot).
+2. It adds `cannot manage PokerRoom` without conditions, because the bot does not have `poker`.
+3. The guard of `/poker` refuses, so the command is not in the menu of the chat and the bot stays silent on it. An old button of a poker scene gets an empty answer, `assert` throws, and `accessibleBy` returns the query that matches nothing.
+
+**Edge cases.** The `cannot` rule has no conditions, so it closes a check against a subject name too. A section registered without the second argument, such as `access`, is on in every bot. `isEnabled(botId, sectionName)` answers for a section name, so the invite form, the options of the default grants and the settings menu show only the sections that are on; the settings menu matches a settings section to the module of the same name, such as `poker`. A grant of a module that is off stays in `user.grants` and works again when the module comes back. The module relies on a guard on every entry point: `bots-registry.test.ts` checks that an admin of a bot without modules gets only the commands of the core.
 
 ## Default grants
 
@@ -109,7 +139,7 @@ For a list, put `accessibleBy` into the query. It takes the rules of the user fo
         .subjects<ReportsSubjects>();
     ```
 
-2. Register one section with the domain's grants in the domain's plugin, with the titles in `<domain>-locales.ts`:
+2. Register one section with the domain's grants in the domain's plugin, with the titles in `<domain>-locales.ts`. A feature domain passes its subjects as the second argument, so a bot can turn it off, see [Modules](#modules):
 
     ```ts
     access.register({

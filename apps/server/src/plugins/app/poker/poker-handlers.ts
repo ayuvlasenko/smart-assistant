@@ -67,27 +67,36 @@ export default fp(
             .getDecorator<I18nService>("i18nService")
             .addLocales("poker", pokerLocales);
 
-        access.register({
-            name: "poker",
-            title: (t) => t("poker:section"),
-            grants: [
-                {
-                    name: pokerJoinGrant,
-                    title: (t) => t("poker:joinGrant"),
-                    define: defineJoinRules,
-                },
-                {
-                    name: pokerCreateGrant,
-                    title: (t) => t("poker:createGrant"),
-                    define: (rules, user) => {
-                        defineJoinRules(rules, user);
-                        rules.can("create", pokerRoom, { createdBy: user._id });
-                        rules.can("read", pokerRoom, { createdBy: user._id });
-                        rules.can("update", pokerRoom, { createdBy: user._id });
+        access.register(
+            {
+                name: "poker",
+                title: (t) => t("poker:section"),
+                grants: [
+                    {
+                        name: pokerJoinGrant,
+                        title: (t) => t("poker:joinGrant"),
+                        define: defineJoinRules,
                     },
-                },
-            ],
-        });
+                    {
+                        name: pokerCreateGrant,
+                        title: (t) => t("poker:createGrant"),
+                        define: (rules, user) => {
+                            defineJoinRules(rules, user);
+                            rules.can("create", pokerRoom, {
+                                createdBy: user._id,
+                            });
+                            rules.can("read", pokerRoom, {
+                                createdBy: user._id,
+                            });
+                            rules.can("update", pokerRoom, {
+                                createdBy: user._id,
+                            });
+                        },
+                    },
+                ],
+            },
+            { subjects: [pokerRoom] },
+        );
 
         const roomScene = createPokerRoomScene(
             pokerRoomsService,

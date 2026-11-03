@@ -169,6 +169,45 @@ void describe("AccessService", () => {
         });
     });
 
+    void it("closes the subjects of a module that the bot of the user does not have, also for an admin", () => {
+        const service = new AccessService();
+        const access = buildAccess(service);
+
+        access.register(
+            {
+                name: "reports",
+                title: () => "Reports",
+                grants: [
+                    {
+                        name: "reports.read",
+                        title: () => "Read reports",
+                        define: ({ can }) => {
+                            can("read", "Report");
+                        },
+                    },
+                ],
+            },
+            { subjects: ["Report"] },
+        );
+        service.useModules((botId) => (botId === "42" ? ["reports"] : []));
+
+        const adminOf = (botId: string) =>
+            buildUserEntity({ botId, grants: [adminGrant, "reports.read"] });
+
+        assert.equal(access.can(adminOf("42"), "read", "Report"), true);
+        assert.equal(access.can(adminOf("43"), "read", "Report"), false);
+        assert.equal(access.can(adminOf("43"), "read", "Invite"), true);
+        assert.deepEqual(access.accessibleBy(adminOf("43"), "read", "Report"), {
+            $expr: { $eq: [0, 1] },
+        });
+        assert.equal(access.isEnabled("43", "reports"), false);
+        assert.equal(access.isEnabled("43", "invites"), true);
+        assert.deepEqual(
+            access.listModules().map(({ name }) => name),
+            ["reports"],
+        );
+    });
+
     void it("refuses to register a grant twice", () => {
         const access = buildAccess();
 
@@ -200,6 +239,7 @@ void describe("AccessService", () => {
 
 interface TestSubjects {
     Invite: { botId: string; createdBy: ObjectId };
+    Report: { botId: string };
     Ping: never;
 }
 

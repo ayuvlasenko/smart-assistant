@@ -52,7 +52,10 @@ export interface AccessSection<TSubjects = AnySubjects> {
 }
 
 export interface AccessControl<TSubjects> {
-    register(section: AccessSection<TSubjects>): void;
+    register(
+        section: AccessSection<TSubjects>,
+        module?: { subjects: AccessSubjectName<TSubjects>[] },
+    ): void;
     can(
         user: UserEntity,
         action: AccessAction,
@@ -70,7 +73,9 @@ export interface AccessControl<TSubjects> {
     ): Document;
     guard(action: AccessAction, target: AccessSubject<TSubjects>): AccessGuard;
     holds(user: UserEntity, grant: string): boolean;
+    isEnabled(botId: string, sectionName: string): boolean;
     listSections(): readonly AccessSection[];
+    listModules(): readonly AccessSection[];
     findGrant(name: string): AccessGrant | undefined;
 }
 
@@ -85,12 +90,14 @@ const noRecordsQuery: Document = { $expr: { $eq: [0, 1] } };
 export class AccessService {
     private readonly sections: AccessSection[] = [];
     private readonly grants = new Map<string, AccessGrant>();
+    private readonly modules = new Map<string, readonly string[]>();
     private readonly abilities = new WeakMap<UserEntity, AnyAbility>();
     private defaultGrantsReader:
         ((botId: string) => readonly string[]) | undefined;
+    private modulesReader: ((botId: string) => readonly string[]) | undefined;
     private readonly control: AccessControl<AnySubjects> = {
-        register: (section) => {
-            this.register(section);
+        register: (section, module) => {
+            this.register(section, module?.subjects);
         },
         can: (user, action, target) =>
             this.abilityFor(user).can(action, target),
@@ -105,7 +112,10 @@ export class AccessService {
         guard: (action, target) => (user) =>
             this.abilityFor(user).can(action, target),
         holds: (user, grant) => this.holds(user, grant),
+        isEnabled: (botId, sectionName) => this.isEnabled(botId, sectionName),
         listSections: () => this.sections,
+        listModules: () =>
+            this.sections.filter(({ name }) => this.modules.has(name)),
         findGrant: (name) => this.grants.get(name),
     };
 
@@ -117,7 +127,14 @@ export class AccessService {
         this.defaultGrantsReader = read;
     }
 
-    private register(section: AccessSection): void {
+    useModules(read: (botId: string) => readonly string[]): void {
+        this.modulesReader = read;
+    }
+
+    private register(
+        section: AccessSection,
+        moduleSubjects: readonly string[] | undefined,
+    ): void {
         if (this.sections.some(({ name }) => name === section.name)) {
             throw new Error(
                 `Access section "${section.name}" is already registered`,
@@ -137,6 +154,10 @@ export class AccessService {
         for (const grant of section.grants) {
             this.grants.set(grant.name, grant);
         }
+
+        if (moduleSubjects) {
+            this.modules.set(section.name, moduleSubjects);
+        }
     }
 
     private accessibleBy(
@@ -155,6 +176,13 @@ export class AccessService {
         );
 
         return query ?? noRecordsQuery;
+    }
+
+    private isEnabled(botId: string, sectionName: string): boolean {
+        return (
+            !this.modules.has(sectionName) ||
+            (this.modulesReader?.(botId) ?? []).includes(sectionName)
+        );
     }
 
     private holds(user: UserEntity, grant: string): boolean {
@@ -184,9 +212,20 @@ export class AccessService {
             }
         }
 
-        return createMongoAbility(
-            builder.rules.map((rule) => limitToBot(rule, user.botId)),
-        );
+        return createMongoAbility([
+            ...builder.rules.map((rule) => limitToBot(rule, user.botId)),
+            ...this.disabledModuleRules(user.botId),
+        ]);
+    }
+
+    private disabledModuleRules(botId: string): RawRuleOf<AnyAbility>[] {
+        return [...this.modules]
+            .filter(([name]) => !this.isEnabled(botId, name))
+            .map(([, subjects]) => ({
+                action: "manage",
+                subject: [...subjects],
+                inverted: true,
+            }));
     }
 
     private effectiveGrants(user: UserEntity): Set<string> {

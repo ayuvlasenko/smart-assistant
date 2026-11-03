@@ -1,6 +1,7 @@
 import { Writable } from "node:stream";
 
 export interface LogEntry {
+    botId?: string;
     handler?: string;
     module?: string;
     msg?: string;

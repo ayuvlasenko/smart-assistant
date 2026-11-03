@@ -37,7 +37,7 @@ export interface NumberSetting extends SettingBase {
 export interface ChoicesSetting extends SettingBase {
     kind: "choices";
     defaultValue: string[];
-    options: () => SettingOption[];
+    options: (botId: string) => SettingOption[];
 }
 
 export type Setting = FlagSetting | NumberSetting | ChoicesSetting;
@@ -101,8 +101,10 @@ export class SettingsService {
         }
     }
 
-    listSections(): readonly SettingsSection[] {
-        return this.sections;
+    listSections(botId: string): readonly SettingsSection[] {
+        return this.sections.filter(({ name }) =>
+            this.access.isEnabled(botId, name),
+        );
     }
 
     find(name: string): Setting | undefined {
@@ -114,8 +116,11 @@ export class SettingsService {
         botId: string,
     ): SettingValue<TSetting> {
         return (
-            readValue(setting, this.values.get(botId)?.get(setting.name)) ??
-            (setting.defaultValue as SettingValue<TSetting>)
+            readValue(
+                setting,
+                this.values.get(botId)?.get(setting.name),
+                botId,
+            ) ?? (setting.defaultValue as SettingValue<TSetting>)
         );
     }
 
@@ -126,7 +131,7 @@ export class SettingsService {
     ): Promise<void> {
         this.assertCanUpdate(actor, setting);
 
-        if (!isValidValue(setting, value)) {
+        if (!isValidValue(setting, value, actor.botId)) {
             throw new Error(`Value of setting "${setting.name}" is not valid`);
         }
 
@@ -159,7 +164,9 @@ export class SettingsService {
     ): Promise<void> {
         this.assertCanUpdate(actor, setting);
 
-        if (!setting.options().some(({ value }) => value === choice)) {
+        if (
+            !setting.options(actor.botId).some(({ value }) => value === choice)
+        ) {
             throw new Error(
                 `Choice "${choice}" is not an option of setting "${setting.name}"`,
             );
@@ -237,8 +244,12 @@ export class SettingsService {
     }
 }
 
-function isValidValue(setting: Setting, value: unknown): boolean {
-    const known = readValue(setting, value);
+function isValidValue(
+    setting: Setting,
+    value: unknown,
+    botId: string,
+): boolean {
+    const known = readValue(setting, value, botId);
 
     return Array.isArray(known)
         ? known.length === (value as unknown[]).length
@@ -248,6 +259,7 @@ function isValidValue(setting: Setting, value: unknown): boolean {
 function readValue<TSetting extends Setting>(
     setting: TSetting,
     value: unknown,
+    botId: string,
 ): SettingValue<TSetting> | undefined {
     switch (setting.kind) {
         case "flag":
@@ -257,7 +269,7 @@ function readValue<TSetting extends Setting>(
             return readNumber(setting, value) as
                 SettingValue<TSetting> | undefined;
         case "choices":
-            return readChoices(setting, value) as
+            return readChoices(setting, value, botId) as
                 SettingValue<TSetting> | undefined;
     }
 }
@@ -277,12 +289,15 @@ function readNumber(
 function readChoices(
     setting: ChoicesSetting,
     value: unknown,
+    botId: string,
 ): string[] | undefined {
     if (!Array.isArray(value)) {
         return;
     }
 
-    const options = new Set(setting.options().map((option) => option.value));
+    const options = new Set(
+        setting.options(botId).map((option) => option.value),
+    );
 
     return value.filter(
         (item): item is string => typeof item === "string" && options.has(item),

@@ -42,6 +42,7 @@ const maxParticipants = settingsService.read(
 );
 ```
 
+- A section with the name of an access module, such as `poker`, shows in the menu only in the bots that have the module, see [Modules](../access/README.md#modules). `listSections(botId)` returns the sections of a bot, and `options(botId)` of a choices setting returns the options in a bot.
 - Name a setting `<domain>.<name>` and keep its title in `<domain>-locales.ts`. The `emoji` starts the button of the setting in the menu, like the buttons of other screens; the line of the value shows the title without it.
 - Make the default value the behaviour the code had before the setting, so a deploy changes nothing until an admin does. A setting that adds a new limit on purpose, such as `poker.maxParticipants`, is the exception; its domain README says what changes on the deploy.
 - The plugin that registers a setting depends on `settings-service`. `settings-service` depends on `access-service`, so `AccessService` cannot register a setting itself; `access/access-default-grants.ts` does it for the default grants.

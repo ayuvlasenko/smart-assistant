@@ -282,14 +282,14 @@ POST /api/telegram/webhook/<botId>                         to this route
 X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, botId)
 ```
 
-`<botId>` is the number before `:` in the token of the bot. `TelegramBots` keeps a `TelegramBot` for every bot: its id and its `TelegramApiService`. It holds the root bot of `TELEGRAM_BOT_TOKEN`. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
+`<botId>` is the number before `:` in the token of the bot. `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
 
 **Walk-through.** Telegram sends an update to a bot.
 
 1. The route reads `botId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
-2. The route finds the bot in `TelegramBots`. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
+2. The route finds the bot with `TelegramBots.load`: in the snapshot of the registry, or in MongoDB when another pod added the bot after the last refresh. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
-4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id.
+4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
 **Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The bot id is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
 

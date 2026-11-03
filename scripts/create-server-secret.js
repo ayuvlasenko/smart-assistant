@@ -21,7 +21,12 @@ const REQUIRED_ENV_VARS = [
     "VALKEY_URL",
 ];
 
-const OPTIONAL_ENV_VARS = ["INVITE_TOKEN", "TELEGRAM_WEBHOOK_URL", "TIME_ZONE"];
+const OPTIONAL_ENV_VARS = [
+    "BOTS_ENCRYPTION_KEY",
+    "INVITE_TOKEN",
+    "TELEGRAM_WEBHOOK_URL",
+    "TIME_ZONE",
+];
 
 function validateEnvVars() {
     const missing = REQUIRED_ENV_VARS.filter((v) => !process.env[v]);

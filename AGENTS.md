@@ -77,6 +77,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
 - Name a command in snake case, such as `new_invite`.
+- Register the access section of a feature domain as a module, `access.register(section, { subjects })`, so a bot can turn it off; a section without it is on in every bot. See [Modules](apps/server/src/plugins/app/access/README.md#modules).
 - Declare the access subjects of a domain next to its entity and take a typed view with `accessService.subjects<M>()`; do not augment a shared interface with `declare module`. Put a `guard` on every entry point, read lists through `access.accessibleBy` in the query, and check every write in the service with `access.assert` on the loaded document wrapped in `subject(name, document)`, never on the subject name. `plugins/app/access/README.md` explains why.
 
 ## Rules
@@ -104,5 +105,5 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
-- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret.
+- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `BOTS_ENCRYPTION_KEY`, `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
 - `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.

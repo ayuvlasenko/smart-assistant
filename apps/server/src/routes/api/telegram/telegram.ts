@@ -83,7 +83,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
-            const bot = telegramBots.find(request.params.botId);
+            const bot = await telegramBots.load(request.params.botId);
 
             if (!bot) {
                 request.log.warn(
