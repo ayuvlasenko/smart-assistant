@@ -132,7 +132,11 @@ void describe("Poker rooms", () => {
             (await readRoomKeyboard(bot, creator))
                 .slice(1)
                 .map((row) => row.map(({ text }) => text)),
-            [[revealLabel(0, 1)], [en.copyLinkButton, en.moreButton]],
+            [
+                [revealLabel(0, 1)],
+                [en.watchButton],
+                [en.copyLinkButton, en.moreButton],
+            ],
         );
         assert.match(
             (await readRoomKeyboard(bot, creator)).at(-1)?.[0]?.copy_text
@@ -368,11 +372,11 @@ void describe("Poker rooms", () => {
         );
         assert.equal(
             await step(en.fewerVotesButton),
-            `${en.autoRevealLabel}: at 2 of 3 votes`,
+            `${en.autoRevealLabel}: everyone but 1 (2 of 3 votes)`,
         );
         assert.equal(
             await step(en.fewerVotesButton),
-            `${en.autoRevealLabel}: at 1 of 3 votes`,
+            `${en.autoRevealLabel}: everyone but 2 (1 of 3 votes)`,
         );
         assert.equal(
             await step(en.fewerVotesButton),
@@ -384,11 +388,11 @@ void describe("Poker rooms", () => {
         );
         assert.equal(
             await step(en.moreVotesButton),
-            `${en.autoRevealLabel}: at 1 of 3 votes`,
+            `${en.autoRevealLabel}: everyone but 2 (1 of 3 votes)`,
         );
         assert.equal(
             await step(en.moreVotesButton),
-            `${en.autoRevealLabel}: at 2 of 3 votes`,
+            `${en.autoRevealLabel}: everyone but 1 (2 of 3 votes)`,
         );
 
         await bot.pressButton(member, en.backButton);
@@ -410,7 +414,70 @@ void describe("Poker rooms", () => {
         assert.ok(
             (await readRoomMessage(bot, member)).includes("Round 1 · revealed"),
         );
-        assert.equal((await readRoom()).autoReveal, 2);
+        assert.deepEqual((await readRoom()).autoReveal, { missingVotes: 1 });
+    });
+
+    void it("switches the viewer between voting and watching with one button", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655146 });
+        const member = buildTelegramPrivateChat({ id: 987655147 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.pressButton(member, "5");
+        await bot.pressButton(member, en.watchButton);
+        await bot.telegramChats.idle();
+
+        const watching = await readRoomMessage(bot, creator);
+
+        assert.deepEqual(await readCardRows(bot, member), []);
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.voteButton),
+        );
+        assert.ok(watching.split("\n").some((line) => line.endsWith(" 👀")));
+        assert.ok(
+            (await readCallbackTexts(bot, creator)).includes(revealLabel(0, 1)),
+        );
+
+        await bot.pressButton(member, en.voteButton);
+
+        assert.equal((await readCardRows(bot, member)).length, 1);
+        assert.equal((await readRoom()).participants[1]?.role, "voter");
+    });
+
+    void it("lets a participant make others observers from a paged list", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655148 });
+
+        await createRoomThroughForm(bot, creator);
+        await seedHistory(10, 0);
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.participantsButton);
+
+        const firstPage = await readRoomKeyboard(bot, creator);
+
+        assert.equal(firstPage.length, 10);
+        assert.deepEqual(
+            firstPage.at(-2)?.map(({ text }) => text),
+            ["1/2", "›"],
+        );
+
+        await bot.pressButton(creator, "›");
+
+        const secondPage = await readRoomKeyboard(bot, creator);
+        const label = secondPage[0]?.[0]?.text;
+
+        assert.equal(secondPage.length, 5);
+        assert.ok(label);
+
+        await bot.pressButton(creator, label);
+
+        const room = await readRoom();
+
+        assert.equal(room.participants[8]?.role, "observer");
+        assert.ok(
+            (await bot.readButtonLabels(creator.id)).includes(`👀 ${label}`),
+        );
     });
 
     void it("shows the history of the revealed rounds", async (t) => {
@@ -673,6 +740,7 @@ async function seedHistory(voters: number, rounds: number): Promise<void> {
                     $each: users.map((user, index) => ({
                         userId: user._id,
                         emoji: `${index}`,
+                        role: "voter",
                         joinedAt: room.createdAt,
                     })),
                 },

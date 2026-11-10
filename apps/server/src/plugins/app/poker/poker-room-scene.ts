@@ -14,6 +14,7 @@ import {
     validatePokerTitle,
 } from "./poker-format.js";
 import { renderPokerHistory } from "./poker-history-screen.js";
+import { renderPokerParticipants } from "./poker-participants-screen.js";
 import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
@@ -119,6 +120,13 @@ export function createPokerRoomScene(
                         renderPokerRound(view, "autoReveal"),
                     ),
             },
+            participants: {
+                params: pokerRoomScreens.participants,
+                render: (ctx, scene, { page }) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerParticipants(view, page),
+                    ),
+            },
             history: {
                 params: pokerRoomScreens.history,
                 render: (ctx, scene, { page }) =>
@@ -181,6 +189,27 @@ export function createPokerRoomScene(
                             room,
                             autoReveal,
                         );
+                    }
+                },
+            },
+            role: {
+                value: pokerRoomButtonValues.role,
+                handle: async (ctx, scene, { userId, role }) => {
+                    const room = await load(ctx, scene);
+
+                    if (room) {
+                        await pokerRoomsService.changeRole(ctx.user, room, {
+                            userId: new ObjectId(userId),
+                            role,
+                        });
+                    }
+                },
+            },
+            participantsPage: {
+                value: pokerRoomButtonValues.participantsPage,
+                handle: async (ctx, scene, page) => {
+                    if (scene.screen.name === "participants") {
+                        scene.screen.params.page = page;
                     }
                 },
             },

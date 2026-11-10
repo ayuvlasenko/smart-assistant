@@ -20,7 +20,7 @@ const en = {
     autoRevealLabel: "Auto reveal",
     autoRevealOff: "off",
     autoRevealAll: "when everyone votes",
-    autoRevealVotes: "at {{votes}} of {{total}} votes",
+    autoRevealAllBut: "everyone but {{missing}} ({{votes}} of {{total}} votes)",
     autoRevealHint:
         "The cards open by themselves once this many participants vote.",
     noTitle: "—",
@@ -28,6 +28,12 @@ const en = {
     titleButton: "✏️ Title",
     autoRevealButton: "⚡ Auto reveal",
     fewerVotesButton: "➖",
+    watchButton: "👀 Watch",
+    voteButton: "🃏 Vote",
+    participantsButton: "👥 Participants",
+    participantsTitle: "Participants",
+    participantsHint:
+        "Press a participant to switch between voting and watching. {{icon}} marks a participant who watches and does not count in the votes.",
     moreVotesButton: "➕",
     createButton: "✅ Create",
     chooseDeck: "Choose a deck.",
@@ -96,7 +102,8 @@ export const pokerLocales: Locales<typeof en> = {
         autoRevealLabel: "Автовідкриття",
         autoRevealOff: "вимкнено",
         autoRevealAll: "коли проголосують усі",
-        autoRevealVotes: "при {{votes}} з {{total}} голосів",
+        autoRevealAllBut:
+            "усі, крім {{missing}} ({{votes}} з {{total}} голосів)",
         autoRevealHint:
             "Карти відкриваються самі, щойно проголосує стільки учасників.",
         noTitle: "—",
@@ -104,6 +111,12 @@ export const pokerLocales: Locales<typeof en> = {
         titleButton: "✏️ Назва",
         autoRevealButton: "⚡ Автовідкриття",
         fewerVotesButton: "➖",
+        watchButton: "👀 Спостерігати",
+        voteButton: "🃏 Голосувати",
+        participantsButton: "👥 Учасники",
+        participantsTitle: "Учасники",
+        participantsHint:
+            "Натисніть на учасника, щоб перемкнути голосування і спостереження. {{icon}} позначає учасника, який спостерігає і не враховується в голосах.",
         moreVotesButton: "➕",
         createButton: "✅ Створити",
         chooseDeck: "Оберіть колоду.",
@@ -169,7 +182,8 @@ export const pokerLocales: Locales<typeof en> = {
         autoRevealLabel: "Автовскрытие",
         autoRevealOff: "выключено",
         autoRevealAll: "когда проголосуют все",
-        autoRevealVotes: "при {{votes}} из {{total}} голосов",
+        autoRevealAllBut:
+            "все, кроме {{missing}} ({{votes}} из {{total}} голосов)",
         autoRevealHint:
             "Карты вскрываются сами, как только проголосует столько участников.",
         noTitle: "—",
@@ -177,6 +191,12 @@ export const pokerLocales: Locales<typeof en> = {
         titleButton: "✏️ Название",
         autoRevealButton: "⚡ Автовскрытие",
         fewerVotesButton: "➖",
+        watchButton: "👀 Наблюдать",
+        voteButton: "🃏 Голосовать",
+        participantsButton: "👥 Участники",
+        participantsTitle: "Участники",
+        participantsHint:
+            "Нажмите на участника, чтобы переключить голосование и наблюдение. {{icon}} отмечает участника, который наблюдает и не учитывается в голосах.",
         moreVotesButton: "➕",
         createButton: "✅ Создать",
         chooseDeck: "Выберите колоду.",

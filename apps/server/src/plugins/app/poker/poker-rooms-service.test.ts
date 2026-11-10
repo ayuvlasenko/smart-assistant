@@ -50,13 +50,13 @@ void describe("PokerRoomsService create and join", () => {
         const room = await bot.pokerRoomsService.create(creator, {
             title: "Sprint 42",
             deck: "tShirt",
-            autoReveal: "all",
+            autoReveal: true,
         });
 
         assert.match(room.token, /^[A-Za-z0-9_-]{22}$/);
         assert.equal(room.title, "Sprint 42");
         assert.equal(room.deck, "tShirt");
-        assert.equal(room.autoReveal, "all");
+        assert.deepEqual(room.autoReveal, { missingVotes: 0 });
         assert.equal(room.participants.length, 1);
         assert.ok(room.participants[0]?.userId.equals(creator._id));
         assert.deepEqual(
@@ -72,7 +72,7 @@ void describe("PokerRoomsService create and join", () => {
         await assert.rejects(
             bot.pokerRoomsService.create(member, {
                 deck: "fibonacci",
-                autoReveal: "off",
+                autoReveal: false,
             }),
             ForbiddenError,
         );
@@ -111,7 +111,12 @@ void describe("PokerRoomsService create and join", () => {
         assert.equal(
             await bot.pokerRoomsRepository.join(
                 room.token,
-                { userId: user._id, emoji: "🐼", joinedAt: new Date() },
+                {
+                    userId: user._id,
+                    emoji: "🐼",
+                    role: "voter",
+                    joinedAt: new Date(),
+                },
                 { isEmojiFree: true, maxParticipants: 1 },
             ),
             null,
@@ -323,7 +328,7 @@ void describe("PokerRoomsService rounds", () => {
     void it("reveals the round by itself when every active participant votes", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot, {
-            autoReveal: "all",
+            autoReveal: true,
         });
         const member = await joinMember(bot, room);
 
@@ -342,7 +347,7 @@ void describe("PokerRoomsService rounds", () => {
         assert.equal(second?.round.status, "revealed");
     });
 
-    void it("reveals the round by itself at the number of votes that a participant chose", async (t) => {
+    void it("reveals the round by itself when everyone but the chosen number of voters voted", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot);
         const member = await joinMember(bot, room);
@@ -352,7 +357,7 @@ void describe("PokerRoomsService rounds", () => {
         const changed = await bot.pokerRoomsService.changeAutoReveal(
             member,
             room,
-            2,
+            { missingVotes: 1 },
         );
 
         assert.ok(changed);
@@ -367,12 +372,12 @@ void describe("PokerRoomsService rounds", () => {
             card: "5",
         });
 
-        assert.equal(changed.autoReveal, 2);
+        assert.deepEqual(changed.autoReveal, { missingVotes: 1 });
         assert.equal(first.round.status, "voting");
         assert.equal(second?.round.status, "revealed");
     });
 
-    void it("reveals the round at once when the new number of votes is already in", async (t) => {
+    void it("reveals the round at once when the new auto reveal is already reached", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot);
         const member = await joinMember(bot, room);
@@ -394,7 +399,7 @@ void describe("PokerRoomsService rounds", () => {
         const changed = await bot.pokerRoomsService.changeAutoReveal(
             creator,
             second,
-            2,
+            { missingVotes: 1 },
         );
 
         assert.equal(second.round.status, "voting");
@@ -407,23 +412,27 @@ void describe("PokerRoomsService rounds", () => {
         const outsider = await createUser(bot, [pokerJoinGrant]);
 
         assert.equal(
-            await bot.pokerRoomsService.changeAutoReveal(outsider, room, 2),
+            await bot.pokerRoomsService.changeAutoReveal(outsider, room, {
+                missingVotes: 1,
+            }),
             null,
         );
 
         await bot.pokerRoomsService.close(creator, room);
 
         assert.equal(
-            await bot.pokerRoomsService.changeAutoReveal(creator, room, "all"),
+            await bot.pokerRoomsService.changeAutoReveal(creator, room, {
+                missingVotes: 0,
+            }),
             null,
         );
-        assert.equal((await findRoom(room)).autoReveal, "off");
+        assert.equal((await findRoom(room)).autoReveal, null);
     });
 
     void it("stops waiting for a participant who skipped two rounds", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot, {
-            autoReveal: "all",
+            autoReveal: true,
         });
         let current = room;
 
@@ -460,6 +469,109 @@ void describe("PokerRoomsService rounds", () => {
         });
 
         assert.equal(voted?.round.status, "revealed");
+    });
+});
+
+void describe("PokerRoomsService roles", () => {
+    void it("lets a participant make another one an observer and drops the vote of the open round", async (t) => {
+        const bot = await buildBot(t);
+        const { room } = await createRoomWithCreator(bot);
+        const member = await joinMember(bot, room);
+        const another = await joinMember(bot, room);
+
+        const voted = await bot.pokerRoomsService.vote(member, room, {
+            round: 1,
+            card: "5",
+        });
+
+        assert.ok(voted);
+        const changed = await bot.pokerRoomsService.changeRole(another, voted, {
+            userId: member._id,
+            role: "observer",
+        });
+
+        assert.ok(changed);
+        assert.equal(
+            changed.participants.find(({ userId }) => userId.equals(member._id))
+                ?.role,
+            "observer",
+        );
+        assert.deepEqual(changed.round.votes, {});
+        assert.equal(
+            await bot.pokerRoomsService.vote(member, changed, {
+                round: 1,
+                card: "8",
+            }),
+            null,
+        );
+    });
+
+    void it("keeps the votes of a revealed round when a voter starts watching", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+
+        const voted = await bot.pokerRoomsService.vote(creator, room, {
+            round: 1,
+            card: "5",
+        });
+
+        assert.ok(voted);
+        const revealed = await bot.pokerRoomsService.reveal(creator, voted, 1);
+
+        assert.ok(revealed);
+        const changed = await bot.pokerRoomsService.changeRole(
+            creator,
+            revealed,
+            { userId: creator._id, role: "observer" },
+        );
+
+        assert.deepEqual(changed?.round.votes, {
+            [creator._id.toHexString()]: "5",
+        });
+    });
+
+    void it("reveals the round by itself when the last voter without a vote starts watching", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot, {
+            autoReveal: true,
+        });
+        const member = await joinMember(bot, room);
+
+        const voted = await bot.pokerRoomsService.vote(creator, room, {
+            round: 1,
+            card: "3",
+        });
+
+        assert.ok(voted);
+        const changed = await bot.pokerRoomsService.changeRole(creator, voted, {
+            userId: member._id,
+            role: "observer",
+        });
+
+        assert.equal(voted.round.status, "voting");
+        assert.equal(changed?.round.status, "revealed");
+    });
+
+    void it("changes a role only between participants of the room", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+        const outsider = await createUser(bot, [pokerJoinGrant]);
+
+        assert.equal(
+            await bot.pokerRoomsService.changeRole(outsider, room, {
+                userId: creator._id,
+                role: "observer",
+            }),
+            null,
+        );
+        assert.equal(
+            await bot.pokerRoomsService.changeRole(creator, room, {
+                userId: outsider._id,
+                role: "observer",
+            }),
+            null,
+        );
+        assert.equal((await findRoom(room)).participants[0]?.role, "voter");
     });
 });
 
@@ -517,7 +629,7 @@ void describe("PokerRoomsService list", () => {
         const { room: open, creator } = await createRoomWithCreator(bot);
         const closed = await bot.pokerRoomsService.create(creator, {
             deck: "fibonacci",
-            autoReveal: "off",
+            autoReveal: false,
         });
         const member = await joinMember(bot, open);
         const outsider = await createUser(bot, [pokerCreateGrant]);
@@ -579,7 +691,7 @@ async function createUser(
 
 async function createRoomWithCreator(
     bot: PokerBot,
-    { autoReveal = "off" }: Partial<Pick<PokerRoomDraft, "autoReveal">> = {},
+    { autoReveal = false }: Partial<Pick<PokerRoomDraft, "autoReveal">> = {},
 ): Promise<{ room: PokerRoomEntity; creator: UserEntity }> {
     const creator = await createUser(bot, [pokerCreateGrant]);
     const room = await bot.pokerRoomsService.create(creator, {

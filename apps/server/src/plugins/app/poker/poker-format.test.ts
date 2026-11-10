@@ -159,11 +159,12 @@ function buildRoom(participants: [UserEntity, string][]): PokerRoomEntity {
         token: "token",
         createdBy: new ObjectId(),
         deck: "fibonacciModified",
-        autoReveal: "off",
+        autoReveal: null,
         lastActivityAt: now,
         participants: participants.map(([user, emoji]) => ({
             userId: user._id,
             emoji,
+            role: "voter" as const,
             joinedAt: now,
         })),
         round: { number: 1, status: "voting", votes: {}, startedAt: now },

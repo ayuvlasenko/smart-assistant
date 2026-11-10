@@ -5,6 +5,7 @@ import { Filter, ObjectId } from "mongodb";
 import {
     PokerAutoReveal,
     PokerParticipant,
+    PokerParticipantRole,
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
     PokerRoomStatus,
@@ -36,6 +37,11 @@ export interface PokerRoomTarget {
 
 export interface PokerRoundTarget extends PokerRoomTarget {
     roundNumber: number;
+}
+
+export interface PokerRoleChange {
+    userId: ObjectId;
+    role: PokerParticipantRole;
 }
 
 export interface PokerJoinLimits {
@@ -126,7 +132,16 @@ export class PokerRoomsRepository {
         const field = `round.votes.${target.userId.toHexString()}`;
 
         return this.collection().findOneAndUpdate(
-            { ...roundFilter(target), "round.status": "voting" },
+            {
+                ...roundFilter(target),
+                "round.status": "voting",
+                participants: {
+                    $elemMatch: {
+                        userId: target.userId,
+                        role: { $ne: "observer" },
+                    },
+                },
+            },
             card === undefined
                 ? { $unset: { [field]: "" }, ...touch(target.now) }
                 : { $set: { [field]: card, ...touched(target.now) }, ...bump },
@@ -202,6 +217,69 @@ export class PokerRoomsRepository {
         return this.collection().findOneAndUpdate(
             participantFilter(target),
             { $set: { autoReveal, ...touched(target.now) }, ...bump },
+            { returnDocument: "after" },
+        );
+    }
+
+    changeRole(
+        target: PokerRoomTarget,
+        { userId, role }: PokerRoleChange,
+    ): Promise<PokerRoomEntity | null> {
+        const isUser = { $eq: ["$$participant.userId", userId] };
+        const isVoting = { $eq: ["$round.status", "voting"] };
+        const votesWithoutUser = {
+            $arrayToObject: {
+                $filter: {
+                    input: { $objectToArray: "$round.votes" },
+                    cond: { $ne: ["$$this.k", userId.toHexString()] },
+                },
+            },
+        };
+
+        return this.collection().findOneAndUpdate(
+            {
+                $and: [
+                    participantFilter(target),
+                    { "participants.userId": userId },
+                ],
+            },
+            [
+                {
+                    $set: {
+                        participants: {
+                            $map: {
+                                input: "$participants",
+                                as: "participant",
+                                in: {
+                                    $cond: [
+                                        isUser,
+                                        {
+                                            $mergeObjects: [
+                                                "$$participant",
+                                                { role: { $literal: role } },
+                                            ],
+                                        },
+                                        "$$participant",
+                                    ],
+                                },
+                            },
+                        },
+                        "round.votes":
+                            role === "observer"
+                                ? {
+                                      $cond: [
+                                          isVoting,
+                                          votesWithoutUser,
+                                          "$round.votes",
+                                      ],
+                                  }
+                                : "$round.votes",
+                        lastActivityAt: target.now,
+                        updatedAt: target.now,
+                        version: { $add: ["$version", 1] },
+                    },
+                },
+            ],
             { returnDocument: "after" },
         );
     }

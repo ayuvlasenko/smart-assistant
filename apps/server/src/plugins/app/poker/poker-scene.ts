@@ -124,7 +124,7 @@ export function createPokerScene(
                 guard: canCreate,
                 handle: async (ctx, scene) => {
                     scene.state.draft.autoReveal =
-                        scene.state.draft.autoReveal === "all" ? "off" : "all";
+                        !scene.state.draft.autoReveal;
                 },
             },
             save: {
@@ -173,5 +173,5 @@ export function createPokerScene(
 }
 
 function buildDraft(): PokerDraft {
-    return { title: null, deck: defaultPokerDeckName, autoReveal: "all" };
+    return { title: null, deck: defaultPokerDeckName, autoReveal: true };
 }

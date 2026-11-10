@@ -11,9 +11,12 @@ import {
     formatPokerStats,
     inRowsOf,
 } from "./poker-format.js";
+import { pokerObserverIcon } from "./poker-participants-screen.js";
 import {
+    findPokerParticipant,
     isPokerParticipantIdle,
     listActivePokerParticipants,
+    PokerParticipant,
     PokerRoomEntity,
     readPokerAutoRevealTarget,
     stepPokerAutoReveal,
@@ -62,9 +65,10 @@ function describeVoting(view: PokerRoomView): string[] {
         "",
         ...room.participants.map((participant) => {
             const userId = participant.userId.toHexString();
-            const icon = readVoteIcon(
+            const icon = readParticipantIcon(
+                room,
+                participant,
                 Boolean(votes[userId]),
-                isPokerParticipantIdle(room, participant),
             );
 
             return `${escapeTelegramHtml(labels.get(userId) ?? userId)} ${icon}`;
@@ -97,7 +101,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
     const { t } = ctx;
     const round = room.round.number;
     const ownVote = room.round.votes[ctx.user._id.toHexString()];
-    const isAutoReveal = room.autoReveal !== "off";
+    const isAutoReveal = room.autoReveal !== null;
     const active = listActivePokerParticipants(room).length;
     const total = readPokerAutoRevealTarget(room) ?? active;
     const voted = Object.keys(room.round.votes).length;
@@ -116,12 +120,9 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
     );
 
     return [
-        ...inEvenRows(deck.cards.map(cardButton)),
+        ...(isObserver(view) ? [] : inEvenRows(deck.cards.map(cardButton))),
         [voted && voted >= active ? { ...reveal, style: "success" } : reveal],
-        [
-            readCopyLinkButton(view),
-            scene.screenButton(t("poker:moreButton"), "menu"),
-        ],
+        ...readSecondaryRows(view),
     ];
 }
 
@@ -144,11 +145,35 @@ function readRevealedKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
                 style: "primary",
             },
         ],
+        ...readSecondaryRows(view),
+    ];
+}
+
+function readSecondaryRows(view: PokerRoomView): InlineKeyboardButton[][] {
+    const { ctx, scene } = view;
+    const { t } = ctx;
+    const isWatching = isObserver(view);
+
+    return [
+        [
+            scene.button(
+                t(isWatching ? "poker:voteButton" : "poker:watchButton"),
+                "role",
+                {
+                    userId: ctx.user._id.toHexString(),
+                    role: isWatching ? "voter" : "observer",
+                },
+            ),
+        ],
         [
             readCopyLinkButton(view),
             scene.screenButton(t("poker:moreButton"), "menu"),
         ],
     ];
+}
+
+function isObserver({ ctx, room }: PokerRoomView): boolean {
+    return findPokerParticipant(room, ctx.user._id)?.role === "observer";
 }
 
 function readMenuKeyboard({
@@ -170,7 +195,12 @@ function readMenuKeyboard({
                 page: 0,
             }),
         ],
-        [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
+        [
+            scene.screenButton(t("poker:autoRevealButton"), "autoReveal"),
+            scene.screenButton(t("poker:participantsButton"), "participants", {
+                page: 0,
+            }),
+        ],
         [
             scene.backButton(t("poker:backButton")),
             ...(canClose
@@ -203,19 +233,18 @@ function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {
 }
 
 function formatAutoReveal(t: Translate, room: PokerRoomEntity): string {
-    if (room.autoReveal === "off") {
+    if (!room.autoReveal) {
         return t("poker:autoRevealOff");
     }
 
-    if (room.autoReveal === "all") {
+    if (room.autoReveal.missingVotes === 0) {
         return t("poker:autoRevealAll");
     }
 
-    const total = listActivePokerParticipants(room).length;
-
-    return t("poker:autoRevealVotes", {
-        votes: Math.min(room.autoReveal, total),
-        total,
+    return t("poker:autoRevealAllBut", {
+        missing: room.autoReveal.missingVotes,
+        votes: readPokerAutoRevealTarget(room) ?? 0,
+        total: listActivePokerParticipants(room).length,
     });
 }
 
@@ -260,12 +289,20 @@ function describeRoom({ ctx, room }: PokerRoomView, status: string): string[] {
     ];
 }
 
-function readVoteIcon(hasVoted: boolean, isIdle: boolean): string {
+function readParticipantIcon(
+    room: PokerRoomEntity,
+    participant: PokerParticipant,
+    hasVoted: boolean,
+): string {
+    if (participant.role === "observer") {
+        return pokerObserverIcon;
+    }
+
     if (hasVoted) {
         return "✅";
     }
 
-    return isIdle ? "💤" : "⏳";
+    return isPokerParticipantIdle(room, participant) ? "💤" : "⏳";
 }
 
 function inEvenRows<TItem>(items: TItem[]): TItem[][] {

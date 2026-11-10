@@ -2,13 +2,16 @@ import { ObjectId } from "mongodb";
 import { BaseEntity } from "../../../entity.js";
 import { PokerDeckName } from "./poker-decks.js";
 
+export type PokerParticipantRole = "voter" | "observer";
+
 export interface PokerParticipant {
     userId: ObjectId;
     emoji: string;
+    role: PokerParticipantRole;
     joinedAt: Date;
 }
 
-export type PokerAutoReveal = "off" | "all" | number;
+export type PokerAutoReveal = { missingVotes: number } | null;
 
 export type PokerRoundStatus = "voting" | "revealed";
 
@@ -94,22 +97,23 @@ export function listActivePokerParticipants(
     room: PokerRoomEntity,
 ): PokerParticipant[] {
     return room.participants.filter(
-        (participant) => !isPokerParticipantIdle(room, participant),
+        (participant) =>
+            participant.role !== "observer" &&
+            !isPokerParticipantIdle(room, participant),
     );
 }
 
 export function readPokerAutoRevealTarget(
     room: PokerRoomEntity,
 ): number | null {
-    const active = listActivePokerParticipants(room).length;
-
-    if (room.autoReveal === "off") {
+    if (!room.autoReveal) {
         return null;
     }
 
-    return room.autoReveal === "all"
-        ? active
-        : Math.min(room.autoReveal, active);
+    return Math.max(
+        listActivePokerParticipants(room).length - room.autoReveal.missingVotes,
+        1,
+    );
 }
 
 export function stepPokerAutoReveal(
@@ -119,9 +123,11 @@ export function stepPokerAutoReveal(
     const active = listActivePokerParticipants(room).length;
     const votes = (readPokerAutoRevealTarget(room) ?? 0) + step;
 
-    const bound: PokerAutoReveal = votes <= 0 ? "off" : "all";
+    if (votes <= 0) {
+        return null;
+    }
 
-    return votes > 0 && votes < active ? votes : bound;
+    return { missingVotes: Math.max(active - votes, 0) };
 }
 
 export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
@@ -130,10 +136,5 @@ export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
         ({ userId }) => room.round.votes[userId.toHexString()],
     ).length;
 
-    return (
-        room.round.status === "voting" &&
-        target !== null &&
-        target > 0 &&
-        voted >= target
-    );
+    return room.round.status === "voting" && target !== null && voted >= target;
 }

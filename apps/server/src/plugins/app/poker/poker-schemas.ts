@@ -22,7 +22,7 @@ export const pokerStateSchema = Type.Object({
     draft: Type.Object({
         title: Type.Union([Type.String(), Type.Null()]),
         deck: pokerDeckNameSchema,
-        autoReveal: Type.Union([Type.Literal("all"), Type.Literal("off")]),
+        autoReveal: Type.Boolean(),
     }),
 });
 
@@ -54,6 +54,7 @@ export const pokerRoomScreens = {
     round: Type.Object({}),
     menu: Type.Object({}),
     autoReveal: Type.Object({}),
+    participants: Type.Object({ page: pageSchema }),
     history: Type.Object({ page: pageSchema }),
 };
 
@@ -66,10 +67,14 @@ export const pokerRoomButtonValues = {
     }),
     askTitle: roundNumberSchema,
     autoReveal: Type.Union([
-        Type.Literal("off"),
-        Type.Literal("all"),
-        Type.Integer({ minimum: 1 }),
+        Type.Null(),
+        Type.Object({ missingVotes: Type.Integer({ minimum: 0 }) }),
     ]),
+    role: Type.Object({
+        userId: objectIdSchema,
+        role: Type.Union([Type.Literal("voter"), Type.Literal("observer")]),
+    }),
+    participantsPage: pageSchema,
     close: Type.Null(),
     hide: Type.Null(),
     page: pageSchema,

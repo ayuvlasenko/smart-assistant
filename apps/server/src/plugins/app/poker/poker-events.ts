@@ -8,6 +8,7 @@ export type PokerRoomChange =
     | "roundStarted"
     | "roundRenamed"
     | "autoRevealChanged"
+    | "roleChanged"
     | "closed";
 
 export interface PokerEvents {

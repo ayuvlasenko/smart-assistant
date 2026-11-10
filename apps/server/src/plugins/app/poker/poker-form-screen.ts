@@ -64,11 +64,7 @@ function describeDraft(t: Translate, draft: PokerDraft): string[] {
         formatLabeled(t("poker:titleLabel"), formatTitle(t, draft)),
         formatLabeled(
             t("poker:autoRevealLabel"),
-            t(
-                draft.autoReveal === "all"
-                    ? "poker:autoRevealAll"
-                    : "poker:autoRevealOff",
-            ),
+            t(draft.autoReveal ? "poker:autoRevealAll" : "poker:autoRevealOff"),
         ),
     ];
 }

@@ -28,6 +28,7 @@ import {
     readPokerRoomStatus,
 } from "./poker-room-entity.js";
 import {
+    PokerRoleChange,
     PokerRoomsRepository,
     PokerRoomTarget,
     PokerRoundTarget,
@@ -36,7 +37,7 @@ import {
 export interface PokerRoomDraft {
     title?: string;
     deck: PokerDeckName;
-    autoReveal: "all" | "off";
+    autoReveal: boolean;
 }
 
 export type PokerJoinResult =
@@ -99,11 +100,12 @@ export class PokerRoomsService {
             createdBy: actor._id,
             ...(draft.title === undefined ? {} : { title: draft.title }),
             deck: draft.deck,
-            autoReveal: draft.autoReveal,
+            autoReveal: draft.autoReveal ? { missingVotes: 0 } : null,
             participants: [
                 {
                     userId: actor._id,
                     emoji: pickPokerParticipantEmoji([]),
+                    role: "voter" as const,
                     joinedAt: now,
                 },
             ],
@@ -154,6 +156,7 @@ export class PokerRoomsService {
             const participant: PokerParticipant = {
                 userId: actor._id,
                 emoji: pickPokerParticipantEmoji(taken),
+                role: "voter",
                 joinedAt: now,
             };
             const joined = await this.pokerRoomsRepository.join(
@@ -293,6 +296,19 @@ export class PokerRoomsService {
         );
 
         return changed && this.revealIfDue(actor, changed, "autoRevealChanged");
+    }
+
+    async changeRole(
+        actor: UserEntity,
+        room: PokerRoomEntity,
+        change: PokerRoleChange,
+    ): Promise<PokerRoomEntity | null> {
+        const changed = await this.pokerRoomsRepository.changeRole(
+            this.roomTargetOf(actor, room),
+            change,
+        );
+
+        return changed && this.revealIfDue(actor, changed, "roleChanged");
     }
 
     async close(

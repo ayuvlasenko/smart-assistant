@@ -3,11 +3,16 @@ export async function up(db) {
 
     await rooms.updateMany(
         { autoReveal: true },
-        { $set: { autoReveal: "all" } },
+        { $set: { autoReveal: { missingVotes: 0 } } },
     );
     await rooms.updateMany(
         { autoReveal: false },
-        { $set: { autoReveal: "off" } },
+        { $set: { autoReveal: null } },
+    );
+    await rooms.updateMany(
+        {},
+        { $set: { "participants.$[participant].role": "voter" } },
+        { arrayFilters: [{ "participant.role": { $exists: false } }] },
     );
 }
 
@@ -15,11 +20,12 @@ export async function down(db) {
     const rooms = db.collection("pokerRooms");
 
     await rooms.updateMany(
-        { autoReveal: "off" },
+        { autoReveal: null },
         { $set: { autoReveal: false } },
     );
     await rooms.updateMany(
-        { autoReveal: { $ne: false } },
+        { autoReveal: { $type: "object" } },
         { $set: { autoReveal: true } },
     );
+    await rooms.updateMany({}, { $unset: { "participants.$[].role": "" } });
 }
