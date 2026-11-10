@@ -22,6 +22,7 @@ export const pokerStateSchema = Type.Object({
     draft: Type.Object({
         title: Type.Union([Type.String(), Type.Null()]),
         deck: pokerDeckNameSchema,
+        autoReveal: Type.Union([Type.Literal("all"), Type.Literal("off")]),
     }),
 });
 
@@ -38,6 +39,7 @@ export const pokerButtonValues = {
     create: Type.Null(),
     deck: pokerDeckNameSchema,
     askTitle: Type.Null(),
+    autoReveal: Type.Null(),
     save: Type.Null(),
 };
 

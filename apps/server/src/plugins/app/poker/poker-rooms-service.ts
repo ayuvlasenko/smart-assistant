@@ -36,6 +36,7 @@ import {
 export interface PokerRoomDraft {
     title?: string;
     deck: PokerDeckName;
+    autoReveal: "all" | "off";
 }
 
 export type PokerJoinResult =
@@ -98,7 +99,7 @@ export class PokerRoomsService {
             createdBy: actor._id,
             ...(draft.title === undefined ? {} : { title: draft.title }),
             deck: draft.deck,
-            autoReveal: "all" as const,
+            autoReveal: draft.autoReveal,
             participants: [
                 {
                     userId: actor._id,

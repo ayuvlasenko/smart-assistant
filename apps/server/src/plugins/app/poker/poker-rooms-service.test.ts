@@ -14,10 +14,10 @@ import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { UserEntity } from "../users/user-entity.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import {
-    PokerAutoReveal,
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
 } from "./poker-room-entity.js";
+import { PokerRoomDraft } from "./poker-rooms-service.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
@@ -50,6 +50,7 @@ void describe("PokerRoomsService create and join", () => {
         const room = await bot.pokerRoomsService.create(creator, {
             title: "Sprint 42",
             deck: "tShirt",
+            autoReveal: "all",
         });
 
         assert.match(room.token, /^[A-Za-z0-9_-]{22}$/);
@@ -69,7 +70,10 @@ void describe("PokerRoomsService create and join", () => {
         const member = await createUser(bot, [pokerJoinGrant]);
 
         await assert.rejects(
-            bot.pokerRoomsService.create(member, { deck: "fibonacci" }),
+            bot.pokerRoomsService.create(member, {
+                deck: "fibonacci",
+                autoReveal: "off",
+            }),
             ForbiddenError,
         );
     });
@@ -513,6 +517,7 @@ void describe("PokerRoomsService list", () => {
         const { room: open, creator } = await createRoomWithCreator(bot);
         const closed = await bot.pokerRoomsService.create(creator, {
             deck: "fibonacci",
+            autoReveal: "off",
         });
         const member = await joinMember(bot, open);
         const outsider = await createUser(bot, [pokerCreateGrant]);
@@ -574,19 +579,13 @@ async function createUser(
 
 async function createRoomWithCreator(
     bot: PokerBot,
-    { autoReveal = "off" }: { autoReveal?: PokerAutoReveal } = {},
+    { autoReveal = "off" }: Partial<Pick<PokerRoomDraft, "autoReveal">> = {},
 ): Promise<{ room: PokerRoomEntity; creator: UserEntity }> {
     const creator = await createUser(bot, [pokerCreateGrant]);
-    const created = await bot.pokerRoomsService.create(creator, {
+    const room = await bot.pokerRoomsService.create(creator, {
         deck: "fibonacciModified",
-    });
-    const room = await bot.pokerRoomsService.changeAutoReveal(
-        creator,
-        created,
         autoReveal,
-    );
-
-    assert.ok(room);
+    });
 
     return { room, creator };
 }

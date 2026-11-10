@@ -607,15 +607,11 @@ async function createRoomThroughForm(
         await bot.sendText(creator, title);
     }
 
-    await bot.pressButton(creator, en.createButton);
-
     if (!autoReveal) {
-        await bot.pressButton(creator, en.moreButton);
         await bot.pressButton(creator, en.autoRevealButton);
-        await bot.pressButton(creator, en.fewerVotesButton);
-        await bot.pressButton(creator, en.backButton);
-        await bot.pressButton(creator, en.backButton);
     }
+
+    await bot.pressButton(creator, en.createButton);
 }
 
 async function joinRoom(

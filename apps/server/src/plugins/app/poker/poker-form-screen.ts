@@ -21,6 +21,7 @@ export function renderPokerForm({
             scene.screenButton(t("poker:deckButton"), "deck"),
             scene.button(t("poker:titleButton"), "askTitle", null),
         ],
+        [scene.button(t("poker:autoRevealButton"), "autoReveal", null)],
         [
             scene.backButton(t("poker:backButton")),
             {
@@ -61,6 +62,14 @@ function describeDraft(t: Translate, draft: PokerDraft): string[] {
         formatBold(t("poker:formTitle")),
         formatLabeled(t("poker:deckLabel"), formatPokerDeckName(t, draft.deck)),
         formatLabeled(t("poker:titleLabel"), formatTitle(t, draft)),
+        formatLabeled(
+            t("poker:autoRevealLabel"),
+            t(
+                draft.autoReveal === "all"
+                    ? "poker:autoRevealAll"
+                    : "poker:autoRevealOff",
+            ),
+        ),
     ];
 }
 
