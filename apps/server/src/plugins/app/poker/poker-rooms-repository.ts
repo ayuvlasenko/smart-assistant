@@ -3,6 +3,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Filter, ObjectId } from "mongodb";
 import {
+    PokerAutoReveal,
     PokerParticipant,
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
@@ -194,6 +195,17 @@ export class PokerRoomsRepository {
         );
     }
 
+    changeAutoReveal(
+        target: PokerRoomTarget,
+        autoReveal: PokerAutoReveal,
+    ): Promise<PokerRoomEntity | null> {
+        return this.collection().findOneAndUpdate(
+            participantFilter(target),
+            { $set: { autoReveal, ...touched(target.now) }, ...bump },
+            { returnDocument: "after" },
+        );
+    }
+
     close(target: PokerRoomTarget): Promise<PokerRoomEntity | null> {
         return this.collection().findOneAndUpdate(
             {
@@ -238,18 +250,20 @@ function statusFilter(
           };
 }
 
-function roundFilter({
+function participantFilter({
     roomId,
-    roundNumber,
     userId,
     now,
-}: PokerRoundTarget): Filter<PokerRoomEntity> {
+}: PokerRoomTarget): Filter<PokerRoomEntity> {
     return {
         _id: roomId,
         ...statusFilter("open", now),
-        "round.number": roundNumber,
         "participants.userId": userId,
     };
+}
+
+function roundFilter(target: PokerRoundTarget): Filter<PokerRoomEntity> {
+    return { ...participantFilter(target), "round.number": target.roundNumber };
 }
 
 function touch(now: Date) {

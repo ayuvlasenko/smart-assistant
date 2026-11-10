@@ -18,7 +18,9 @@ import {
     pokerParticipantEmojis,
 } from "./poker-participant-emojis.js";
 import {
-    listActivePokerParticipants,
+    findPokerParticipant,
+    isPokerAutoRevealDue,
+    PokerAutoReveal,
     PokerParticipant,
     PokerRoomEntity,
     PokerRoomStatus,
@@ -27,13 +29,13 @@ import {
 } from "./poker-room-entity.js";
 import {
     PokerRoomsRepository,
+    PokerRoomTarget,
     PokerRoundTarget,
 } from "./poker-rooms-repository.js";
 
 export interface PokerRoomDraft {
     title?: string;
     deck: PokerDeckName;
-    autoReveal: boolean;
 }
 
 export type PokerJoinResult =
@@ -96,7 +98,7 @@ export class PokerRoomsService {
             createdBy: actor._id,
             ...(draft.title === undefined ? {} : { title: draft.title }),
             deck: draft.deck,
-            autoReveal: draft.autoReveal,
+            autoReveal: "all" as const,
             participants: [
                 {
                     userId: actor._id,
@@ -129,7 +131,7 @@ export class PokerRoomsService {
 
             this.access.assert(actor, "use", subject("PokerRoom", room));
 
-            if (findParticipant(room, actor._id)) {
+            if (findPokerParticipant(room, actor._id)) {
                 return { status: "alreadyJoined", room };
             }
 
@@ -226,17 +228,7 @@ export class PokerRoomsService {
             isSameCard ? undefined : card,
         );
 
-        if (!voted) {
-            return null;
-        }
-
-        if (voted.autoReveal && hasEveryoneVoted(voted)) {
-            return (await this.reveal(actor, voted, round)) ?? voted;
-        }
-
-        await this.emitChanged(voted, "voted");
-
-        return voted;
+        return voted && this.revealIfDue(actor, voted, "voted");
     }
 
     async reveal(
@@ -289,6 +281,19 @@ export class PokerRoomsService {
         return renamed;
     }
 
+    async changeAutoReveal(
+        actor: UserEntity,
+        room: PokerRoomEntity,
+        autoReveal: PokerAutoReveal,
+    ): Promise<PokerRoomEntity | null> {
+        const changed = await this.pokerRoomsRepository.changeAutoReveal(
+            this.roomTargetOf(actor, room),
+            autoReveal,
+        );
+
+        return changed && this.revealIfDue(actor, changed, "autoRevealChanged");
+    }
+
     async close(
         actor: UserEntity,
         room: PokerRoomEntity,
@@ -308,19 +313,35 @@ export class PokerRoomsService {
         return closed;
     }
 
+    private async revealIfDue(
+        actor: UserEntity,
+        room: PokerRoomEntity,
+        change: PokerRoomChange,
+    ): Promise<PokerRoomEntity> {
+        if (isPokerAutoRevealDue(room)) {
+            return (await this.reveal(actor, room, room.round.number)) ?? room;
+        }
+
+        await this.emitChanged(room, change);
+
+        return room;
+    }
+
     private targetOf(
         actor: UserEntity,
         room: PokerRoomEntity,
         roundNumber: number,
     ): PokerRoundTarget {
+        return { ...this.roomTargetOf(actor, room), roundNumber };
+    }
+
+    private roomTargetOf(
+        actor: UserEntity,
+        room: PokerRoomEntity,
+    ): PokerRoomTarget {
         this.access.assert(actor, "use", subject("PokerRoom", room));
 
-        return {
-            roomId: room._id,
-            roundNumber,
-            userId: actor._id,
-            now: new Date(),
-        };
+        return { roomId: room._id, userId: actor._id, now: new Date() };
     }
 
     private async emitChanged(
@@ -338,24 +359,6 @@ export class PokerRoomsService {
             ],
         });
     }
-}
-
-function findParticipant(
-    room: PokerRoomEntity,
-    userId: ObjectId,
-): PokerParticipant | undefined {
-    return room.participants.find((participant) =>
-        participant.userId.equals(userId),
-    );
-}
-
-function hasEveryoneVoted(room: PokerRoomEntity): boolean {
-    const active = listActivePokerParticipants(room);
-
-    return (
-        active.length > 0 &&
-        active.every(({ userId }) => room.round.votes[userId.toHexString()])
-    );
 }
 
 export default fp(

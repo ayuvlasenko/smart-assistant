@@ -119,23 +119,14 @@ export function createPokerScene(
                 guard: canCreate,
                 handle: (ctx, scene) => scene.ask("title"),
             },
-            autoReveal: {
-                value: pokerButtonValues.autoReveal,
-                guard: canCreate,
-                handle: async (ctx, scene) => {
-                    scene.state.draft.autoReveal =
-                        !scene.state.draft.autoReveal;
-                },
-            },
             save: {
                 value: pokerButtonValues.save,
                 guard: canCreate,
                 handle: async (ctx, scene) => {
-                    const { title, deck, autoReveal } = scene.state.draft;
+                    const { title, deck } = scene.state.draft;
                     const room = await pokerRoomsService.create(ctx.user, {
                         ...(title === null ? {} : { title }),
                         deck,
-                        autoReveal,
                     });
 
                     scene.state.draft = buildDraft();
@@ -173,5 +164,5 @@ export function createPokerScene(
 }
 
 function buildDraft(): PokerDraft {
-    return { title: null, deck: defaultPokerDeckName, autoReveal: true };
+    return { title: null, deck: defaultPokerDeckName };
 }

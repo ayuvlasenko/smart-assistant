@@ -23,10 +23,10 @@ This directory is planning poker in the bot. A user with the right grant creates
 
 ## Using the bot
 
-| Grant          | Gives                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, and the list of the user's rooms |
-| `poker.create` | Everything of `poker.join`, the room form, closing the user's own rooms, and the rooms they closed      |
+| Grant          | Gives                                                                                                    |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, auto reveal, and the user's rooms |
+| `poker.create` | Everything of `poker.join`, the room form, closing the user's own rooms, and the rooms they closed       |
 
 `poker.create` runs the rules of `poker.join` in its own `define`, so an invite needs only one of them. The rules are in `poker-handlers.ts`:
 
@@ -41,11 +41,11 @@ This directory is planning poker in the bot. A user with the right grant creates
 The flow of a user:
 
 1. `/poker` starts the `poker` scene, which lives 7 days after its last use. It shows the open rooms of the user, five on a page. A user with `poker.create` also gets `➕ New room` and `🗄 Closed rooms`. The lists, the form and its deck choice are screens of the scene, and `‹ Back` returns to the page of the list the user left.
-2. `➕ New room` opens the form. Its buttons `🃏 Deck`, `✏️ Title` and `⚡ Auto reveal` carry no values: the text of the form shows them. The form holds the deck, `fibonacciShort` by default, an optional title of at most 64 characters (a room without one shows its creation time, such as `31.12 19:15`, in the time zone of the viewer), and auto reveal, on by default. `✅ Create` creates the room and starts its `pokerRoom` scene below the list.
+2. `➕ New room` opens the form. Its buttons `🃏 Deck` and `✏️ Title` carry no values: the text of the form shows them. The form holds the deck, `fibonacciShort` by default, and an optional title of at most 64 characters (a room without one shows its creation time, such as `31.12 19:15`, in the time zone of the viewer). A new room reveals the cards by itself when everyone votes; the form has no auto reveal, because its number of votes depends on the participants, see [Idle participants and auto reveal](#idle-participants-and-auto-reveal). `✅ Create` creates the room and starts its `pokerRoom` scene below the list.
 3. Another user opens the room link, `https://t.me/<bot>?start=poker_<token>`, and joins. `📋 Copy link` stands under the main action of the room, in one row with `⋯ More`, and copies this link to the clipboard of the participant through `copy_text`, so the participant pastes it into any chat.
 4. A participant presses a card to vote and presses the same card again to take the vote back. The cards stand in even rows of at most six, so the six cards of `fibonacciShort` fit one row and the 11 cards of `fibonacci` take two. The own card is blue, without a mark in its text. The others see `✅` for a vote, `⏳` for a wait, and `💤` for an idle participant, never the card.
-5. Any participant presses `👁 Reveal · 2/3`, which counts the votes against the active participants and turns green when everyone voted. With auto reveal the button reads `⚡ Reveal · 2/3`; the message text says nothing about it. The message shows the cards and the [round summary](#the-round-summary). `🔁 Revote` starts a round with the same title; `➡️ Next round`, blue, starts a round without a title.
-6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `‹ Back` with `🔒 Close` beside it for the creator. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
+5. Any participant presses `👁 Reveal · 2/3`, which counts the votes against the active participants and turns green when everyone voted. With auto reveal the button reads `⚡ Reveal · 2/3` and counts against the number of votes that reveals the round; the round message says nothing about it. The message shows the cards and the [round summary](#the-round-summary). `🔁 Revote` starts a round with the same title; `➡️ Next round`, blue, starts a round without a title.
+6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `⚡ Auto reveal`, then `‹ Back` with `🔒 Close` beside it for the creator. `⚡ Auto reveal` shows the current setting under the round and `➖` and `➕` to change it, for any participant. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
 
 The colours come from the `style` field of an inline button: `primary`, `success` and `danger`. A client without it shows plain buttons, and then the own card does not stand out.
 
@@ -76,7 +76,7 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
     "createdBy": "66f1c2…",
     "title": "Sprint 42",
     "deck": "fibonacciShort",
-    "autoReveal": false,
+    "autoReveal": 3,
     "lastActivityAt": "2026-10-16T12:00:00Z",
     "participants": [
         { "userId": "66f1c2…", "emoji": "🦊", "joinedAt": "…" },
@@ -114,6 +114,7 @@ The other changes follow the same pattern:
 | Reveal      | `round.number`, `status: "voting"`   | `$set round.status: "revealed"`, `round.revealedAt`        |
 | Next round  | `round.number`, `status: "revealed"` | pipeline: append `round` to `rounds`, new `round`          |
 | Round title | `round.number`                       | `$set` or `$unset round.title`                             |
+| Auto reveal | none                                 | `$set autoReveal`                                          |
 
 Every change also sets `lastActivityAt` and increments `version`.
 
@@ -137,9 +138,11 @@ Every change also sets `lastActivityAt` and increments `version`.
 
 ## Idle participants and auto reveal
 
-**Problem.** The vote counter of `👁 Reveal · 2/3` and auto reveal wait for every participant. A participant who opened the link and left the meeting would block both forever, and so would an observer who never votes.
+**Problem.** The vote counter of `👁 Reveal · 2/3` and auto reveal wait for every participant. A participant who opened the link and left the meeting would block both forever, and so would an observer who never votes. A team also often reveals when most of it voted, without waiting for the last estimate.
 
-**Idea.** A participant who did not vote in the last two revealed rounds that started after the participant joined is idle. Idle is computed from the document and never stored. `isPokerParticipantIdle` in `poker-room-entity.ts` decides it.
+**Idea.** A participant who did not vote in the last two revealed rounds that started after the participant joined is idle. Idle is computed from the document and never stored. `isPokerParticipantIdle` in `poker-room-entity.ts` decides it. Auto reveal waits for a number of votes that the participants choose, and never for more than the active participants.
+
+**Data.** `autoReveal` is `"off"`, `"all"` or a number of votes from 1. `readPokerAutoRevealTarget` turns it into the votes that reveal the round: none for `"off"`, the active participants for `"all"`, and the number for a number, at most the active participants. So `5` in a room of three reveals when all three voted. A room starts with `"all"`. The migration `20261110120000-change-poker-rooms-auto-reveal-to-votes.js` turned the earlier `true` into `"all"` and `false` into `"off"`.
 
 **Walk-through.**
 
@@ -147,7 +150,15 @@ Every change also sets `lastActivityAt` and increments `version`.
 2. The participant skips rounds 2 and 3. Both are revealed, so the participant gets `💤` and leaves the counter of `👁 Reveal`.
 3. A vote in round 4 makes the participant active again at once: a participant with a vote in the current round is never idle.
 
-With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active participant has a vote. It calls the same reveal as the button, with the same filter, so two last votes at the same time reveal the round once.
+With auto reveal, `PokerRoomsService.vote` reveals the round when the active participants with a vote reach the target. It calls the same reveal as the button, with the same filter, so two last votes at the same time reveal the round once.
+
+**Changing auto reveal.** The `⚡ Auto reveal` screen steps through `"off"`, 1, 2, … and `"all"` with `stepPokerAutoReveal`:
+
+1. A room of four active participants starts with `"all"`. `➖` sets 3, one less than the participants.
+2. `➖` again sets 2, then 1. `➖` on 1 sets `"off"`, and `➖` on `"off"` keeps it.
+3. `➕` goes the other way: from `"off"` to 1, and from 3 to `"all"`, because four votes are everyone.
+
+Each button carries the value it sets, not a step, so two participants who press `➕` on 2 at the same time both set 3. `PokerRoomsService.changeAutoReveal` stores the value for any participant of an open room. When the votes of the current round already reach the new target, it reveals the round at once through the same reveal. Stepping `➖` down from `"all"` in a room of four with two votes in therefore reveals the round at 2.
 
 ## Closed rooms
 
@@ -175,7 +186,7 @@ With `autoReveal`, `PokerRoomsService.vote` reveals the round when every active 
 
 **Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
 
-**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `history` with its page.
+**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu`, `autoReveal` or `history` with its page.
 
 ```json
 {
@@ -228,16 +239,16 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 
 ## Files
 
-| File                                                                      | Owns                                                                            | Section                                                       |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, idle participants          | [A room document](#a-room-document)                           |
-| `poker-decks.ts`                                                          | The decks                                                                       | [Using the bot](#using-the-bot)                               |
-| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and its conditional updates                         | [A room document](#a-room-document)                           |
-| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, lists; the participant limit  | [Joining a room](#joining-a-room)                             |
-| `poker-participant-emojis.ts`                                             | The emoji pool                                                                  | [Joining a room](#joining-a-room)                             |
-| `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                           | [The round summary](#the-round-summary)                       |
-| `poker-handlers.ts`                                                       | The grants, `/poker`, the `poker` deep link, the scenes, the event subscription | [Using the bot](#using-the-bot)                               |
-| `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene: the room lists and the form                                  | [Using the bot](#using-the-bot)                               |
-| `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene: voting, the revealed round, the history                  | [Updates for the participants](#updates-for-the-participants) |
-| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                  | [Participant labels](#participant-labels)                     |
-| `poker-schemas.ts`, `poker-events.ts`, `poker-locales.ts`                 | Scene states and button values, `poker.roomChanged`, texts                      |                                                               |
+| File                                                                      | Owns                                                                                        | Section                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, idle participants, auto reveal         | [A room document](#a-room-document)                           |
+| `poker-decks.ts`                                                          | The decks                                                                                   | [Using the bot](#using-the-bot)                               |
+| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and its conditional updates                                     | [A room document](#a-room-document)                           |
+| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, lists; the participant limit | [Joining a room](#joining-a-room)                             |
+| `poker-participant-emojis.ts`                                             | The emoji pool                                                                              | [Joining a room](#joining-a-room)                             |
+| `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                                       | [The round summary](#the-round-summary)                       |
+| `poker-handlers.ts`                                                       | The grants, `/poker`, the `poker` deep link, the scenes, the event subscription             | [Using the bot](#using-the-bot)                               |
+| `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene: the room lists and the form                                              | [Using the bot](#using-the-bot)                               |
+| `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene: voting, the revealed round, the history                              | [Updates for the participants](#updates-for-the-participants) |
+| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                              | [Participant labels](#participant-labels)                     |
+| `poker-schemas.ts`, `poker-events.ts`, `poker-locales.ts`                 | Scene states and button values, `poker.roomChanged`, texts                                  |                                                               |

@@ -102,14 +102,21 @@ export function createPokerRoomScene(
                 params: pokerRoomScreens.round,
                 render: (ctx, scene) =>
                     renderRoom(ctx, scene, (view) =>
-                        renderPokerRound(view, { isMenu: false }),
+                        renderPokerRound(view, "actions"),
                     ),
             },
             menu: {
                 params: pokerRoomScreens.menu,
                 render: (ctx, scene) =>
                     renderRoom(ctx, scene, (view) =>
-                        renderPokerRound(view, { isMenu: true }),
+                        renderPokerRound(view, "menu"),
+                    ),
+            },
+            autoReveal: {
+                params: pokerRoomScreens.autoReveal,
+                render: (ctx, scene) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerRound(view, "autoReveal"),
                     ),
             },
             history: {
@@ -161,6 +168,20 @@ export function createPokerRoomScene(
                     scene.state.titleRound = round;
                     await scene.reset();
                     await scene.ask("title");
+                },
+            },
+            autoReveal: {
+                value: pokerRoomButtonValues.autoReveal,
+                handle: async (ctx, scene, autoReveal) => {
+                    const room = await load(ctx, scene);
+
+                    if (room) {
+                        await pokerRoomsService.changeAutoReveal(
+                            ctx.user,
+                            room,
+                            autoReveal,
+                        );
+                    }
                 },
             },
             close: {

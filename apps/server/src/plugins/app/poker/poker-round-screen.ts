@@ -1,8 +1,10 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
+import { Translate } from "../i18n-service.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
     buildPokerMessage,
+    formatBold,
     formatPokerAgreement,
     formatPokerDistribution,
     formatPokerHeader,
@@ -12,21 +14,33 @@ import {
 import {
     isPokerParticipantIdle,
     listActivePokerParticipants,
+    PokerRoomEntity,
+    readPokerAutoRevealTarget,
+    stepPokerAutoReveal,
 } from "./poker-room-entity.js";
 import { summarizePokerRound } from "./poker-round-summary.js";
 import { PokerRoomView } from "./poker-schemas.js";
 
 const maxCardsPerRow = 6;
 
+export type PokerRoundPanel = "actions" | "menu" | "autoReveal";
+
 export function renderPokerRound(
     view: PokerRoomView,
-    { isMenu }: { isMenu: boolean },
+    panel: PokerRoundPanel,
 ): TelegramMessageContent {
     const isVoting = view.room.round.status === "voting";
     const lines = isVoting ? describeVoting(view) : describeRevealed(view);
 
-    if (isMenu) {
+    if (panel === "menu") {
         return buildPokerMessage(lines, readMenuKeyboard(view));
+    }
+
+    if (panel === "autoReveal") {
+        return buildPokerMessage(
+            [...lines, "", ...describeAutoReveal(view)],
+            readAutoRevealKeyboard(view),
+        );
     }
 
     return buildPokerMessage(
@@ -83,7 +97,9 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
     const { t } = ctx;
     const round = room.round.number;
     const ownVote = room.round.votes[ctx.user._id.toHexString()];
-    const total = listActivePokerParticipants(room).length;
+    const isAutoReveal = room.autoReveal !== "off";
+    const active = listActivePokerParticipants(room).length;
+    const total = readPokerAutoRevealTarget(room) ?? active;
     const voted = Object.keys(room.round.votes).length;
     const cardButton = (card: string): InlineKeyboardButton => {
         const button = scene.button(card, "vote", { round, card });
@@ -91,7 +107,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         return card === ownVote ? { ...button, style: "primary" } : button;
     };
     const reveal = scene.button(
-        t(room.autoReveal ? "poker:revealAutoButton" : "poker:revealButton", {
+        t(isAutoReveal ? "poker:revealAutoButton" : "poker:revealButton", {
             voted,
             total,
         }),
@@ -101,7 +117,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
 
     return [
         ...inEvenRows(deck.cards.map(cardButton)),
-        [voted && voted >= total ? { ...reveal, style: "success" } : reveal],
+        [voted && voted >= active ? { ...reveal, style: "success" } : reveal],
         [
             readCopyLinkButton(view),
             scene.screenButton(t("poker:moreButton"), "menu"),
@@ -154,6 +170,7 @@ function readMenuKeyboard({
                 page: 0,
             }),
         ],
+        [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
         [
             scene.backButton(t("poker:backButton")),
             ...(canClose
@@ -173,6 +190,56 @@ function readMenuKeyboard({
                   ]
                 : []),
         ],
+    ];
+}
+
+function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {
+    const { t } = ctx;
+
+    return [
+        `${escapeTelegramHtml(t("poker:autoRevealLabel"))}: ${formatBold(formatAutoReveal(t, room))}`,
+        escapeTelegramHtml(t("poker:autoRevealHint")),
+    ];
+}
+
+function formatAutoReveal(t: Translate, room: PokerRoomEntity): string {
+    if (room.autoReveal === "off") {
+        return t("poker:autoRevealOff");
+    }
+
+    if (room.autoReveal === "all") {
+        return t("poker:autoRevealAll");
+    }
+
+    const total = listActivePokerParticipants(room).length;
+
+    return t("poker:autoRevealVotes", {
+        votes: Math.min(room.autoReveal, total),
+        total,
+    });
+}
+
+function readAutoRevealKeyboard({
+    ctx,
+    scene,
+    room,
+}: PokerRoomView): InlineKeyboardButton[][] {
+    const { t } = ctx;
+
+    return [
+        [
+            scene.button(
+                t("poker:fewerVotesButton"),
+                "autoReveal",
+                stepPokerAutoReveal(room, -1),
+            ),
+            scene.button(
+                t("poker:moreVotesButton"),
+                "autoReveal",
+                stepPokerAutoReveal(room, 1),
+            ),
+        ],
+        [scene.backButton(t("poker:backButton"))],
     ];
 }
 

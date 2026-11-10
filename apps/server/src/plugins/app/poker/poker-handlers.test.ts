@@ -341,6 +341,78 @@ void describe("Poker rooms", () => {
         assert.ok(message.includes(en.agreementUnanimous));
     });
 
+    void it("lets any participant step the votes of auto reveal from the room menu", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655143 });
+        const member = buildTelegramPrivateChat({ id: 987655144 });
+        const another = buildTelegramPrivateChat({ id: 987655145 });
+        const autoRevealLine = async () =>
+            (await readRoomMessage(bot, member))
+                .split("\n")
+                .find((line) => line.startsWith(en.autoRevealLabel));
+        const step = async (button: string) => {
+            await bot.pressButton(member, button);
+
+            return autoRevealLine();
+        };
+
+        await createRoomThroughForm(bot, creator, { autoReveal: true });
+        await joinRoom(bot, member);
+        await joinRoom(bot, another);
+        await bot.pressButton(member, en.moreButton);
+        await bot.pressButton(member, en.autoRevealButton);
+
+        assert.equal(
+            await autoRevealLine(),
+            `${en.autoRevealLabel}: ${en.autoRevealAll}`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: at 2 of 3 votes`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: at 1 of 3 votes`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: ${en.autoRevealOff}`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: ${en.autoRevealOff}`,
+        );
+        assert.equal(
+            await step(en.moreVotesButton),
+            `${en.autoRevealLabel}: at 1 of 3 votes`,
+        );
+        assert.equal(
+            await step(en.moreVotesButton),
+            `${en.autoRevealLabel}: at 2 of 3 votes`,
+        );
+
+        await bot.pressButton(member, en.backButton);
+        await bot.pressButton(member, en.backButton);
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await readCallbackTexts(bot, creator)).includes(
+                en.revealAutoButton
+                    .replace("{{voted}}", "0")
+                    .replace("{{total}}", "2"),
+            ),
+        );
+
+        await bot.pressButton(creator, "5");
+        await bot.pressButton(another, "8");
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await readRoomMessage(bot, member)).includes("Round 1 · revealed"),
+        );
+        assert.equal((await readRoom()).autoReveal, 2);
+    });
+
     void it("shows the history of the revealed rounds", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655151 });
@@ -535,11 +607,15 @@ async function createRoomThroughForm(
         await bot.sendText(creator, title);
     }
 
-    if (!autoReveal) {
-        await bot.pressButton(creator, en.autoRevealButton);
-    }
-
     await bot.pressButton(creator, en.createButton);
+
+    if (!autoReveal) {
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.autoRevealButton);
+        await bot.pressButton(creator, en.fewerVotesButton);
+        await bot.pressButton(creator, en.backButton);
+        await bot.pressButton(creator, en.backButton);
+    }
 }
 
 async function joinRoom(
