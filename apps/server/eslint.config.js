@@ -26,16 +26,4 @@ export default defineConfig([
             "max-lines": ["warn", { max: 400, skipComments: true }],
         },
     },
-    {
-        files: ["src/plugins/app/telegram/telegram-scene-engine.ts"],
-        rules: {
-            "max-lines": ["warn", { max: 640, skipComments: true }],
-        },
-    },
-    {
-        files: ["src/plugins/app/telegram/telegram-scene-inputs.ts"],
-        rules: {
-            "max-lines": ["warn", { max: 510, skipComments: true }],
-        },
-    },
 ]);
