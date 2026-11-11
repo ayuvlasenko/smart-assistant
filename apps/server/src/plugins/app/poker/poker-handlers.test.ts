@@ -132,11 +132,7 @@ void describe("Poker rooms", () => {
             (await readRoomKeyboard(bot, creator))
                 .slice(1)
                 .map((row) => row.map(({ text }) => text)),
-            [
-                [revealLabel(0, 1)],
-                [en.watchButton],
-                [en.copyLinkButton, en.moreButton],
-            ],
+            [[revealLabel(0, 1)], [en.copyLinkButton, en.moreButton]],
         );
         assert.match(
             (await readRoomKeyboard(bot, creator)).at(-1)?.[0]?.copy_text
@@ -417,7 +413,7 @@ void describe("Poker rooms", () => {
         assert.deepEqual((await readRoom()).autoReveal, { missingVotes: 1 });
     });
 
-    void it("switches the viewer between voting and watching with one button", async (t) => {
+    void it("switches the viewer between voting and watching from the menu and returns to the round", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655146 });
         const member = buildTelegramPrivateChat({ id: 987655147 });
@@ -425,12 +421,19 @@ void describe("Poker rooms", () => {
         await createRoomThroughForm(bot, creator);
         await joinRoom(bot, member);
         await bot.pressButton(member, "5");
+        await bot.pressButton(member, en.moreButton);
         await bot.pressButton(member, en.watchButton);
         await bot.telegramChats.idle();
 
         const watching = await readRoomMessage(bot, creator);
 
         assert.deepEqual(await readCardRows(bot, member), []);
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.moreButton),
+        );
+
+        await bot.pressButton(member, en.moreButton);
+
         assert.ok(
             (await readCallbackTexts(bot, member)).includes(en.voteButton),
         );
@@ -442,6 +445,9 @@ void describe("Poker rooms", () => {
         await bot.pressButton(member, en.voteButton);
 
         assert.equal((await readCardRows(bot, member)).length, 1);
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.moreButton),
+        );
         assert.equal((await readRoom()).participants[1]?.role, "voter");
     });
 

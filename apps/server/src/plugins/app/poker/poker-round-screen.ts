@@ -122,7 +122,10 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
     return [
         ...(isObserver(view) ? [] : inEvenRows(deck.cards.map(cardButton))),
         [voted && voted >= active ? { ...reveal, style: "success" } : reveal],
-        ...readSecondaryRows(view),
+        [
+            readCopyLinkButton(view),
+            scene.screenButton(t("poker:moreButton"), "menu"),
+        ],
     ];
 }
 
@@ -145,26 +148,6 @@ function readRevealedKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
                 style: "primary",
             },
         ],
-        ...readSecondaryRows(view),
-    ];
-}
-
-function readSecondaryRows(view: PokerRoomView): InlineKeyboardButton[][] {
-    const { ctx, scene } = view;
-    const { t } = ctx;
-    const isWatching = isObserver(view);
-
-    return [
-        [
-            scene.button(
-                t(isWatching ? "poker:voteButton" : "poker:watchButton"),
-                "role",
-                {
-                    userId: ctx.user._id.toHexString(),
-                    role: isWatching ? "voter" : "observer",
-                },
-            ),
-        ],
         [
             readCopyLinkButton(view),
             scene.screenButton(t("poker:moreButton"), "menu"),
@@ -176,12 +159,8 @@ function isObserver({ ctx, room }: PokerRoomView): boolean {
     return findPokerParticipant(room, ctx.user._id)?.role === "observer";
 }
 
-function readMenuKeyboard({
-    ctx,
-    scene,
-    room,
-    canClose,
-}: PokerRoomView): InlineKeyboardButton[][] {
+function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
+    const { ctx, scene, room, canClose } = view;
     const { t } = ctx;
 
     return [
@@ -196,11 +175,12 @@ function readMenuKeyboard({
             }),
         ],
         [
-            scene.screenButton(t("poker:autoRevealButton"), "autoReveal"),
+            readWatchButton(view),
             scene.screenButton(t("poker:participantsButton"), "participants", {
                 page: 0,
             }),
         ],
+        [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
         [
             scene.backButton(t("poker:backButton")),
             ...(canClose
@@ -221,6 +201,20 @@ function readMenuKeyboard({
                 : []),
         ],
     ];
+}
+
+function readWatchButton(view: PokerRoomView): InlineKeyboardButton {
+    const { ctx, scene } = view;
+    const isWatching = isObserver(view);
+
+    return scene.button(
+        ctx.t(isWatching ? "poker:voteButton" : "poker:watchButton"),
+        "role",
+        {
+            userId: ctx.user._id.toHexString(),
+            role: isWatching ? "voter" : "observer",
+        },
+    );
 }
 
 function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {

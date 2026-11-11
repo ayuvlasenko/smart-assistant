@@ -203,6 +203,10 @@ export function createPokerRoomScene(
                             role,
                         });
                     }
+
+                    if (scene.screen.name === "menu") {
+                        await scene.reset();
+                    }
                 },
             },
             participantsPage: {
