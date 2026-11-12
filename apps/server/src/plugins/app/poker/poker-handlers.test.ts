@@ -341,6 +341,265 @@ void describe("Poker rooms", () => {
         assert.ok(message.includes(en.agreementUnanimous));
     });
 
+    void it("lets any participant step the votes of auto reveal from the room menu", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655143 });
+        const member = buildTelegramPrivateChat({ id: 987655144 });
+        const another = buildTelegramPrivateChat({ id: 987655145 });
+        const autoRevealLine = async () =>
+            (await readRoomMessage(bot, member))
+                .split("\n")
+                .find((line) => line.startsWith(en.autoRevealLabel));
+        const step = async (button: string) => {
+            await bot.pressButton(member, button);
+
+            return autoRevealLine();
+        };
+
+        await createRoomThroughForm(bot, creator, { autoReveal: true });
+        await joinRoom(bot, member);
+        await joinRoom(bot, another);
+        await bot.pressButton(member, en.moreButton);
+        await bot.pressButton(member, en.autoRevealButton);
+
+        assert.equal(
+            await autoRevealLine(),
+            `${en.autoRevealLabel}: ${en.autoRevealAll}`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: everyone but 1 (2 of 3 votes)`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: everyone but 2 (1 of 3 votes)`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: ${en.autoRevealOff}`,
+        );
+        assert.equal(
+            await step(en.fewerVotesButton),
+            `${en.autoRevealLabel}: ${en.autoRevealOff}`,
+        );
+        assert.equal(
+            await step(en.moreVotesButton),
+            `${en.autoRevealLabel}: everyone but 2 (1 of 3 votes)`,
+        );
+        assert.equal(
+            await step(en.moreVotesButton),
+            `${en.autoRevealLabel}: everyone but 1 (2 of 3 votes)`,
+        );
+
+        await bot.pressButton(member, en.backButton);
+        await bot.pressButton(member, en.backButton);
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await readCallbackTexts(bot, creator)).includes(
+                en.revealAutoButton
+                    .replace("{{voted}}", "0")
+                    .replace("{{total}}", "2"),
+            ),
+        );
+
+        await bot.pressButton(creator, "5");
+        await bot.pressButton(another, "8");
+        await bot.telegramChats.idle();
+
+        assert.ok(
+            (await readRoomMessage(bot, member)).includes("Round 1 · revealed"),
+        );
+        assert.deepEqual((await readRoom()).autoReveal, { missingVotes: 1 });
+    });
+
+    void it("switches the viewer between voting and watching from the menu and returns to the round", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655146 });
+        const member = buildTelegramPrivateChat({ id: 987655147 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.pressButton(member, "5");
+        await bot.pressButton(member, en.moreButton);
+        await bot.pressButton(member, en.watchButton);
+        await bot.telegramChats.idle();
+
+        const watching = await readRoomMessage(bot, creator);
+
+        assert.deepEqual(await readCardRows(bot, member), []);
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.moreButton),
+        );
+
+        await bot.pressButton(member, en.moreButton);
+
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.voteButton),
+        );
+        assert.ok(watching.split("\n").some((line) => line.endsWith(" 👀")));
+        assert.ok(
+            (await readCallbackTexts(bot, creator)).includes(revealLabel(0, 1)),
+        );
+
+        await bot.pressButton(member, en.voteButton);
+
+        assert.equal((await readCardRows(bot, member)).length, 1);
+        assert.ok(
+            (await readCallbackTexts(bot, member)).includes(en.moreButton),
+        );
+        assert.equal((await readRoom()).participants[1]?.role, "voter");
+    });
+
+    void it("opens a participant from the paged list and switches the role on the card", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655148 });
+
+        await createRoomThroughForm(bot, creator);
+        await seedHistory(10, 0);
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.participantsButton);
+
+        const firstPage = await readRoomKeyboard(bot, creator);
+
+        assert.equal(firstPage.length, 10);
+        assert.deepEqual(
+            firstPage.at(-2)?.map(({ text }) => text),
+            ["1/2", "›"],
+        );
+
+        await bot.pressButton(creator, "›");
+
+        const secondPage = await readRoomKeyboard(bot, creator);
+        const label = secondPage[0]?.[0]?.text;
+
+        assert.equal(secondPage.length, 5);
+        assert.ok(label);
+
+        await bot.pressButton(creator, label);
+
+        assert.ok(
+            (await readRoomMessage(bot, creator)).includes(en.participantVoter),
+        );
+        assert.deepEqual(await readCallbackTexts(bot, creator), [
+            en.makeObserverButton,
+            en.backButton,
+            en.removeButton,
+        ]);
+
+        await bot.pressButton(creator, en.makeObserverButton);
+
+        const room = await readRoom();
+
+        assert.equal(room.participants[8]?.role, "observer");
+        assert.equal(
+            (await readRoomKeyboard(bot, creator))[0]?.[0]?.text,
+            `👀 ${label}`,
+        );
+
+        await bot.pressButton(creator, `👀 ${label}`);
+
+        assert.deepEqual(await readCallbackTexts(bot, creator), [
+            en.makeVoterButton,
+            en.backButton,
+            en.removeButton,
+        ]);
+    });
+
+    void it("removes a participant after a second press and tells them", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655149 });
+        const member = buildTelegramPrivateChat({ id: 987655150 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.pressButton(member, "5");
+        await bot.telegramChats.idle();
+        await bot.pressButton(creator, revealLabel(1, 2));
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.participantsButton);
+
+        const label = (await readRoomKeyboard(bot, creator))[1]?.[0]?.text;
+
+        assert.ok(label);
+        await bot.pressButton(creator, label);
+        await bot.pressButton(creator, en.removeButton);
+
+        assert.ok(
+            (await readCallbackTexts(bot, creator)).includes(
+                en.confirmRemoveButton,
+            ),
+        );
+        assert.equal((await readRoom()).participants.length, 2);
+
+        await bot.pressButton(creator, en.confirmRemoveButton);
+        await bot.telegramChats.idle();
+
+        assert.equal((await readRoom()).participants.length, 1);
+        assert.equal((await readRoomKeyboard(bot, creator)).length, 2);
+        assert.equal(await readRoomMessage(bot, member), en.roomRemoved);
+        assert.deepEqual(await readCallbackTexts(bot, member), [en.hideButton]);
+
+        await bot.pressButton(creator, en.backButton);
+        await bot.pressButton(creator, en.historyButton);
+
+        const history = await readRoomMessage(bot, creator);
+
+        assert.ok(history.includes("5 — "));
+        assert.doesNotMatch(history, /[0-9a-f]{24}/);
+
+        await bot.pressButton(member, en.hideButton);
+
+        assert.deepEqual(await bot.readMessageTexts(member.id), []);
+
+        await bot.sendText(member, `/start poker_${await readToken()}`);
+
+        assert.equal((await readRoom()).participants.length, 2);
+        assert.deepEqual((await readRoom()).removedParticipants, []);
+    });
+
+    void it("lets a participant leave from their own card and keeps the creator", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655152 });
+        const member = buildTelegramPrivateChat({ id: 987655153 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(creator, en.participantsButton);
+
+        const ownLabel = (await readRoomKeyboard(bot, creator))[0]?.[0]?.text;
+
+        assert.ok(ownLabel);
+        await bot.pressButton(creator, ownLabel);
+
+        assert.deepEqual(await readCallbackTexts(bot, creator), [
+            en.watchButton,
+            en.backButton,
+        ]);
+
+        await bot.pressButton(member, en.moreButton);
+        await bot.pressButton(member, en.participantsButton);
+
+        const label = (await readRoomKeyboard(bot, member))[1]?.[0]?.text;
+
+        assert.ok(label);
+        assert.ok(label.endsWith(`(${en.you})`));
+        await bot.pressButton(member, label);
+
+        assert.deepEqual(await readCallbackTexts(bot, member), [
+            en.watchButton,
+            en.backButton,
+            en.leaveButton,
+        ]);
+
+        await bot.pressButton(member, en.leaveButton);
+        await bot.pressButton(member, en.confirmRemoveButton);
+
+        assert.deepEqual(await bot.readMessageTexts(member.id), []);
+        assert.equal((await readRoom()).participants.length, 1);
+    });
+
     void it("shows the history of the revealed rounds", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655151 });
@@ -601,6 +860,7 @@ async function seedHistory(voters: number, rounds: number): Promise<void> {
                     $each: users.map((user, index) => ({
                         userId: user._id,
                         emoji: `${index}`,
+                        role: "voter",
                         joinedAt: room.createdAt,
                     })),
                 },

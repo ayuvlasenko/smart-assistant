@@ -53,6 +53,9 @@ export const pokerRoomStateSchema = Type.Object({
 export const pokerRoomScreens = {
     round: Type.Object({}),
     menu: Type.Object({}),
+    autoReveal: Type.Object({}),
+    participants: Type.Object({ page: pageSchema }),
+    participant: Type.Object({ userId: objectIdSchema }),
     history: Type.Object({ page: pageSchema }),
 };
 
@@ -64,6 +67,16 @@ export const pokerRoomButtonValues = {
         repeat: Type.Boolean(),
     }),
     askTitle: roundNumberSchema,
+    autoReveal: Type.Union([
+        Type.Null(),
+        Type.Object({ missingVotes: Type.Integer({ minimum: 0 }) }),
+    ]),
+    role: Type.Object({
+        userId: objectIdSchema,
+        role: Type.Union([Type.Literal("voter"), Type.Literal("observer")]),
+    }),
+    participantsPage: pageSchema,
+    remove: objectIdSchema,
     close: Type.Null(),
     hide: Type.Null(),
     page: pageSchema,
