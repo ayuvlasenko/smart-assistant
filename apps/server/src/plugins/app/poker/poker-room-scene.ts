@@ -14,7 +14,10 @@ import {
     validatePokerTitle,
 } from "./poker-format.js";
 import { renderPokerHistory } from "./poker-history-screen.js";
-import { renderPokerParticipants } from "./poker-participants-screen.js";
+import {
+    renderPokerParticipant,
+    renderPokerParticipants,
+} from "./poker-participants-screen.js";
 import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
@@ -58,10 +61,23 @@ export function createPokerRoomScene(
         const room = await load(ctx, scene);
 
         if (!room) {
+            const isRemoved = await pokerRoomsService.isRemoved(
+                ctx.user,
+                new ObjectId(scene.state.roomId),
+            );
+
             return [
                 buildPokerMessage(
-                    [escapeTelegramHtml(ctx.t("poker:roomMissing"))],
-                    [],
+                    [
+                        escapeTelegramHtml(
+                            ctx.t(
+                                isRemoved
+                                    ? "poker:roomRemoved"
+                                    : "poker:roomMissing",
+                            ),
+                        ),
+                    ],
+                    [[scene.button(ctx.t("poker:hideButton"), "hide", null)]],
                 ),
             ];
         }
@@ -125,6 +141,13 @@ export function createPokerRoomScene(
                 render: (ctx, scene, { page }) =>
                     renderRoom(ctx, scene, (view) =>
                         renderPokerParticipants(view, page),
+                    ),
+            },
+            participant: {
+                params: pokerRoomScreens.participant,
+                render: (ctx, scene, { userId }) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerParticipant(view, userId),
                     ),
             },
             history: {
@@ -207,6 +230,31 @@ export function createPokerRoomScene(
                     if (scene.screen.name === "menu") {
                         await scene.reset();
                     }
+
+                    if (scene.screen.name === "participant") {
+                        await scene.back();
+                    }
+                },
+            },
+            remove: {
+                value: pokerRoomButtonValues.remove,
+                confirm: true,
+                handle: async (ctx, scene, userId) => {
+                    const room = await load(ctx, scene);
+                    const removed =
+                        room &&
+                        (await pokerRoomsService.removeParticipant(
+                            ctx.user,
+                            room,
+                            new ObjectId(userId),
+                        ));
+
+                    if (removed && userId === ctx.user._id.toHexString()) {
+                        await scene.end({ messages: "delete" });
+                        return;
+                    }
+
+                    await scene.back();
                 },
             },
             participantsPage: {

@@ -55,6 +55,7 @@ export const pokerRoomScreens = {
     menu: Type.Object({}),
     autoReveal: Type.Object({}),
     participants: Type.Object({ page: pageSchema }),
+    participant: Type.Object({ userId: objectIdSchema }),
     history: Type.Object({ page: pageSchema }),
 };
 
@@ -75,6 +76,7 @@ export const pokerRoomButtonValues = {
         role: Type.Union([Type.Literal("voter"), Type.Literal("observer")]),
     }),
     participantsPage: pageSchema,
+    remove: objectIdSchema,
     close: Type.Null(),
     hide: Type.Null(),
     page: pageSchema,

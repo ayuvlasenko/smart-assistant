@@ -11,7 +11,12 @@ import {
 export type PokerRoomPatch = Partial<
     Pick<
         PokerRoomEntity,
-        "autoReveal" | "closedAt" | "participants" | "round" | "rounds"
+        | "autoReveal"
+        | "closedAt"
+        | "participants"
+        | "removedParticipants"
+        | "round"
+        | "rounds"
     >
 >;
 
@@ -131,6 +136,43 @@ export function changePokerRole(
     };
 }
 
+export function addPokerParticipant(
+    room: PokerRoomEntity,
+    participant: PokerParticipant,
+): PokerRoomPatch {
+    return {
+        participants: [...room.participants, participant],
+        ...(room.removedParticipants
+            ? {
+                  removedParticipants: withoutParticipant(
+                      room.removedParticipants,
+                      participant.userId,
+                  ),
+              }
+            : {}),
+    };
+}
+
+export function removePokerParticipant(
+    room: PokerRoomEntity,
+    userId: ObjectId,
+): PokerRoomPatch | null {
+    const participant = findPokerParticipant(room, userId);
+
+    if (!participant || userId.equals(room.createdBy)) {
+        return null;
+    }
+
+    return {
+        participants: withoutParticipant(room.participants, userId),
+        removedParticipants: [
+            ...withoutParticipant(room.removedParticipants ?? [], userId),
+            participant,
+        ],
+        ...withoutOpenVote(room, userId),
+    };
+}
+
 function isVotingRound(room: PokerRoomEntity, round: number): boolean {
     return room.round.number === round && room.round.status === "voting";
 }
@@ -157,6 +199,15 @@ function withRole(
     return participant.userId.equals(userId)
         ? { ...participant, role }
         : participant;
+}
+
+function withoutParticipant(
+    participants: PokerParticipant[],
+    userId: ObjectId,
+): PokerParticipant[] {
+    return participants.filter(
+        (participant) => !participant.userId.equals(userId),
+    );
 }
 
 function withoutOpenVote(

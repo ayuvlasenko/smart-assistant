@@ -33,6 +33,7 @@ export interface PokerRoomEntity extends BaseEntity {
     lastActivityAt: Date;
     closedAt?: Date;
     participants: PokerParticipant[];
+    removedParticipants?: PokerParticipant[];
     round: PokerRound;
     rounds: PokerRound[];
 }
@@ -91,6 +92,12 @@ export function findPokerParticipant(
     return room.participants.find((participant) =>
         participant.userId.equals(userId),
     );
+}
+
+export function listKnownPokerParticipants(
+    room: PokerRoomEntity,
+): PokerParticipant[] {
+    return [...room.participants, ...(room.removedParticipants ?? [])];
 }
 
 export function listActivePokerParticipants(

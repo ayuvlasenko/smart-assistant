@@ -664,6 +664,123 @@ void describe("PokerRoomsService roles", () => {
     });
 });
 
+void describe("PokerRoomsService participants", () => {
+    void it("lets a participant remove another one and drops the vote of the open round", async (t) => {
+        const bot = await buildBot(t);
+        const { room } = await createRoomWithCreator(bot);
+        const member = await joinMember(bot, room);
+        const another = await joinMember(bot, room);
+
+        const voted = await bot.pokerRoomsService.vote(member, room, {
+            round: 1,
+            card: "5",
+        });
+
+        assert.ok(voted);
+        const changed = await bot.pokerRoomsService.removeParticipant(
+            another,
+            voted,
+            member._id,
+        );
+
+        assert.ok(changed);
+        assert.equal(changed.participants.length, 2);
+        assert.ok(changed.removedParticipants?.[0]?.userId.equals(member._id));
+        assert.deepEqual(changed.round.votes, {});
+        assert.equal(await bot.pokerRoomsService.find(member, room._id), null);
+        assert.equal(
+            await bot.pokerRoomsService.isRemoved(member, room._id),
+            true,
+        );
+        assert.equal(
+            await bot.pokerRoomsService.vote(member, changed, {
+                round: 1,
+                card: "8",
+            }),
+            null,
+        );
+    });
+
+    void it("keeps the creator in the room and refuses a user outside it", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+        const member = await joinMember(bot, room);
+        const outsider = await createUser(bot, [pokerJoinGrant]);
+
+        assert.equal(
+            await bot.pokerRoomsService.removeParticipant(
+                member,
+                room,
+                creator._id,
+            ),
+            null,
+        );
+        assert.equal(
+            await bot.pokerRoomsService.removeParticipant(
+                creator,
+                room,
+                creator._id,
+            ),
+            null,
+        );
+        assert.equal(
+            await bot.pokerRoomsService.removeParticipant(
+                outsider,
+                room,
+                member._id,
+            ),
+            null,
+        );
+        assert.equal((await findRoom(room)).participants.length, 2);
+    });
+
+    void it("reveals the round by itself when the last voter without a vote is removed", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot, {
+            autoReveal: true,
+        });
+        const member = await joinMember(bot, room);
+
+        const voted = await bot.pokerRoomsService.vote(creator, room, {
+            round: 1,
+            card: "3",
+        });
+
+        assert.ok(voted);
+        const changed = await bot.pokerRoomsService.removeParticipant(
+            creator,
+            voted,
+            member._id,
+        );
+
+        assert.equal(voted.round.status, "voting");
+        assert.equal(changed?.round.status, "revealed");
+    });
+
+    void it("lets a participant leave and join again by the link", async (t) => {
+        const bot = await buildBot(t);
+        const { room } = await createRoomWithCreator(bot);
+        const member = await joinMember(bot, room);
+
+        const left = await bot.pokerRoomsService.removeParticipant(
+            member,
+            room,
+            member._id,
+        );
+        const again = await bot.pokerRoomsService.join(member, room.token);
+        const joined = await findRoom(room);
+
+        assert.equal(left?.participants.length, 1);
+        assert.equal(again.status, "joined");
+        assert.equal(joined.participants.length, 2);
+        assert.deepEqual(joined.removedParticipants, []);
+        assert.equal(
+            await bot.pokerRoomsService.isRemoved(member, room._id),
+            false,
+        );
+    });
+});
+
 void describe("PokerRoomsService close", () => {
     void it("closes a room for its creator and stops every change in it", async (t) => {
         const bot = await buildBot(t);

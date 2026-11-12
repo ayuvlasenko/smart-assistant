@@ -16,6 +16,7 @@ import { PokerEvents, PokerRoomChange } from "./poker-events.js";
 import { pickPokerParticipantEmoji } from "./poker-participant-emojis.js";
 import {
     findPokerParticipant,
+    listKnownPokerParticipants,
     PokerAutoReveal,
     PokerParticipant,
     PokerRoomEntity,
@@ -24,12 +25,14 @@ import {
     readPokerRoomStatus,
 } from "./poker-room-entity.js";
 import {
+    addPokerParticipant,
     changePokerRole,
     PokerRoleChange,
     PokerRoomPatch,
     PokerRoundRename,
     PokerRoundStart,
     PokerVote,
+    removePokerParticipant,
     renamePokerRound,
     revealPokerRound,
     revealPokerRoundIfDue,
@@ -169,7 +172,7 @@ export class PokerRoomsService {
             };
             const joined = await this.save(
                 room,
-                { participants: [...room.participants, participant] },
+                addPokerParticipant(room, participant),
                 { now, change: "joined" },
             );
 
@@ -216,9 +219,18 @@ export class PokerRoomsService {
         return { items, total };
     }
 
+    async isRemoved(actor: UserEntity, roomId: ObjectId): Promise<boolean> {
+        const room = await this.pokerRoomsRepository.findOne({
+            _id: roomId,
+            "removedParticipants.userId": actor._id,
+        });
+
+        return room !== null;
+    }
+
     findUsers(room: PokerRoomEntity): Promise<UserEntity[]> {
         return this.usersRepository.findManyByIds(
-            room.participants.map(({ userId }) => userId),
+            listKnownPokerParticipants(room).map(({ userId }) => userId),
         );
     }
 
@@ -286,6 +298,19 @@ export class PokerRoomsService {
         );
     }
 
+    async removeParticipant(
+        actor: UserEntity,
+        room: PokerRoomEntity,
+        userId: ObjectId,
+    ): Promise<PokerRoomEntity | null> {
+        return this.change(
+            actor,
+            room,
+            userId.equals(actor._id) ? "left" : "removed",
+            (current) => removePokerParticipant(current, userId),
+        );
+    }
+
     async close(
         actor: UserEntity,
         room: PokerRoomEntity,
@@ -348,7 +373,11 @@ export class PokerRoomsService {
         );
 
         if (saved) {
-            await this.emitChanged(saved, reveal.round ? "revealed" : change);
+            await this.emitChanged(
+                saved,
+                reveal.round ? "revealed" : change,
+                room,
+            );
         }
 
         return saved;
@@ -357,16 +386,20 @@ export class PokerRoomsService {
     private async emitChanged(
         room: PokerRoomEntity,
         change: PokerRoomChange,
+        previous?: PokerRoomEntity,
     ): Promise<void> {
+        const userIds = new Map(
+            [
+                room.createdBy,
+                ...room.participants.map(({ userId }) => userId),
+                ...(previous?.participants ?? []).map(({ userId }) => userId),
+            ].map((userId) => [userId.toHexString(), userId]),
+        );
+
         await this.eventEmitter.emit("poker.roomChanged", {
             roomId: room._id,
             change,
-            userIds: [
-                room.createdBy,
-                ...room.participants
-                    .map(({ userId }) => userId)
-                    .filter((userId) => !userId.equals(room.createdBy)),
-            ],
+            userIds: [...userIds.values()],
         });
     }
 }

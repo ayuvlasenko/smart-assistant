@@ -7,6 +7,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 - [A room document](#a-room-document)
 - [Joining a room](#joining-a-room)
 - [Who counts in a round](#who-counts-in-a-round)
+- [Leaving a room](#leaving-a-room)
 - [Closed rooms](#closed-rooms)
 - [Updates for the participants](#updates-for-the-participants)
 - [The round summary](#the-round-summary)
@@ -23,10 +24,10 @@ This directory is planning poker in the bot. A user with the right grant creates
 
 ## Using the bot
 
-| Grant          | Gives                                                                                                           |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, auto reveal, roles, and the user's rooms |
-| `poker.create` | Everything of `poker.join`, the room form, closing the user's own rooms, and the rooms they closed              |
+| Grant          | Gives                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, auto reveal, roles, removing participants, and the user's rooms |
+| `poker.create` | Everything of `poker.join`, the room form, closing the user's own rooms, and the rooms they closed                                     |
 
 `poker.create` runs the rules of `poker.join` in its own `define`, so an invite needs only one of them. The rules are in `poker-handlers.ts`:
 
@@ -45,11 +46,11 @@ The flow of a user:
 3. Another user opens the room link, `https://t.me/<bot>?start=poker_<token>`, and joins. `📋 Copy link` stands under the main action of the room, in one row with `⋯ More`, and copies this link to the clipboard of the participant through `copy_text`, so the participant pastes it into any chat.
 4. A participant presses a card to vote and presses the same card again to take the vote back. The cards stand in even rows of at most six, so the six cards of `fibonacciShort` fit one row and the 11 cards of `fibonacci` take two. The own card is blue, without a mark in its text. The others see `✅` for a vote, `⏳` for a wait, `💤` for an idle participant and `👀` for an observer, never the card. An observer has no cards on the keyboard.
 5. Any participant presses `👁 Reveal · 2/3`, which counts the votes against the active participants and turns green when everyone voted. With auto reveal the button reads `⚡ Reveal · 2/3` and counts against the number of votes that reveals the round; the round message says nothing about it. The message shows the cards and the [round summary](#the-round-summary). `🔁 Revote` starts a round with the same title; `➡️ Next round`, blue, starts a round without a title.
-6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `👀 Watch` and `👥 Participants`, then `⚡ Auto reveal`, then `‹ Back` with `🔒 Close` beside it for the creator. `👀 Watch` makes the viewer an observer, `🃏 Vote` in its place makes an observer vote again, and both return to the round. `⚡ Auto reveal` shows the current setting under the round and `➖` and `➕` to change it. `👥 Participants` lists the participants, eight on a page, one button each; an observer's button starts with `👀`, and a press switches that participant between voting and watching. Any participant uses both screens. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
+6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `👀 Watch` and `👥 Participants`, then `⚡ Auto reveal`, then `‹ Back` with `🔒 Close` beside it for the creator. `👀 Watch` makes the viewer an observer, `🃏 Vote` in its place makes an observer vote again, and both return to the round. `⚡ Auto reveal` shows the current setting under the round and `➖` and `➕` to change it. `👥 Participants` lists the participants, eight on a page, one button each; an observer's button starts with `👀`. A press opens the card of the participant: `👀 Make observer` or `🃏 Make voter` switches the role, and `🚫 Remove` with a second press on `🚫 Sure?` [removes the participant](#leaving-a-room). The own card has `👀 Watch` or `🃏 Vote`, and `🚪 Leave`. After an action the card returns to the list. Any participant uses these screens. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
 
 The colours come from the `style` field of an inline button: `primary`, `success` and `danger`. A client without it shows plain buttons, and then the own card does not stand out.
 
-The creator closes a room with the red `🔒 Close` and a second press on `🔒 Sure?`; otherwise the room [closes by itself](#closed-rooms). A room has no leave button: a participant who stops voting becomes [idle](#who-counts-in-a-round).
+The creator closes a room with the red `🔒 Close` and a second press on `🔒 Sure?`; otherwise the room [closes by itself](#closed-rooms). A participant [leaves the room](#leaving-a-room) from the own card, and a participant who only stops voting becomes [idle](#who-counts-in-a-round).
 
 The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card is an estimate.
 
@@ -119,15 +120,16 @@ A title sent for round 3 after round 4 started returns `null` in the same way, a
 
 Every change expects an open room and the user among its participants; `PokerRoomsService` checks both before it calls the function of the change:
 
-| Change      | Function           | Expects                                      | Writes                                                   |
-| ----------- | ------------------ | -------------------------------------------- | -------------------------------------------------------- |
-| Vote        | `votePokerRound`   | the round of the button is `voting`, a voter | the card in `round.votes`, or no vote for the same card  |
-| Reveal      | `revealPokerRound` | the round of the button is `voting`          | `round.status: "revealed"`, `round.revealedAt`           |
-| Next round  | `startPokerRound`  | the round of the button is `revealed`        | `round` appended to `rounds`, a new `round`              |
-| Round title | `renamePokerRound` | the round of the button is the current one   | `round.title`, or none                                   |
-| Auto reveal | none               | nothing more                                 | `autoReveal`                                             |
-| Role        | `changePokerRole`  | the other user is a participant              | the `role`; for an observer, no vote in a `voting` round |
-| Close       | none               | `update PokerRoom`                           | `closedAt`                                               |
+| Change      | Function                 | Expects                                          | Writes                                                                      |
+| ----------- | ------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| Vote        | `votePokerRound`         | the round of the button is `voting`, a voter     | the card in `round.votes`, or no vote for the same card                     |
+| Reveal      | `revealPokerRound`       | the round of the button is `voting`              | `round.status: "revealed"`, `round.revealedAt`                              |
+| Next round  | `startPokerRound`        | the round of the button is `revealed`            | `round` appended to `rounds`, a new `round`                                 |
+| Round title | `renamePokerRound`       | the round of the button is the current one       | `round.title`, or none                                                      |
+| Auto reveal | none                     | nothing more                                     | `autoReveal`                                                                |
+| Role        | `changePokerRole`        | the other user is a participant                  | the `role`; for an observer, no vote in a `voting` round                    |
+| Remove      | `removePokerParticipant` | the other user is a participant, not the creator | the participant moved to `removedParticipants`, no vote in a `voting` round |
+| Close       | none                     | `update PokerRoom`                               | `closedAt`                                                                  |
 
 Before the write, the service runs `revealPokerRoundIfDue` on the changed room and adds the reveal to the same write, see [Who counts in a round](#who-counts-in-a-round). Every write also sets `lastActivityAt` and `updatedAt` and increments `version`.
 
@@ -190,6 +192,29 @@ Each button carries the value it sets, not a step, so two participants who press
 - When `missingVotes` is not below the active participants, the target stays at 1 instead of 0: the first vote reveals the round.
 - When every participant is idle or an observer, the target is 1 as well, and the first vote reveals the round. Two revealed rounds without votes make everybody idle.
 
+## Leaving a room
+
+**Problem.** A room had no way out. A user who joined the wrong room stayed in its list of participants, and the room stayed in the `/poker` of that user. Taking a participant out must not rewrite the history: the rounds keep the votes of that participant.
+
+**Idea.** Any participant removes any other one, and leaves the room in the same way; only the creator stays. The participant moves from `participants` to `removedParticipants`. So every count and every list reads `participants` as before, and the room still knows the name and the emoji for the history.
+
+**Data.** `removedParticipants` is an optional array of the same participant records, in the order of the removals. A room without a removal has no such field. `listKnownPokerParticipants` in `poker-room-entity.ts` joins both arrays for the labels.
+
+**Walk-through.** A participant removes another one.
+
+1. `👥 Participants` opens the list, and a press on a participant opens the card: the label, the role, and `💤 Idle` with its reason for an idle voter.
+2. `🚫 Remove` is a button with `confirm: true`, so the second press on `🚫 Sure?` calls `PokerRoomsService.removeParticipant`.
+3. `removePokerParticipant` moves the participant to `removedParticipants` and drops the vote of a `voting` round. The write is a change like any other, see [A room document](#a-room-document), so a removal of the last voter without a vote reveals the round.
+4. The service emits `poker.roomChanged` with the removed user among `userIds`, so the `/poker` list of that user redraws without the room.
+5. The room scene of the removed user redraws too. `PokerRoomsService.find` gives nothing, because the user has no `read PokerRoom` any more, and `PokerRoomsService.isRemoved` tells the removal from a missing room. The message turns into `You were removed from this room. Open its link to join again.` with `✖️ Hide`.
+
+**Edge cases.**
+
+- The creator cannot be removed and cannot leave: `removePokerParticipant` refuses `createdBy`, and the card of the creator has no such button. The creator closes the room instead.
+- On the own card the button reads `🚪 Leave`. After the second press the scene ends with `scene.end({ messages: "delete" })`, so the room message leaves the chat.
+- A removed user joins again by the link. `addPokerParticipant` drops the record from `removedParticipants`, and the user gets a new emoji and a new `joinedAt`.
+- A card of a participant who was removed in the meantime shows `This participant is no longer in the room.` and `‹ Back`.
+
 ## Closed rooms
 
 **Problem.** Without an end, the list of `/poker` grows forever and an old link keeps working.
@@ -216,7 +241,7 @@ Each button carries the value it sets, not a step, so two participants who press
 
 **Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
 
-**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `autoReveal`, or `participants` or `history` with its page.
+**Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `autoReveal`, `participants` or `history` with its page, or `participant` with the user id.
 
 ```json
 {
@@ -263,24 +288,26 @@ The screen shows no mean. One outlier moves the mean far, and planning poker aim
 2. When two participants have the same name, the label adds `(@username)` of each one who has it.
 3. The label of the viewer ends with `(you)`. The screen of each participant is drawn for that participant, so every user finds their own line.
 
+A [removed participant](#leaving-a-room) keeps the label, so the history names every voter of a round.
+
 A label is plain text. Names and titles come from users, so every screen passes them through `escapeTelegramHtml` before it puts them into the HTML of the message.
 
 The emoji is unique in a room of up to 40 participants, so it tells them apart also when the names and the usernames do not. A room above 40, which needs a higher `poker.maxParticipants`, repeats emojis, see [Joining a room](#joining-a-room).
 
 ## Files
 
-| File                                                                      | Owns                                                                                               | Section                                                       |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal         | [A room document](#a-room-document)                           |
-| `poker-room-transitions.ts`                                               | The changes of a room as pure functions                                                            | [A room document](#a-room-document)                           |
-| `poker-decks.ts`                                                          | The decks                                                                                          | [Using the bot](#using-the-bot)                               |
-| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                              | [A room document](#a-room-document)                           |
-| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, lists; the participant limit | [Joining a room](#joining-a-room)                             |
-| `poker-participant-emojis.ts`                                             | The emoji pool                                                                                     | [Joining a room](#joining-a-room)                             |
-| `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                                              | [The round summary](#the-round-summary)                       |
-| `poker-handlers.ts`                                                       | The grants, `/poker`, the `poker` deep link, the scenes, the event subscription                    | [Using the bot](#using-the-bot)                               |
-| `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene: the room lists and the form                                                     | [Using the bot](#using-the-bot)                               |
-| `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene: voting, the revealed round, the history                                     | [Updates for the participants](#updates-for-the-participants) |
-| `poker-participants-screen.ts`                                            | The list that switches roles                                                                       | [Who counts in a round](#who-counts-in-a-round)               |
-| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                                     | [Participant labels](#participant-labels)                     |
-| `poker-schemas.ts`, `poker-events.ts`, `poker-locales.ts`                 | Scene states and button values, `poker.roomChanged`, texts                                         |                                                               |
+| File                                                                      | Owns                                                                                                         | Section                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal                   | [A room document](#a-room-document)                           |
+| `poker-room-transitions.ts`                                               | The changes of a room as pure functions                                                                      | [A room document](#a-room-document)                           |
+| `poker-decks.ts`                                                          | The decks                                                                                                    | [Using the bot](#using-the-bot)                               |
+| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                                        | [A room document](#a-room-document)                           |
+| `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, removals, lists; the participant limit | [Joining a room](#joining-a-room)                             |
+| `poker-participant-emojis.ts`                                             | The emoji pool                                                                                               | [Joining a room](#joining-a-room)                             |
+| `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                                                        | [The round summary](#the-round-summary)                       |
+| `poker-handlers.ts`                                                       | The grants, `/poker`, the `poker` deep link, the scenes, the event subscription                              | [Using the bot](#using-the-bot)                               |
+| `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene: the room lists and the form                                                               | [Using the bot](#using-the-bot)                               |
+| `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene: voting, the revealed round, the history                                               | [Updates for the participants](#updates-for-the-participants) |
+| `poker-participants-screen.ts`                                            | The list of the participants and the card of one                                                             | [Leaving a room](#leaving-a-room)                             |
+| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                                               | [Participant labels](#participant-labels)                     |
+| `poker-schemas.ts`, `poker-events.ts`, `poker-locales.ts`                 | Scene states and button values, `poker.roomChanged`, texts                                                   |                                                               |
