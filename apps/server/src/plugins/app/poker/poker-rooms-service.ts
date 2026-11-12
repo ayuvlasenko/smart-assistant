@@ -13,13 +13,9 @@ import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { PokerDeckName, readPokerDeck } from "./poker-decks.js";
 import { PokerEvents, PokerRoomChange } from "./poker-events.js";
-import {
-    pickPokerParticipantEmoji,
-    pokerParticipantEmojis,
-} from "./poker-participant-emojis.js";
+import { pickPokerParticipantEmoji } from "./poker-participant-emojis.js";
 import {
     findPokerParticipant,
-    isPokerAutoRevealDue,
     PokerAutoReveal,
     PokerParticipant,
     PokerRoomEntity,
@@ -28,11 +24,19 @@ import {
     readPokerRoomStatus,
 } from "./poker-room-entity.js";
 import {
+    changePokerRole,
     PokerRoleChange,
-    PokerRoomsRepository,
-    PokerRoomTarget,
-    PokerRoundTarget,
-} from "./poker-rooms-repository.js";
+    PokerRoomPatch,
+    PokerRoundRename,
+    PokerRoundStart,
+    PokerVote,
+    renamePokerRound,
+    revealPokerRound,
+    revealPokerRoundIfDue,
+    startPokerRound,
+    votePokerRound,
+} from "./poker-room-transitions.js";
+import { PokerRoomsRepository } from "./poker-rooms-repository.js";
 
 export interface PokerRoomDraft {
     title?: string;
@@ -57,7 +61,14 @@ export interface PokerRoomsPage {
     total: number;
 }
 
+type PokerRoomTransition = (
+    room: PokerRoomEntity,
+    now: Date,
+) => PokerRoomPatch | null;
+
 const roomTokenBytes = 16;
+
+const saveAttempts = 20;
 
 export const pokerMaxParticipantsSetting: NumberSetting = {
     kind: "number",
@@ -121,11 +132,7 @@ export class PokerRoomsService {
     }
 
     async join(actor: UserEntity, token: string): Promise<PokerJoinResult> {
-        for (
-            let attempt = 0;
-            attempt <= pokerParticipantEmojis.length;
-            attempt += 1
-        ) {
+        for (let attempt = 0; attempt < saveAttempts; attempt += 1) {
             const room = await this.pokerRoomsRepository.findOneByToken(token);
 
             if (!room) {
@@ -152,30 +159,28 @@ export class PokerRoomsService {
                 return { status: "full" };
             }
 
-            const taken = room.participants.map(({ emoji }) => emoji);
             const participant: PokerParticipant = {
                 userId: actor._id,
-                emoji: pickPokerParticipantEmoji(taken),
+                emoji: pickPokerParticipantEmoji(
+                    room.participants.map(({ emoji }) => emoji),
+                ),
                 role: "voter",
                 joinedAt: now,
             };
-            const joined = await this.pokerRoomsRepository.join(
-                token,
-                participant,
-                {
-                    isEmojiFree: taken.length < pokerParticipantEmojis.length,
-                    maxParticipants,
-                },
+            const joined = await this.save(
+                room,
+                { participants: [...room.participants, participant] },
+                { now, change: "joined" },
             );
 
             if (joined) {
-                await this.emitChanged(joined, "joined");
-
                 return { status: "joined", room: joined };
             }
         }
 
-        throw new Error("Failed to join a poker room after every emoji");
+        throw new Error(
+            `Failed to join a poker room after ${saveAttempts} attempts`,
+        );
     }
 
     find(actor: UserEntity, roomId: ObjectId): Promise<PokerRoomEntity | null> {
@@ -220,19 +225,15 @@ export class PokerRoomsService {
     async vote(
         actor: UserEntity,
         room: PokerRoomEntity,
-        { round, card }: { round: number; card: string },
+        vote: PokerVote,
     ): Promise<PokerRoomEntity | null> {
-        if (!readPokerDeck(room.deck).cards.includes(card)) {
-            throw new Error(`Poker card "${card}" is not in the deck`);
+        if (!readPokerDeck(room.deck).cards.includes(vote.card)) {
+            throw new Error(`Poker card "${vote.card}" is not in the deck`);
         }
 
-        const isSameCard = room.round.votes[actor._id.toHexString()] === card;
-        const voted = await this.pokerRoomsRepository.vote(
-            this.targetOf(actor, room, round),
-            isSameCard ? undefined : card,
+        return this.change(actor, room, "voted", (current) =>
+            votePokerRound(current, actor._id, vote),
         );
-
-        return voted && this.revealIfDue(actor, voted, "voted");
     }
 
     async reveal(
@@ -240,49 +241,29 @@ export class PokerRoomsService {
         room: PokerRoomEntity,
         round: number,
     ): Promise<PokerRoomEntity | null> {
-        const revealed = await this.pokerRoomsRepository.reveal(
-            this.targetOf(actor, room, round),
+        return this.change(actor, room, "revealed", (current, now) =>
+            revealPokerRound(current, round, now),
         );
-
-        if (revealed) {
-            await this.emitChanged(revealed, "revealed");
-        }
-
-        return revealed;
     }
 
     async startRound(
         actor: UserEntity,
         room: PokerRoomEntity,
-        { round, repeat }: { round: number; repeat: boolean },
+        start: PokerRoundStart,
     ): Promise<PokerRoomEntity | null> {
-        const started = await this.pokerRoomsRepository.startRound(
-            this.targetOf(actor, room, round),
-            { repeat },
+        return this.change(actor, room, "roundStarted", (current, now) =>
+            startPokerRound(current, start, now),
         );
-
-        if (started) {
-            await this.emitChanged(started, "roundStarted");
-        }
-
-        return started;
     }
 
     async renameRound(
         actor: UserEntity,
         room: PokerRoomEntity,
-        { round, title }: { round: number; title: string | undefined },
+        rename: PokerRoundRename,
     ): Promise<PokerRoomEntity | null> {
-        const renamed = await this.pokerRoomsRepository.renameRound(
-            this.targetOf(actor, room, round),
-            title,
+        return this.change(actor, room, "roundRenamed", (current) =>
+            renamePokerRound(current, rename),
         );
-
-        if (renamed) {
-            await this.emitChanged(renamed, "roundRenamed");
-        }
-
-        return renamed;
     }
 
     async changeAutoReveal(
@@ -290,25 +271,19 @@ export class PokerRoomsService {
         room: PokerRoomEntity,
         autoReveal: PokerAutoReveal,
     ): Promise<PokerRoomEntity | null> {
-        const changed = await this.pokerRoomsRepository.changeAutoReveal(
-            this.roomTargetOf(actor, room),
+        return this.change(actor, room, "autoRevealChanged", () => ({
             autoReveal,
-        );
-
-        return changed && this.revealIfDue(actor, changed, "autoRevealChanged");
+        }));
     }
 
     async changeRole(
         actor: UserEntity,
         room: PokerRoomEntity,
-        change: PokerRoleChange,
+        roleChange: PokerRoleChange,
     ): Promise<PokerRoomEntity | null> {
-        const changed = await this.pokerRoomsRepository.changeRole(
-            this.roomTargetOf(actor, room),
-            change,
+        return this.change(actor, room, "roleChanged", (current) =>
+            changePokerRole(current, roleChange),
         );
-
-        return changed && this.revealIfDue(actor, changed, "roleChanged");
     }
 
     async close(
@@ -317,54 +292,66 @@ export class PokerRoomsService {
     ): Promise<PokerRoomEntity | null> {
         this.access.assert(actor, "update", subject("PokerRoom", room));
 
-        const closed = await this.pokerRoomsRepository.close({
-            roomId: room._id,
-            userId: actor._id,
-            now: new Date(),
-        });
-
-        if (closed) {
-            await this.emitChanged(closed, "closed");
-        }
-
-        return closed;
+        return this.change(actor, room, "closed", (current, now) => ({
+            closedAt: now,
+        }));
     }
 
-    private async revealIfDue(
+    private async change(
         actor: UserEntity,
         room: PokerRoomEntity,
         change: PokerRoomChange,
-    ): Promise<PokerRoomEntity> {
-        const revealed = isPokerAutoRevealDue(room)
-            ? await this.pokerRoomsRepository.reveal(
-                  this.targetOf(actor, room, room.round.number),
-                  room.version,
-              )
-            : null;
+        transition: PokerRoomTransition,
+    ): Promise<PokerRoomEntity | null> {
+        let current: PokerRoomEntity | null = room;
+        let isReloaded = false;
 
-        await this.emitChanged(
-            revealed ?? room,
-            revealed ? "revealed" : change,
+        for (let attempt = 0; attempt < saveAttempts; attempt += 1) {
+            if (!current) {
+                return null;
+            }
+
+            this.access.assert(actor, "use", subject("PokerRoom", current));
+
+            const now = new Date();
+            const patch =
+                readPokerRoomStatus(current, now) === "open" &&
+                findPokerParticipant(current, actor._id)
+                    ? transition(current, now)
+                    : null;
+            const saved =
+                patch && (await this.save(current, patch, { now, change }));
+
+            if (saved || (!patch && isReloaded)) {
+                return saved;
+            }
+
+            current = await this.find(actor, room._id);
+            isReloaded = true;
+        }
+
+        throw new Error(
+            `Failed to change a poker room after ${saveAttempts} attempts`,
+        );
+    }
+
+    private async save(
+        room: PokerRoomEntity,
+        patch: PokerRoomPatch,
+        { now, change }: { now: Date; change: PokerRoomChange },
+    ): Promise<PokerRoomEntity | null> {
+        const reveal = revealPokerRoundIfDue({ ...room, ...patch }, now);
+        const saved = await this.pokerRoomsRepository.save(
+            room,
+            { ...patch, ...reveal },
+            now,
         );
 
-        return revealed ?? room;
-    }
+        if (saved) {
+            await this.emitChanged(saved, reveal.round ? "revealed" : change);
+        }
 
-    private targetOf(
-        actor: UserEntity,
-        room: PokerRoomEntity,
-        roundNumber: number,
-    ): PokerRoundTarget {
-        return { ...this.roomTargetOf(actor, room), roundNumber };
-    }
-
-    private roomTargetOf(
-        actor: UserEntity,
-        room: PokerRoomEntity,
-    ): PokerRoomTarget {
-        this.access.assert(actor, "use", subject("PokerRoom", room));
-
-        return { roomId: room._id, userId: actor._id, now: new Date() };
+        return saved;
     }
 
     private async emitChanged(

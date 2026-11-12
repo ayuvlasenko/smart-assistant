@@ -63,15 +63,16 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
 
 ## A room document
 
-**Problem.** Several participants press buttons at the same time, on different pods. When the service reads a room, changes it in memory and writes it back, a second press overwrites the first one. Two presses of `➡️ Next round` must not start two rounds.
+**Problem.** Several participants press buttons at the same time, on different pods. A plain read, change and write loses the first of two presses, and two presses of `➡️ Next round` must not start two rounds. A change can also set off a rule of the room: with auto reveal, the last vote reveals the round. When the rule runs as a second write, the room changes between the two writes, and the round reveals on votes that are gone or never reveals.
 
-**Idea.** One document holds the whole room, and every change is one `findOneAndUpdate` whose filter states what the change expects: the round number, the round status, and that the user is a participant of an open room. A press that comes too late matches nothing and changes nothing.
+**Idea.** One document holds the whole room. Every change is a pure function of the room in `poker-room-transitions.ts`: it checks what the change expects and returns the fields to write, or `null`. `PokerRoomsService` adds the auto reveal to the same fields and writes them only while the stored `version` is the one it read. A change that lost the race reads the room again and decides again. So every rule of the room is written once, in TypeScript, and no change can skip it or decide on an outdated room.
 
 **Data.** One document per room in `pokerRooms`:
 
 ```json
 {
     "_id": "6710a3…",
+    "version": 17,
     "token": "2V0ICkuAaR3tX2xuOiiHow",
     "createdBy": "66f1c2…",
     "title": "Sprint 42",
@@ -103,49 +104,55 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
 }
 ```
 
-The current round is the field `round`, not the last item of `rounds`, so every filter can name it directly. `rounds` holds the finished rounds for the history. The migration `20261016120000-add-poker-rooms-indexes.js` adds a unique index on `token` and the indexes of the two lists. Both list indexes end with `lastActivityAt: -1, _id: -1`, the sort of `findPage`, so MongoDB reads a page from the index without a sort in memory.
+The current round is the field `round`, and `rounds` holds the finished rounds for the history. The migration `20261016120000-add-poker-rooms-indexes.js` adds a unique index on `token` and the indexes of the two lists. Both list indexes end with `lastActivityAt: -1, _id: -1`, the sort of `findPage`, so MongoDB reads a page from the index without a sort in memory.
 
-The round number in the filter is the round the user saw, never the round of a fresh load. Every round button carries it in its value: `vote` holds `{ round, card }`, `reveal` and `askTitle` hold the round, and `startRound` holds `{ round, repeat }`. `askTitle` keeps the round in the scene state as `titleRound` until the title arrives, because typing takes seconds and the round can change in between.
+A change names the round the user saw, never the round of a fresh load. Every round button carries it in its value: `vote` holds `{ round, card }`, `reveal` and `askTitle` hold the round, and `startRound` holds `{ round, repeat }`. `askTitle` keeps the round in the scene state as `titleRound` until the title arrives, because typing takes seconds and the round can change in between.
 
 **Walk-through.** Two participants press `➡️ Next round` on round 3 at the same time.
 
-1. Each press loads the room and calls `PokerRoomsService.startRound` with round number 3 from its button.
-2. `PokerRoomsRepository.startRound` runs an update pipeline with the filter `round.number: 3`, `round.status: "revealed"`, the user in `participants`, and an open room.
-3. The first update matches. Its pipeline appends `$round` to `rounds` and sets a new `round` with number 4, so the round that moves into the history is the stored one, with its last title. A revote copies `$round.title` inside the same pipeline, so a rename between the load and the update is not lost.
-4. The second update finds `round.number: 4` and matches nothing. The service returns `null`, emits nothing, and the press only redraws the screen of the user.
+1. Each press loads the room at version 17 and calls `PokerRoomsService.startRound` with round number 3 from its button.
+2. `startPokerRound` finds round 3 revealed in the loaded room and returns the new `rounds` and round 4. A revote copies the title of the loaded round.
+3. `PokerRoomsRepository.save` writes the fields with the filter `version: 17` and increments `version`. The first write matches.
+4. The second write matches nothing. The service reads the room again, `startPokerRound` finds round 4 and returns `null`. The service returns `null` and emits nothing, and the press only redraws the screen of the user.
 
-A title sent for round 3 after round 4 started matches nothing in the same way, and so does a press on a message that the redraw has not reached yet.
+A title sent for round 3 after round 4 started returns `null` in the same way, and so does a press on a message that the redraw has not reached yet.
 
-The other changes follow the same pattern:
+Every change expects an open room and the user among its participants; `PokerRoomsService` checks both before it calls the function of the change:
 
-| Change      | Filter on the round                                             | Update                                                                                                     |
-| ----------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Vote        | `round.number`, `status: "voting"`, the user is not an observer | `$set round.votes.<userId>`, or `$unset` for the same card                                                 |
-| Reveal      | `round.number`, `status: "voting"`                              | `$set round.status: "revealed"`, `round.revealedAt`                                                        |
-| Next round  | `round.number`, `status: "revealed"`                            | pipeline: append `round` to `rounds`, new `round`                                                          |
-| Round title | `round.number`                                                  | `$set` or `$unset round.title`                                                                             |
-| Auto reveal | none                                                            | `$set autoReveal`                                                                                          |
-| Role        | none; the other user is a participant                           | pipeline: set `role` of the participant; for an observer, drop the vote while `round.status` is `"voting"` |
+| Change      | Function           | Expects                                      | Writes                                                   |
+| ----------- | ------------------ | -------------------------------------------- | -------------------------------------------------------- |
+| Vote        | `votePokerRound`   | the round of the button is `voting`, a voter | the card in `round.votes`, or no vote for the same card  |
+| Reveal      | `revealPokerRound` | the round of the button is `voting`          | `round.status: "revealed"`, `round.revealedAt`           |
+| Next round  | `startPokerRound`  | the round of the button is `revealed`        | `round` appended to `rounds`, a new `round`              |
+| Round title | `renamePokerRound` | the round of the button is the current one   | `round.title`, or none                                   |
+| Auto reveal | none               | nothing more                                 | `autoReveal`                                             |
+| Role        | `changePokerRole`  | the other user is a participant              | the `role`; for an observer, no vote in a `voting` round |
+| Close       | none               | `update PokerRoom`                           | `closedAt`                                               |
 
-Every change also sets `lastActivityAt` and increments `version`.
+Before the write, the service runs `revealPokerRoundIfDue` on the changed room and adds the reveal to the same write, see [Who counts in a round](#who-counts-in-a-round). Every write also sets `lastActivityAt` and `updatedAt` and increments `version`.
 
-**Edge cases.** A vote with a card that is not in the deck throws: the value comes from a button that the scene drew from the same deck. A vote after the reveal, or by a user who is not a participant, returns `null`. The service checks `access.assert(actor, "use", subject("PokerRoom", room))` before every change; membership is a business rule, so it stays in the filter.
+**Edge cases.**
+
+- A vote with a card that is not in the deck throws: the value comes from a button that the scene drew from the same deck.
+- The service decides first on the room that the caller loaded. Only a room that the service read itself can refuse a change: when the caller's room refuses it, the service reads the room once more and decides again.
+- A conflict means that another change was written between the read and the write, so presses that start at the same moment need at most as many attempts as there are presses. After 20 attempts the service throws.
+- The service checks `access.assert(actor, "use", subject("PokerRoom", room))` on the room of every attempt; membership is a business rule, so it is a plain check next to it.
 
 ## Joining a room
 
 **Problem.** Two users can open the link at the same moment, and both must get different emojis while the pool has a free one. One user can open the link twice. A room also has a limit of participants, and two users who race for its last place must not both get it.
 
-**Idea.** The join is one `findOneAndUpdate` that pushes the participant only when the user is not in the room yet, the room has a free place and the chosen emoji is still free. On a miss the service reads the room again and tries another emoji.
+**Idea.** The join is a change of the room like any other, see [A room document](#a-room-document). The service checks the place and picks the emoji on the room it read, and writes the participant only while the `version` is the same. On a conflict it reads the room again.
 
 **Walk-through.**
 
 1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets the `/start` answer.
 2. The service loads the room by token. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
 3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
-4. The update filter requires an open room, `participants.userId` without the user, no element at the index `maxParticipants - 1` of `participants`, and `participants.emoji` without the emoji. A match gives `joined` and emits `poker.roomChanged`.
-5. A miss goes back to step 2. After 41 attempts, one more than the pool, the service throws.
+4. It writes `participants` with the new participant through `PokerRoomsRepository.save`. A match gives `joined` and emits `poker.roomChanged`.
+5. A conflict goes back to step 2. After 20 attempts the service throws.
 
-`poker.maxParticipants` is 40 by default, from 2 to 100, and an admin changes it in `/settings`, see [Settings](../settings/README.md). Before the setting a room had no limit, so the deploy that added it refuses the 41st user of a room. A lower limit does not remove anybody: the participants stay, and only a new user gets `This room is full.` Only a limit above 40 lets all 40 emojis be taken; then the service picks any emoji and drops the emoji condition, so the room repeats emojis instead of refusing a user. The handler starts the `pokerRoom` scene for `joined` and `alreadyJoined`, and checks nothing after `sceneEngine.start`, because the engine already answers a refusal of a blocking scene.
+`poker.maxParticipants` is 40 by default, from 2 to 100, and an admin changes it in `/settings`, see [Settings](../settings/README.md). Before the setting a room had no limit, so the deploy that added it refuses the 41st user of a room. A lower limit does not remove anybody: the participants stay, and only a new user gets `This room is full.` Only a limit above 40 lets all 40 emojis be taken; then `pickPokerParticipantEmoji` picks any emoji, so the room repeats emojis instead of refusing a user. The handler starts the `pokerRoom` scene for `joined` and `alreadyJoined`, and checks nothing after `sceneEngine.start`, because the engine already answers a refusal of a blocking scene.
 
 ## Who counts in a round
 
@@ -155,7 +162,7 @@ Every change also sets `lastActivityAt` and increments `version`.
 
 **Data.**
 
-- `role` of a participant is `"voter"` or `"observer"`; a new participant is a voter. Any participant changes any role through `PokerRoomsService.changeRole`. An observer has no cards, and the vote filter refuses an observer, so a press that raced the change stores nothing.
+- `role` of a participant is `"voter"` or `"observer"`; a new participant is a voter. Any participant changes any role through `PokerRoomsService.changeRole`. An observer has no cards, and `votePokerRound` refuses an observer, so a press that raced the change stores nothing.
 - Idle is computed from the document and never stored. A voter is idle after no vote in the last two revealed rounds that started after the join. `isPokerParticipantIdle` in `poker-room-entity.ts` decides it, and `listActivePokerParticipants` drops observers and idle voters.
 - `autoReveal` is `null` for off or `{ "missingVotes": N }`, where `0` means everyone. `readPokerAutoRevealTarget` turns it into the votes that reveal the round: the active participants minus `N`, at least 1. A room starts with `{ "missingVotes": 0 }` or `null` from the form.
 
@@ -167,7 +174,7 @@ The migration `20261110120000-add-poker-rooms-missing-votes-and-roles.js` turned
 2. The participant skips rounds 2 and 3. Both are revealed, so the participant gets `💤` and leaves the counter of `👁 Reveal`.
 3. A vote in round 4 makes the participant active again at once: a voter with a vote in the current round is never idle.
 
-With auto reveal, `PokerRoomsService.vote` reveals the round when the active participants with a vote reach the target. A change of auto reveal or of a role checks the same condition, so the round reveals at once when the last voter without a vote starts watching, or when a lower target is already reached. The check reads the document that the change returned, so the reveal adds its `version` to the filter of the button's reveal. A change that lands in between, such as a role change that drops the only vote, makes the reveal match nothing: the service emits the first change unrevealed, and the later change checks the condition again on its own document. So two last votes at the same time reveal the round once, and a round never reveals on votes that are gone.
+With auto reveal, the round reveals when the active participants with a vote reach the target. The service checks it with `revealPokerRoundIfDue` on the room as every change leaves it, and writes the reveal together with the change, see [A room document](#a-room-document). So the last vote reveals the round, and so does a role change that makes the last voter without a vote an observer, or a lower target that is already reached. No change can skip the check. The check also never reads votes that another change removed: a write on an outdated room matches nothing, and the change decides again.
 
 **Changing auto reveal.** The `⚡ Auto reveal` screen steps the target with `stepPokerAutoReveal`, and the text shows both forms, such as `everyone but 1 (3 of 4 votes)`:
 
@@ -192,12 +199,12 @@ Each button carries the value it sets, not a step, so two participants who press
 **Walk-through.** The creator presses `🔒 Close`.
 
 1. `close` is a button with `confirm: true`, so the first press only marks it in the scene record, and the button turns into `🔒 Sure?`. Any other button of the room and any move cancel it.
-2. The second press calls `PokerRoomsService.close`. It checks `update PokerRoom` on the loaded room, then `PokerRoomsRepository.close` sets `closedAt` with the filter `createdBy` and an open room.
+2. The second press calls `PokerRoomsService.close`. It checks `update PokerRoom` on the loaded room, then writes `closedAt` like any other change, see [A room document](#a-room-document).
 3. The service emits `poker.roomChanged`, and the screen of every participant redraws as the history of a closed room.
 
 **Edge cases.**
 
-- Every update filter requires an open room, so nobody can vote in a closed room.
+- Every change expects an open room, so nobody can vote in a closed room.
 - A closed room leaves the open list of every participant and moves to `🗄 Closed rooms` of its creator.
 - The `pokerRoom` scene of a closed room shows only the history on any screen, without cards and without a back button. Its page buttons replace the current screen with the history, so the pages work from the round and the menu too. `✖️ Hide` ends the scene of that user with `scene.end({ messages: "delete" })`, so the message leaves the chat; opening the room again from `🗄 Closed rooms` brings it back.
 - The link of a closed room answers `This room is closed.` to a new user. A participant who opens it gets the history.
@@ -265,8 +272,9 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | File                                                                      | Owns                                                                                               | Section                                                       |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal         | [A room document](#a-room-document)                           |
+| `poker-room-transitions.ts`                                               | The changes of a room as pure functions                                                            | [A room document](#a-room-document)                           |
 | `poker-decks.ts`                                                          | The decks                                                                                          | [Using the bot](#using-the-bot)                               |
-| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and its conditional updates                                            | [A room document](#a-room-document)                           |
+| `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                              | [A room document](#a-room-document)                           |
 | `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, lists; the participant limit | [Joining a room](#joining-a-room)                             |
 | `poker-participant-emojis.ts`                                             | The emoji pool                                                                                     | [Joining a room](#joining-a-room)                             |
 | `poker-round-summary.ts`                                                  | `summarizePokerRound`                                                                              | [The round summary](#the-round-summary)                       |
