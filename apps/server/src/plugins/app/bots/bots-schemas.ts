@@ -36,14 +36,8 @@ export type BotsSceneControl = TelegramSceneControl<
     typeof botsScreens
 >;
 
-export type BotInviteUrlResolver = (
-    botId: string,
-    token: string,
-) => Promise<string>;
-
 export interface BotsView {
     ctx: TelegramContext;
     scene: BotsSceneControl;
     botsService: BotsService;
-    resolveInviteUrl: BotInviteUrlResolver;
 }

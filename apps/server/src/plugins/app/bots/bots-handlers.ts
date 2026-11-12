@@ -3,8 +3,6 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { AccessService } from "../access/access-service.js";
 import { I18nService } from "../i18n-service.js";
-import { inviteDeepLinkName } from "../invites/invites-handlers.js";
-import { TelegramBotService } from "../telegram/telegram-bot-service.js";
 import { TelegramChats } from "../telegram/telegram-chats.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
@@ -20,8 +18,6 @@ export default fp(
         const access = fastify
             .getDecorator<AccessService>("accessService")
             .subjects<BotsSubjects>();
-        const telegramBotService =
-            fastify.getDecorator<TelegramBotService>("telegramBotService");
         const telegramChats =
             fastify.getDecorator<TelegramChats>("telegramChats");
         const router = fastify.getDecorator<TelegramRouter>("telegramRouter");
@@ -46,11 +42,6 @@ export default fp(
         const botsScene = createBotsScene(
             fastify.getDecorator<BotsService>("botsService"),
             access,
-            (botId, token) =>
-                telegramBotService.resolveDeepLinkUrl(botId, {
-                    name: inviteDeepLinkName,
-                    value: token,
-                }),
         );
 
         router.scene(botsScene);
@@ -80,7 +71,6 @@ export default fp(
             "emittery",
             "i18n-service",
             "invites-handlers",
-            "telegram-bot-service",
             "telegram-chats",
             "telegram-router",
             "telegram-scene-engine",

@@ -5,7 +5,6 @@ import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
 import { BotsSubjects, isBotToken } from "./bot-entity.js";
 import {
-    BotInviteUrlResolver,
     botsButtonValues,
     BotsSceneControl,
     botsScreens,
@@ -31,14 +30,12 @@ export function buildBotsState(): BotsState {
 export function createBotsScene(
     botsService: BotsService,
     access: AccessControl<BotsSubjects>,
-    resolveInviteUrl: BotInviteUrlResolver,
 ): TelegramScene<typeof botsStateSchema> {
     const canUpdate = access.guard("update", "Bot");
     const viewOf = (ctx: TelegramContext, scene: BotsSceneControl) => ({
         ctx,
         scene,
         botsService,
-        resolveInviteUrl,
     });
 
     return defineScene({

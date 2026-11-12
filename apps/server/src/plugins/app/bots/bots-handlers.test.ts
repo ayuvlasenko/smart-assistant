@@ -238,7 +238,7 @@ void describe("/bots", () => {
         );
     });
 
-    void it("shows the owner link as unavailable when Telegram rejects the token of the bot", async (t) => {
+    void it("shows the owner link without a request to Telegram", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987657008 });
         const actor = await allowAdmin(bot, admin);
@@ -246,11 +246,9 @@ void describe("/bots", () => {
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, en.addButton);
         await bot.sendText(admin, childToken);
-        bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => ({
-            ok: false,
-            error_code: 401,
-            description: "Unauthorized",
-        }));
+        bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => {
+            throw new Error("connect ECONNREFUSED api.telegram.org");
+        });
         await bot.cache.delete("telegram:42:username");
         await bot.botsService.reconnect(actor, "42");
         await bot.telegramChats.idle();
@@ -258,7 +256,7 @@ void describe("/bots", () => {
         assert.ok(
             (await bot.readMessageTexts(admin.id))
                 .at(-1)
-                ?.includes(en.ownerInviteUnavailable),
+                ?.includes("https://t.me/child_42_bot?start=invite_"),
         );
     });
 

@@ -10,7 +10,7 @@ import { LockService } from "../lock-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
-    buildTelegramDeepLink,
+    buildTelegramDeepLinkUrl,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
 import { TelegramApiError } from "./telegram-errors.js";
@@ -168,9 +168,10 @@ export class TelegramBotService {
         botId: string,
         link: TelegramDeepLink,
     ): Promise<string> {
-        const payload = buildTelegramDeepLink(link);
-
-        return `${await this.resolveBotUrl(botId)}?start=${payload}`;
+        return buildTelegramDeepLinkUrl(
+            await this.resolveUsername(this.telegramBots.get(botId)),
+            link,
+        );
     }
 
     private async setWebhookOnStart(bot: TelegramBot): Promise<void> {

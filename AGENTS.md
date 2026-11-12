@@ -73,7 +73,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Check the `false` that `sceneEngine.start` and `scene.handOver` return: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.
 - Start every Valkey key that holds data of a user or a chat with the bot id, `telegram:<botId>:…`: Telegram ids, chat ids and update ids repeat across bots, and the tests run one bot. See [Bots and webhooks](apps/server/src/plugins/app/telegram/README.md#bots-and-webhooks).
-- Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, never by hand.
+- Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, or with `buildTelegramDeepLinkUrl` when the username of the bot is stored, never by hand.
 - When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
 - Name a command in snake case, such as `new_invite`.

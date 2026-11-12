@@ -1,6 +1,7 @@
 import { InlineKeyboardButton, WebhookInfo } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
-import { TelegramApiError } from "../telegram/telegram-errors.js";
+import { inviteDeepLinkName } from "../invites/invites-handlers.js";
+import { buildTelegramDeepLinkUrl } from "../telegram/telegram-deep-links.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
@@ -135,7 +136,7 @@ export async function renderBotModules(
 }
 
 export async function renderBotOwnerInvite(
-    { ctx, scene, botsService, resolveInviteUrl }: BotsView,
+    { ctx, scene, botsService }: BotsView,
     botId: string,
     token: string,
 ): Promise<TelegramMessageContent> {
@@ -146,26 +147,17 @@ export async function renderBotOwnerInvite(
         return renderMissing(t, scene);
     }
 
-    const url = botsService.isServed(bot._id)
-        ? await resolveInviteUrl(bot._id, token).catch((err: unknown) => {
-              if (err instanceof TelegramApiError) {
-                  ctx.log.warn(
-                      { err, botId: bot._id },
-                      "Failed to build the owner link of a bot",
-                  );
-                  return undefined;
-              }
-
-              throw err;
-          })
-        : undefined;
-
-    if (!url) {
+    if (!bot.username || !botsService.isServed(bot._id)) {
         return buildBotsMessage(
             [escapeTelegramHtml(t("bots:ownerInviteUnavailable"))],
             [[scene.backButton(t("bots:backButton"))]],
         );
     }
+
+    const url = buildTelegramDeepLinkUrl(bot.username, {
+        name: inviteDeepLinkName,
+        value: token,
+    });
 
     return buildBotsMessage(
         [

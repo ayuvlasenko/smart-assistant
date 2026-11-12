@@ -45,7 +45,7 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 
 - `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
 - `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
-- `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. See [Deep links](#deep-links).
+- `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. Code that already has the username of the bot calls `buildTelegramDeepLinkUrl(username, { name, value })`. See [Deep links](#deep-links).
 - When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
 - Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
@@ -730,7 +730,7 @@ flowchart LR
     route -->|no| welcome["/start command"]
 ```
 
-A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. A payload without a known name falls through to the `/start` command. A banned user gets only the links registered with `allowBanned`.
+A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. It reads the username of the bot with `getMe`; `buildTelegramDeepLinkUrl(username, link)` from that file builds the same URL from a known username without a request, as the owner link of the [bots](../bots/README.md) domain does. A payload without a known name falls through to the `/start` command. A banned user gets only the links registered with `allowBanned`.
 
 ## Access and the command menu
 
