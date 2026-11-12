@@ -136,6 +136,14 @@ export class BotsRegistry {
 
         const token = this.decrypt(bot._id, bot.token);
 
+        if (token && botIdOfToken(token) !== bot._id) {
+            this.log.error(
+                { botId: bot._id },
+                "Bot token belongs to another bot",
+            );
+            return undefined;
+        }
+
         return token ? { id: bot._id, token, modules: bot.modules } : undefined;
     }
 

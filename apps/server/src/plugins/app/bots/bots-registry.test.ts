@@ -126,6 +126,38 @@ void describe("BotsRegistry", () => {
         assert.ok(!JSON.stringify(logs.readEntries()).includes("child-token"));
     });
 
+    void it("skips a bot whose stored token belongs to another bot", async (t) => {
+        const logs = createLogCollector();
+        const key = randomBytes(32).toString("base64");
+        const { botsRegistry, botsRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                logger: logs.logger,
+                env: { BOTS_ENCRYPTION_KEY: key },
+            });
+
+        await botsRepository.createIfMissing({
+            _id: "42",
+            username: "child_bot",
+            token: new BotTokenCipher(key).encrypt("43:other-token"),
+        });
+        await botsRegistry.refresh();
+
+        assert.equal(botsRegistry.find("42"), undefined);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    (entry) =>
+                        entry.msg === "Bot token belongs to another bot" &&
+                        entry.botId === "42",
+                ),
+        );
+        assert.ok(!JSON.stringify(logs.readEntries()).includes("other-token"));
+    });
+
     void it("loads a bot that another pod added after the last refresh", async (t) => {
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =

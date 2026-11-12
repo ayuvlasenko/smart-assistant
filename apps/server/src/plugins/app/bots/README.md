@@ -76,7 +76,7 @@ The root record has no `token` and no `username`. `BotTokenCipher` encrypts a to
 3. Every 10 seconds it reads all bots again and replaces the snapshot.
 4. An update for a bot that is not in the snapshot yet, such as a bot created on another pod a second ago, calls `load`, which reads that bot from MongoDB.
 
-**Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
+**Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. A decrypted token whose bot id differs from the `_id` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
 
 ## Modules
 
