@@ -377,6 +377,42 @@ void describe("PokerRoomsService rounds", () => {
         assert.equal(second?.round.status, "revealed");
     });
 
+    void it("reveals nothing for a snapshot that a later change made stale", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+        const member = await joinMember(bot, room);
+
+        const voted = await bot.pokerRoomsService.vote(creator, room, {
+            round: 1,
+            card: "5",
+        });
+
+        assert.ok(voted);
+        const changed = await bot.pokerRoomsService.changeRole(member, voted, {
+            userId: creator._id,
+            role: "observer",
+        });
+
+        assert.ok(changed);
+        const target = {
+            roomId: room._id,
+            roundNumber: 1,
+            userId: member._id,
+            now: new Date(),
+        };
+
+        assert.equal(
+            await bot.pokerRoomsRepository.reveal(target, voted.version),
+            null,
+        );
+        assert.equal((await findRoom(room)).round.status, "voting");
+        assert.equal(
+            (await bot.pokerRoomsRepository.reveal(target, changed.version))
+                ?.round.status,
+            "revealed",
+        );
+    });
+
     void it("reveals the round at once when the new auto reveal is already reached", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot);

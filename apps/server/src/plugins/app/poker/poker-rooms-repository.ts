@@ -149,9 +149,18 @@ export class PokerRoomsRepository {
         );
     }
 
-    reveal(target: PokerRoundTarget): Promise<PokerRoomEntity | null> {
+    reveal(
+        target: PokerRoundTarget,
+        expectedVersion?: number,
+    ): Promise<PokerRoomEntity | null> {
         return this.collection().findOneAndUpdate(
-            { ...roundFilter(target), "round.status": "voting" },
+            {
+                ...roundFilter(target),
+                "round.status": "voting",
+                ...(expectedVersion === undefined
+                    ? {}
+                    : { version: expectedVersion }),
+            },
             {
                 $set: {
                     "round.status": "revealed",

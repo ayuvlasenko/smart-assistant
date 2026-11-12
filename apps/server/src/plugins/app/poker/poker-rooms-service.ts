@@ -335,13 +335,19 @@ export class PokerRoomsService {
         room: PokerRoomEntity,
         change: PokerRoomChange,
     ): Promise<PokerRoomEntity> {
-        if (isPokerAutoRevealDue(room)) {
-            return (await this.reveal(actor, room, room.round.number)) ?? room;
-        }
+        const revealed = isPokerAutoRevealDue(room)
+            ? await this.pokerRoomsRepository.reveal(
+                  this.targetOf(actor, room, room.round.number),
+                  room.version,
+              )
+            : null;
 
-        await this.emitChanged(room, change);
+        await this.emitChanged(
+            revealed ?? room,
+            revealed ? "revealed" : change,
+        );
 
-        return room;
+        return revealed ?? room;
     }
 
     private targetOf(

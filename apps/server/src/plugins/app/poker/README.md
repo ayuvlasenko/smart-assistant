@@ -167,7 +167,7 @@ The migration `20261110120000-add-poker-rooms-missing-votes-and-roles.js` turned
 2. The participant skips rounds 2 and 3. Both are revealed, so the participant gets `💤` and leaves the counter of `👁 Reveal`.
 3. A vote in round 4 makes the participant active again at once: a voter with a vote in the current round is never idle.
 
-With auto reveal, `PokerRoomsService.vote` reveals the round when the active participants with a vote reach the target. It calls the same reveal as the button, with the same filter, so two last votes at the same time reveal the round once. A change of auto reveal or of a role checks the same condition, so the round reveals at once when the last voter without a vote starts watching, or when a lower target is already reached.
+With auto reveal, `PokerRoomsService.vote` reveals the round when the active participants with a vote reach the target. A change of auto reveal or of a role checks the same condition, so the round reveals at once when the last voter without a vote starts watching, or when a lower target is already reached. The check reads the document that the change returned, so the reveal adds its `version` to the filter of the button's reveal. A change that lands in between, such as a role change that drops the only vote, makes the reveal match nothing: the service emits the first change unrevealed, and the later change checks the condition again on its own document. So two last votes at the same time reveal the round once, and a round never reveals on votes that are gone.
 
 **Changing auto reveal.** The `⚡ Auto reveal` screen steps the target with `stepPokerAutoReveal`, and the text shows both forms, such as `everyone but 1 (3 of 4 votes)`:
 
