@@ -243,20 +243,26 @@ void describe("/bots", () => {
         const admin = buildTelegramPrivateChat({ id: 987657008 });
         const actor = await allowAdmin(bot, admin);
 
-        await bot.sendText(admin, "/bots");
-        await bot.pressButton(admin, en.addButton);
-        await bot.sendText(admin, childToken);
+        await bot.botsService.add(actor, childToken);
         bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => {
             throw new Error("connect ECONNREFUSED api.telegram.org");
         });
         await bot.cache.delete("telegram:42:username");
-        await bot.botsService.reconnect(actor, "42");
-        await bot.telegramChats.idle();
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.ownerInviteButton);
 
+        const invite = await mongo
+            .collection("invites")
+            .findOne({ botId: "42" }, { sort: { createdAt: -1 } });
+
+        assert.ok(invite);
         assert.ok(
             (await bot.readMessageTexts(admin.id))
                 .at(-1)
-                ?.includes("https://t.me/child_42_bot?start=invite_"),
+                ?.includes(
+                    `https://t.me/child_42_bot?start=invite_${String(invite.token)}`,
+                ),
         );
     });
 

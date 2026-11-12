@@ -10,6 +10,7 @@ import { LockService } from "../lock-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
+    buildTelegramBotUrl,
     buildTelegramDeepLinkUrl,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
@@ -161,7 +162,9 @@ export class TelegramBotService {
     }
 
     async resolveBotUrl(botId: string): Promise<string> {
-        return `https://t.me/${await this.resolveUsername(this.telegramBots.get(botId))}`;
+        return buildTelegramBotUrl(
+            await this.resolveUsername(this.telegramBots.get(botId)),
+        );
     }
 
     async resolveDeepLinkUrl(
