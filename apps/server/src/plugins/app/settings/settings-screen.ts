@@ -12,7 +12,7 @@ import {
 export function renderSettingsList(view: SettingsView): TelegramMessageContent {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
-    const sections = settingsService.listSections();
+    const sections = settingsService.listSections(ctx.user.botId);
     const buttons = sections
         .flatMap(({ settings }) => settings)
         .map((setting) => [
@@ -31,7 +31,7 @@ export function renderSettingsList(view: SettingsView): TelegramMessageContent {
                 formatBold(section.title(t)),
                 ...section.settings.map((setting) =>
                     escapeTelegramHtml(
-                        `${setting.title(t)}: ${formatValue(t, setting, settingsService)}`,
+                        `${setting.title(t)}: ${formatValue(t, setting, settingsService, ctx.user.botId)}`,
                     ),
                 ),
             ]),
@@ -46,13 +46,13 @@ export function renderSettingsChoices(
 ): TelegramMessageContent {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
-    const selected = settingsService.read(setting);
+    const selected = settingsService.read(setting, ctx.user.botId);
 
     return buildSettingsMessage(
         [formatBold(t("settings:title")), "", formatBold(setting.title(t))],
         [
             ...setting
-                .options()
+                .options(ctx.user.botId)
                 .map((option) => [
                     scene.button(
                         `${selected.includes(option.value) ? "✅" : "⬜"} ${option.title(t)}`,
@@ -85,16 +85,24 @@ function formatValue(
     t: Translate,
     setting: Setting,
     settingsService: SettingsService,
+    botId: string,
 ): string {
     switch (setting.kind) {
         case "flag":
             return t(
-                settingsService.read(setting) ? "settings:on" : "settings:off",
+                settingsService.read(setting, botId)
+                    ? "settings:on"
+                    : "settings:off",
             );
         case "number":
-            return `${settingsService.read(setting)} (${setting.min}–${setting.max})`;
+            return `${settingsService.read(setting, botId)} (${setting.min}–${setting.max})`;
         case "choices":
-            return formatChoices(t, setting, settingsService.read(setting));
+            return formatChoices(
+                t,
+                setting,
+                settingsService.read(setting, botId),
+                botId,
+            );
     }
 }
 
@@ -102,9 +110,10 @@ function formatChoices(
     t: Translate,
     setting: ChoicesSetting,
     selected: string[],
+    botId: string,
 ): string {
     const titles = setting
-        .options()
+        .options(botId)
         .filter(({ value }) => selected.includes(value))
         .map(({ title }) => title(t));
 

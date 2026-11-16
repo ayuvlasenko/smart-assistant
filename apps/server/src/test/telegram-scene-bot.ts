@@ -17,6 +17,7 @@ import {
     buildTelegramTextMessage,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
+    testTelegramBotId,
 } from "./telegram-fixtures.js";
 
 export interface TelegramSceneBot extends TelegramBotServiceTestApp {
@@ -58,6 +59,7 @@ export async function buildTelegramSceneBot(
         app,
         cache,
         telegramApiService,
+        telegramBots,
         telegramUpdateHandler,
         usersRepository,
     } = testApp;
@@ -65,7 +67,7 @@ export async function buildTelegramSceneBot(
     const allowedUserIds = new Set<number>();
 
     const send = async (update: Update) => {
-        await telegramUpdateHandler.handle(update);
+        await telegramUpdateHandler.handle(telegramBots.root, update);
         return update;
     };
 
@@ -76,6 +78,7 @@ export async function buildTelegramSceneBot(
 
         allowedUserIds.add(telegramId);
         await usersRepository.findOneByTelegramIdOrCreate({
+            botId: telegramBots.root.id,
             telegramId: String(telegramId),
             isBanned: false,
             languageCode: "en",
@@ -165,8 +168,11 @@ export async function buildTelegramSceneBot(
     };
 }
 
-export function buildSessionKey(userId: number): string {
-    return `telegram:session:${userId}`;
+export function buildSessionKey(
+    userId: number,
+    botId = testTelegramBotId,
+): string {
+    return `telegram:${botId}:session:${userId}`;
 }
 
 function buildTextUpdate(chat: Chat.PrivateChat, text: string): Update {

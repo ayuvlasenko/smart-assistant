@@ -349,7 +349,7 @@ async function buildView(
             await pokerRoomsService.findUsers(room),
             ctx.user._id,
         ),
-        roomUrl: await resolveRoomUrl(room.token),
+        roomUrl: await resolveRoomUrl(ctx.user.botId, room.token),
         canClose: access.can(ctx.user, "update", subject("PokerRoom", room)),
     };
 }

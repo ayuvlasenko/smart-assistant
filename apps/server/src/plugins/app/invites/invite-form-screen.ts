@@ -175,6 +175,10 @@ function listGrantableSections(
     user: UserEntity,
 ): AccessSection[] {
     return access.listSections().flatMap((section) => {
+        if (!access.isEnabled(user.botId, section.name)) {
+            return [];
+        }
+
         const grants = section.grants.filter((grant) =>
             access.holds(user, grant.name),
         );

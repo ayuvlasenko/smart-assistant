@@ -82,7 +82,10 @@ void describe("AccessService", () => {
             access.can(
                 user,
                 "update",
-                subject("Invite", { createdBy: user._id }),
+                subject("Invite", {
+                    botId: user.botId,
+                    createdBy: user._id,
+                }),
             ),
             true,
         );
@@ -90,8 +93,61 @@ void describe("AccessService", () => {
             access.can(
                 user,
                 "update",
-                subject("Invite", { createdBy: new ObjectId() }),
+                subject("Invite", {
+                    botId: user.botId,
+                    createdBy: new ObjectId(),
+                }),
             ),
+            false,
+        );
+    });
+
+    void it("limits every rule, also the admin one, to the bot of the user", () => {
+        const access = buildAccess();
+        const admin = buildUserEntity({ botId: "42", grants: [adminGrant] });
+        const owner = buildUserEntity({ botId: "42", grants: ["invites.own"] });
+
+        assert.equal(access.can(admin, "read", "Invite"), true);
+        assert.equal(
+            access.can(
+                admin,
+                "update",
+                subject("Invite", { botId: "42", createdBy: owner._id }),
+            ),
+            true,
+        );
+        assert.equal(
+            access.can(
+                admin,
+                "update",
+                subject("Invite", { botId: "43", createdBy: owner._id }),
+            ),
+            false,
+        );
+        assert.equal(
+            access.can(
+                owner,
+                "update",
+                subject("Invite", { botId: "43", createdBy: owner._id }),
+            ),
+            false,
+        );
+    });
+
+    void it("reads the default grants of the bot of the user", () => {
+        const service = new AccessService();
+        const access = buildAccess(service);
+
+        service.useDefaultGrants((botId) => {
+            return botId === "42" ? ["ping.use"] : [];
+        });
+
+        assert.equal(
+            access.can(buildUserEntity({ botId: "42" }), "use", "Ping"),
+            true,
+        );
+        assert.equal(
+            access.can(buildUserEntity({ botId: "43" }), "use", "Ping"),
             false,
         );
     });
@@ -102,13 +158,54 @@ void describe("AccessService", () => {
         const admin = buildUserEntity({ grants: [adminGrant] });
         const outsider = buildUserEntity({ grants: ["ping.use"] });
 
-        assert.deepEqual(access.accessibleBy(admin, "read", "Invite"), {});
+        assert.deepEqual(access.accessibleBy(admin, "read", "Invite"), {
+            $or: [{ botId: admin.botId }],
+        });
         assert.deepEqual(access.accessibleBy(owner, "read", "Invite"), {
-            $or: [{ createdBy: owner._id }],
+            $or: [{ createdBy: owner._id, botId: owner.botId }],
         });
         assert.deepEqual(access.accessibleBy(outsider, "read", "Invite"), {
             $expr: { $eq: [0, 1] },
         });
+    });
+
+    void it("closes the subjects of a module that the bot of the user does not have, also for an admin", () => {
+        const service = new AccessService();
+        const access = buildAccess(service);
+
+        access.register(
+            {
+                name: "reports",
+                title: () => "Reports",
+                grants: [
+                    {
+                        name: "reports.read",
+                        title: () => "Read reports",
+                        define: ({ can }) => {
+                            can("read", "Report");
+                        },
+                    },
+                ],
+            },
+            { subjects: ["Report"] },
+        );
+        service.useModules((botId) => (botId === "42" ? ["reports"] : []));
+
+        const adminOf = (botId: string) =>
+            buildUserEntity({ botId, grants: [adminGrant, "reports.read"] });
+
+        assert.equal(access.can(adminOf("42"), "read", "Report"), true);
+        assert.equal(access.can(adminOf("43"), "read", "Report"), false);
+        assert.equal(access.can(adminOf("43"), "read", "Invite"), true);
+        assert.deepEqual(access.accessibleBy(adminOf("43"), "read", "Report"), {
+            $expr: { $eq: [0, 1] },
+        });
+        assert.equal(access.isEnabled("43", "reports"), false);
+        assert.equal(access.isEnabled("43", "invites"), true);
+        assert.deepEqual(
+            access.listModules().map(({ name }) => name),
+            ["reports"],
+        );
     });
 
     void it("refuses to register a grant twice", () => {
@@ -141,7 +238,8 @@ void describe("AccessService", () => {
 });
 
 interface TestSubjects {
-    Invite: { createdBy: ObjectId };
+    Invite: { botId: string; createdBy: ObjectId };
+    Report: { botId: string };
     Ping: never;
 }
 

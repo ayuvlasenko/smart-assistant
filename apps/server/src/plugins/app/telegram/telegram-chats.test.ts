@@ -15,7 +15,10 @@ import { requestLogSerializers } from "../../../request-logging.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
     TelegramSceneBot,
@@ -199,7 +202,7 @@ void describe("TelegramChats", () => {
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -219,7 +222,7 @@ void describe("TelegramChats", () => {
         await bot.pressButton(bob, "Close");
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), []);
@@ -242,7 +245,7 @@ void describe("TelegramChats", () => {
 
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), []);
@@ -258,7 +261,7 @@ void describe("TelegramChats", () => {
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(["board:a", "board:b"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a", "board:b"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -282,7 +285,7 @@ void describe("TelegramChats", () => {
         await entered.promise;
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
 
         try {
             await setTimeout(200);
@@ -321,7 +324,7 @@ void describe("TelegramChats", () => {
             );
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -341,7 +344,7 @@ void describe("TelegramChats", () => {
         boards.failingUserId = ada.id;
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(["board:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -483,7 +486,11 @@ async function buildRoomBot(
 ): Promise<TelegramSceneBot> {
     const roomEvents = new Emittery<RoomEvents>();
     const roomTargets = ({ id, participantIds }: TestRoom) =>
-        participantIds.map((userId) => ({ userId, key: id }));
+        participantIds.map((userId) => ({
+            botId: testTelegramBotId,
+            userId,
+            key: id,
+        }));
     const roomScene = defineScene({
         name: "room",
         state: Type.Object({ roomId: Type.String() }),
@@ -560,7 +567,7 @@ async function readWatchers(
 ): Promise<number[]> {
     const matches = await bot.app
         .getDecorator<TelegramSessionStore>("telegramSessionStore")
-        .findIndexed(telegramSceneTopicIndex(topic));
+        .findIndexed(testTelegramBotId, telegramSceneTopicIndex(topic));
 
     return matches.map(({ userId }) => userId);
 }

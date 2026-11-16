@@ -9,16 +9,17 @@ import {
 } from "./telegram-session-store.js";
 
 const noteSchema = Type.Object({ text: Type.String() });
+const botId = "42";
 
 void describe("TelegramSessionStore", () => {
     void it("reads the fields written by an earlier session", async (t) => {
         const { store } = await buildStore(t);
 
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.write("note", { text: "hello" }, 60_000);
         });
 
-        const note = await store.withSession(1, (session) =>
+        const note = await store.withSession(botId, 1, (session) =>
             session.read("note", noteSchema),
         );
 
@@ -28,28 +29,44 @@ void describe("TelegramSessionStore", () => {
     void it("keeps sessions of different users apart", async (t) => {
         const { store } = await buildStore(t);
 
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.write("note", { text: "first" }, 60_000);
         });
 
-        const note = await store.withSession(2, (session) =>
+        const note = await store.withSession(botId, 2, (session) =>
             session.read("note", noteSchema),
         );
 
         assert.equal(note, undefined);
     });
 
+    void it("keeps sessions of different bots apart", async (t) => {
+        const { store } = await buildStore(t);
+
+        await store.withSession(botId, 1, async (session) => {
+            session.write("note", { text: "first" }, 60_000);
+            session.index("room", "a", Date.now() + 60_000);
+        });
+
+        const note = await store.withSession("43", 1, (session) =>
+            session.read("note", noteSchema),
+        );
+
+        assert.equal(note, undefined);
+        assert.deepEqual(await store.findIndexed("43", "room"), []);
+    });
+
     void it("removes a field", async (t) => {
         const { store } = await buildStore(t);
 
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.write("note", { text: "hello" }, 60_000);
         });
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.remove("note");
         });
 
-        const note = await store.withSession(1, (session) =>
+        const note = await store.withSession(botId, 1, (session) =>
             session.read("note", noteSchema),
         );
 
@@ -61,14 +78,14 @@ void describe("TelegramSessionStore", () => {
 
         await assert.rejects(
             () =>
-                store.withSession(1, async (session) => {
+                store.withSession(botId, 1, async (session) => {
                     session.write("note", { text: "hello" }, 60_000);
                     throw new Error("Handler failed");
                 }),
             { message: "Handler failed" },
         );
 
-        const note = await store.withSession(1, (session) =>
+        const note = await store.withSession(botId, 1, (session) =>
             session.read("note", noteSchema),
         );
 
@@ -80,14 +97,14 @@ void describe("TelegramSessionStore", () => {
 
         await assert.rejects(
             () =>
-                store.withSession(1, async (session) => {
+                store.withSession(botId, 1, async (session) => {
                     session.write("note", { text: "hello" }, 60_000);
-                    await cache.delete("telegram:session:1:lock");
+                    await cache.delete(`telegram:${botId}:session:1:lock`);
                 }),
             LockLostError,
         );
 
-        const note = await store.withSession(1, (session) =>
+        const note = await store.withSession(botId, 1, (session) =>
             session.read("note", noteSchema),
         );
 
@@ -98,22 +115,22 @@ void describe("TelegramSessionStore", () => {
         const { store } = await buildStore(t);
         const expiresAt = Date.now() + 60_000;
 
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.index("room", "scene-a", expiresAt);
             session.index("room", "scene-b", expiresAt);
         });
-        await store.withSession(2, async (session) => {
+        await store.withSession(botId, 2, async (session) => {
             session.index("room", "scene-c", expiresAt);
         });
-        await store.withSession(1, async (session) => {
+        await store.withSession(botId, 1, async (session) => {
             session.unindex("room", "scene-a");
         });
 
-        assert.deepEqual(sortMatches(await store.findIndexed("room")), [
+        assert.deepEqual(sortMatches(await store.findIndexed(botId, "room")), [
             { userId: 1, entry: "scene-b" },
             { userId: 2, entry: "scene-c" },
         ]);
-        assert.deepEqual(await store.findIndexed("other"), []);
+        assert.deepEqual(await store.findIndexed(botId, "other"), []);
     });
 
     void it("doesn't index a session after the lock is lost", async (t) => {
@@ -121,23 +138,23 @@ void describe("TelegramSessionStore", () => {
 
         await assert.rejects(
             () =>
-                store.withSession(1, async (session) => {
+                store.withSession(botId, 1, async (session) => {
                     session.index("room", "scene-a", Date.now() + 60_000);
-                    await cache.delete("telegram:session:1:lock");
+                    await cache.delete(`telegram:${botId}:session:1:lock`);
                 }),
             LockLostError,
         );
 
-        assert.deepEqual(await store.findIndexed("room"), []);
+        assert.deepEqual(await store.findIndexed(botId, "room"), []);
     });
 
     void it("doesn't write a session without changes", async (t) => {
         const { cache, store } = await buildStore(t);
 
-        const note = await store.withSession(1, async (session) => {
+        const note = await store.withSession(botId, 1, async (session) => {
             const value = await session.read("note", noteSchema);
 
-            await cache.delete("telegram:session:1:lock");
+            await cache.delete(`telegram:${botId}:session:1:lock`);
 
             return value;
         });

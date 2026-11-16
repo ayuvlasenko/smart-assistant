@@ -37,7 +37,7 @@ export interface NumberSetting extends SettingBase {
 export interface ChoicesSetting extends SettingBase {
     kind: "choices";
     defaultValue: string[];
-    options: () => SettingOption[];
+    options: (botId: string) => SettingOption[];
 }
 
 export type Setting = FlagSetting | NumberSetting | ChoicesSetting;
@@ -64,7 +64,7 @@ export class SettingsService {
     private readonly access: AccessControl<SettingsSubjects>;
     private readonly eventEmitter: Emittery<SettingsEvents>;
     private readonly log: FastifyBaseLogger;
-    private values = new Map<string, unknown>();
+    private values = new Map<string, Map<string, unknown>>();
     private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(
@@ -101,18 +101,26 @@ export class SettingsService {
         }
     }
 
-    listSections(): readonly SettingsSection[] {
-        return this.sections;
+    listSections(botId: string): readonly SettingsSection[] {
+        return this.sections.filter(({ name }) =>
+            this.access.isEnabled(botId, name),
+        );
     }
 
     find(name: string): Setting | undefined {
         return this.settings.get(name);
     }
 
-    read<TSetting extends Setting>(setting: TSetting): SettingValue<TSetting> {
+    read<TSetting extends Setting>(
+        setting: TSetting,
+        botId: string,
+    ): SettingValue<TSetting> {
         return (
-            readValue(setting, this.values.get(setting.name)) ??
-            (setting.defaultValue as SettingValue<TSetting>)
+            readValue(
+                setting,
+                this.values.get(botId)?.get(setting.name),
+                botId,
+            ) ?? (setting.defaultValue as SettingValue<TSetting>)
         );
     }
 
@@ -123,11 +131,16 @@ export class SettingsService {
     ): Promise<void> {
         this.assertCanUpdate(actor, setting);
 
-        if (!isValidValue(setting, value)) {
+        if (!isValidValue(setting, value, actor.botId)) {
             throw new Error(`Value of setting "${setting.name}" is not valid`);
         }
 
-        await this.settingsRepository.save(setting.name, value, actor._id);
+        await this.settingsRepository.save(
+            actor.botId,
+            setting.name,
+            value,
+            actor._id,
+        );
         await this.apply(actor, setting, value);
     }
 
@@ -135,6 +148,7 @@ export class SettingsService {
         this.assertCanUpdate(actor, setting);
 
         const value = await this.settingsRepository.toggleFlag(
+            actor.botId,
             setting.name,
             setting.defaultValue,
             actor._id,
@@ -150,13 +164,16 @@ export class SettingsService {
     ): Promise<void> {
         this.assertCanUpdate(actor, setting);
 
-        if (!setting.options().some(({ value }) => value === choice)) {
+        if (
+            !setting.options(actor.botId).some(({ value }) => value === choice)
+        ) {
             throw new Error(
                 `Choice "${choice}" is not an option of setting "${setting.name}"`,
             );
         }
 
         const value = await this.settingsRepository.toggleChoice(
+            actor.botId,
             setting.name,
             choice,
             setting.defaultValue,
@@ -168,8 +185,19 @@ export class SettingsService {
 
     async refresh(): Promise<void> {
         const documents = await this.settingsRepository.findAll();
+        const values = new Map<string, Map<string, unknown>>();
 
-        this.values = new Map(documents.map(({ _id, value }) => [_id, value]));
+        for (const { botId, name, value } of documents) {
+            values.set(
+                botId,
+                (values.get(botId) ?? new Map<string, unknown>()).set(
+                    name,
+                    value,
+                ),
+            );
+        }
+
+        this.values = values;
     }
 
     startRefresh(): void {
@@ -189,7 +217,7 @@ export class SettingsService {
         this.access.assert(
             actor,
             "update",
-            subject("Setting", { _id: setting.name }),
+            subject("Setting", { botId: actor.botId, name: setting.name }),
         );
     }
 
@@ -198,19 +226,30 @@ export class SettingsService {
         setting: Setting,
         value: unknown,
     ): Promise<void> {
-        this.values.set(setting.name, value);
+        this.values.set(
+            actor.botId,
+            (this.values.get(actor.botId) ?? new Map<string, unknown>()).set(
+                setting.name,
+                value,
+            ),
+        );
         this.log.info(
             { setting: setting.name, value, userId: actor._id },
             "Setting changed",
         );
         await this.eventEmitter.emit("settings.settingChanged", {
+            botId: actor.botId,
             name: setting.name,
         });
     }
 }
 
-function isValidValue(setting: Setting, value: unknown): boolean {
-    const known = readValue(setting, value);
+function isValidValue(
+    setting: Setting,
+    value: unknown,
+    botId: string,
+): boolean {
+    const known = readValue(setting, value, botId);
 
     return Array.isArray(known)
         ? known.length === (value as unknown[]).length
@@ -220,6 +259,7 @@ function isValidValue(setting: Setting, value: unknown): boolean {
 function readValue<TSetting extends Setting>(
     setting: TSetting,
     value: unknown,
+    botId: string,
 ): SettingValue<TSetting> | undefined {
     switch (setting.kind) {
         case "flag":
@@ -229,7 +269,7 @@ function readValue<TSetting extends Setting>(
             return readNumber(setting, value) as
                 SettingValue<TSetting> | undefined;
         case "choices":
-            return readChoices(setting, value) as
+            return readChoices(setting, value, botId) as
                 SettingValue<TSetting> | undefined;
     }
 }
@@ -249,12 +289,15 @@ function readNumber(
 function readChoices(
     setting: ChoicesSetting,
     value: unknown,
+    botId: string,
 ): string[] | undefined {
     if (!Array.isArray(value)) {
         return;
     }
 
-    const options = new Set(setting.options().map((option) => option.value));
+    const options = new Set(
+        setting.options(botId).map((option) => option.value),
+    );
 
     return value.filter(
         (item): item is string => typeof item === "string" && options.has(item),

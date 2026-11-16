@@ -36,8 +36,8 @@ metadata:
   name: telegram-webhook-path-rewrite-{{ .Values.resourceName }}
 spec:
   replacePathRegex:
-    regex: "^/api/telegram/webhook/{{ .Values.resourceName }}$"
-    replacement: "/api/telegram/webhook"
+    regex: "^/api/telegram/webhook/{{ .Values.resourceName }}/([0-9]+)$"
+    replacement: "/api/telegram/webhook/$1"
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/traefik.io/ingressroute_v1alpha1.json
 apiVersion: traefik.io/v1alpha1
@@ -49,7 +49,7 @@ spec:
     - {{ .Values.ingress.entryPoint }}
   routes:
     - kind: Rule
-      match: Host(`{{ .Values.ingress.domain }}`) && Method(`POST`) && Path(`/api/telegram/webhook/{{ .Values.resourceName }}`)
+      match: Host(`{{ .Values.ingress.domain }}`) && Method(`POST`) && PathRegexp(`^/api/telegram/webhook/{{ .Values.resourceName }}/[0-9]+$`)
       priority: 100
       middlewares:
         - name: telegram-webhook-path-rewrite-{{ .Values.resourceName }}

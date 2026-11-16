@@ -4,15 +4,16 @@ This directory lets people into the bot. An invite is a link `https://t.me/<bot>
 
 ## An invite
 
-| Field         | Meaning                                                                                                                  |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `token`       | 16 random bytes in base64url, 22 characters, unique. With the `invite_` prefix it fits the 64 characters of a deep link. |
-| `createdBy`   | The admin who created it. A bootstrap invite has none.                                                                   |
-| `grants`      | The grants every user of the invite gets.                                                                                |
-| `maxUses`     | How many different users can use it. Empty means no limit.                                                               |
-| `expiresAt`   | When it stops working. Empty means never.                                                                                |
-| `revokedAt`   | When an admin revoked it.                                                                                                |
-| `activations` | One entry per user who used it, with the time.                                                                           |
+| Field         | Meaning                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `botId`       | The bot the invite lets people into. The activation looks the token up in the bot of the user, so a link opened in another bot finds nothing. |
+| `token`       | 16 random bytes in base64url, 22 characters, unique. With the `invite_` prefix it fits the 64 characters of a deep link.                      |
+| `createdBy`   | The admin who created it. A bootstrap invite has none.                                                                                        |
+| `grants`      | The grants every user of the invite gets.                                                                                                     |
+| `maxUses`     | How many different users can use it. Empty means no limit.                                                                                    |
+| `expiresAt`   | When it stops working. Empty means never.                                                                                                     |
+| `revokedAt`   | When an admin revoked it.                                                                                                                     |
+| `activations` | One entry per user who used it, with the time.                                                                                                |
 
 The status is derived, never stored: `revoked` when `revokedAt` is set, then `expired` when `expiresAt` is past, then `full` when `activations` reached `maxUses`, otherwise `active`. `readInviteStatus` in `invite-entity.ts` and the `$expr` in `invites-repository.ts` are the two places that compute it, the second one inside MongoDB.
 
@@ -27,7 +28,7 @@ sequenceDiagram
     participant I as InvitesRepository
     participant Us as UsersService
     participant E as eventEmitter
-    participant B as TelegramBotService
+    participant B as TelegramCommandMenus
 
     U->>R: /start with invite and the token
     R->>H: deep link invite (allowBanned)
@@ -36,7 +37,7 @@ sequenceDiagram
     alt matched
         S->>Us: grantAccess: unban, add grants
         Us->>E: users.accessChanged
-        E-->>B: syncCommands: the chat menu of the new grants
+        E-->>B: sync: the chat menu of the new grants
         S->>E: invites.inviteChanged
         E-->>H: publish the list and the invite topics
     else not matched
@@ -58,19 +59,21 @@ A user who is already in the bot can open a link too: the invite adds its grants
 
 ## Bootstrap
 
-`INVITE_TOKEN` creates the first admin. It is optional and must match `[A-Za-z0-9_-]{1,57}`, so that `invite_<INVITE_TOKEN>` fits the 64 characters of a deep link. `scripts/create-server-secret.js` writes it to the `server-secrets-*` secret when it is set. On every start, `InvitesService.bootstrap` runs in `onReady`:
+`INVITE_TOKEN` creates the first admin of the root bot, the bot of `TELEGRAM_BOT_TOKEN`. It is optional and must match `[A-Za-z0-9_-]{1,57}`, so that `invite_<INVITE_TOKEN>` fits the 64 characters of a deep link. `scripts/create-server-secret.js` writes it to the `server-secrets-*` secret when it is set. On every start, `InvitesService.bootstrap` runs in `onReady`:
 
 ```mermaid
 flowchart TD
-    start["onReady"] --> admin{"INVITE_TOKEN set and<br/>no user has admin?"}
-    admin -->|no| revokeAll["revoke every bootstrap invite"]
-    admin -->|yes| revokeOther["revoke bootstrap invites<br/>of other tokens"]
+    start["onReady"] --> admin{"INVITE_TOKEN set and<br/>no user of the root bot has admin?"}
+    admin -->|no| revokeAll["revoke every bootstrap invite<br/>of the root bot"]
+    admin -->|yes| revokeOther["revoke bootstrap invites<br/>of the root bot with other tokens"]
     revokeOther --> exists{"invite with this<br/>token exists?"}
     exists -->|"yes, active"| keep["keep it"]
     exists -->|"yes, revoked and unused"| reopen["reopen it"]
     exists -->|"yes, used"| warn["log a warning:<br/>set a new token"]
     exists -->|no| create["create invite: token,<br/>grants [admin], maxUses 1"]
 ```
+
+Every other bot gets its first admin from an owner link: `InvitesService.createOwnerInvite` creates an invite of that bot with `admin` and `maxUses: 1`, without `createdBy`, see [Adding a bot](../bots/README.md#adding-a-bot). The service checks no actor there, because the actor is an admin of the root bot and access keeps the invites of the new bot away from it; `BotsService` checks `update Bot` first.
 
 A bootstrap invite is an invite without `createdBy`. So the token works once, for the first user, while no admin exists; a changed or removed token, or an admin from any source, closes every older bootstrap invite. A token that comes back before anybody used it reopens its invite; a token that was used stays closed, and the server logs a warning on every start until `INVITE_TOKEN` changes. Nothing makes the check and the insert atomic: two instances that start at the same moment against a database without an admin can both try to insert, and the unique index on `token` stops the second one.
 

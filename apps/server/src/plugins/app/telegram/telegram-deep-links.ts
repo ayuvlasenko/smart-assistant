@@ -40,6 +40,17 @@ export function buildTelegramDeepLink({
     return payload;
 }
 
+export function buildTelegramBotUrl(username: string): string {
+    return `https://t.me/${username}`;
+}
+
+export function buildTelegramDeepLinkUrl(
+    username: string,
+    link: TelegramDeepLink,
+): string {
+    return `${buildTelegramBotUrl(username)}?start=${buildTelegramDeepLink(link)}`;
+}
+
 export function parseTelegramDeepLink(
     payload: string,
 ): TelegramDeepLink | undefined {

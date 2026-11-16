@@ -2,6 +2,7 @@ import { BaseEntity } from "../../../entity.js";
 import { Language } from "../i18n-service.js";
 
 export interface UserEntity extends BaseEntity {
+    botId: string;
     telegramId: string;
     isBanned: boolean;
     grants: string[];

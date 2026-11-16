@@ -10,6 +10,7 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
+    testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildTelegramSceneBot } from "../../../test/telegram-scene-bot.js";
 import { UsersRepository } from "../users/users-repository.js";
@@ -42,7 +43,7 @@ after(async () => {
 void describe("TelegramRouter", () => {
     void it("runs global middlewares in registration order around the route", async (t) => {
         const calls: string[] = [];
-        const { telegramUpdateHandler, usersRepository } =
+        const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
@@ -64,7 +65,10 @@ void describe("TelegramRouter", () => {
             });
 
         await createUser(usersRepository, 987654341);
-        await telegramUpdateHandler.handle(buildTextUpdate(987654341, "hello"));
+        await telegramUpdateHandler.handle(
+            telegramBots.root,
+            buildTextUpdate(987654341, "hello"),
+        );
 
         assert.deepEqual(calls, [
             "first:before",
@@ -76,23 +80,30 @@ void describe("TelegramRouter", () => {
 
     void it("stops the update when a middleware doesn't call next", async (t) => {
         const calls: string[] = [];
-        const { telegramApiService, telegramUpdateHandler, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                registerRoutes: (router) => {
-                    router.use(async () => {
-                        calls.push("middleware");
-                    });
-                    router.on(text("hello"), async () => {
-                        calls.push("handler");
-                    });
-                },
-            });
+        const {
+            telegramApiService,
+            telegramBots,
+            telegramUpdateHandler,
+            usersRepository,
+        } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            registerRoutes: (router) => {
+                router.use(async () => {
+                    calls.push("middleware");
+                });
+                router.on(text("hello"), async () => {
+                    calls.push("handler");
+                });
+            },
+        });
 
         await createUser(usersRepository, 987654342);
-        await telegramUpdateHandler.handle(buildTextUpdate(987654342, "hello"));
+        await telegramUpdateHandler.handle(
+            telegramBots.root,
+            buildTextUpdate(987654342, "hello"),
+        );
 
         assert.deepEqual(calls, ["middleware"]);
         assert.deepEqual(readSentTexts(telegramApiService), []);
@@ -100,7 +111,7 @@ void describe("TelegramRouter", () => {
 
     void it("runs route middlewares only for their route", async (t) => {
         const calls: string[] = [];
-        const { telegramUpdateHandler, usersRepository } =
+        const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
@@ -128,9 +139,11 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654343);
         await telegramUpdateHandler.handle(
+            telegramBots.root,
             buildTextUpdate(987654343, "second", 1),
         );
         await telegramUpdateHandler.handle(
+            telegramBots.root,
             buildTextUpdate(987654343, "first", 2),
         );
 
@@ -138,22 +151,29 @@ void describe("TelegramRouter", () => {
     });
 
     void it("fails the update when a middleware calls next twice", async (t) => {
-        const { telegramApiService, telegramUpdateHandler, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                registerRoutes: (router) => {
-                    router.use(async (_ctx, next) => {
-                        await next();
-                        await next();
-                    });
-                    router.on(text("hello"), async () => undefined);
-                },
-            });
+        const {
+            telegramApiService,
+            telegramBots,
+            telegramUpdateHandler,
+            usersRepository,
+        } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            registerRoutes: (router) => {
+                router.use(async (_ctx, next) => {
+                    await next();
+                    await next();
+                });
+                router.on(text("hello"), async () => undefined);
+            },
+        });
 
         await createUser(usersRepository, 987654344);
-        await telegramUpdateHandler.handle(buildTextUpdate(987654344, "hello"));
+        await telegramUpdateHandler.handle(
+            telegramBots.root,
+            buildTextUpdate(987654344, "hello"),
+        );
 
         assert.deepEqual(readSentTexts(telegramApiService), [
             telegramLocales.en.error,
@@ -162,7 +182,7 @@ void describe("TelegramRouter", () => {
 
     void it("handles a command with a bot username suffix", async (t) => {
         const calls: string[] = [];
-        const { telegramUpdateHandler, usersRepository } =
+        const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
                 mongoClient,
@@ -176,6 +196,7 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654345);
         await telegramUpdateHandler.handle(
+            telegramBots.root,
             buildCommandUpdate(987654345, "/test@BipBopBot"),
         );
 
@@ -339,6 +360,7 @@ async function createUser(
     telegramId: number,
 ): Promise<void> {
     await usersRepository.findOneByTelegramIdOrCreate({
+        botId: testTelegramBotId,
         telegramId: String(telegramId),
         isBanned: false,
         languageCode: "en",

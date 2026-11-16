@@ -20,7 +20,7 @@ import {
 } from "./invites-scene.js";
 import { InvitesService } from "./invites-service.js";
 
-const inviteDeepLinkName = "invite";
+export const inviteDeepLinkName = "invite";
 
 export default fp(
     async function (fastify: FastifyInstance) {
@@ -47,8 +47,8 @@ export default fp(
         const invitesScene = createInvitesScene(
             invitesService,
             access,
-            (token) =>
-                telegramBotService.resolveDeepLinkUrl({
+            (botId, token) =>
+                telegramBotService.resolveDeepLinkUrl(botId, {
                     name: inviteDeepLinkName,
                     value: token,
                 }),
@@ -76,7 +76,7 @@ export default fp(
         );
 
         events.on("invites.inviteChanged", ({ data }) => {
-            telegramChats.publish([
+            telegramChats.publish(data.botId, [
                 invitesTopic,
                 inviteTopic(data.inviteId.toHexString()),
             ]);

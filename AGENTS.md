@@ -29,7 +29,7 @@ Before a commit, run `pnpm format`, then `pnpm --filter server typecheck`, `pnpm
 
 Write commit messages in English as Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`.
 
-After the first push of a pull request, wait for the CI `deploy` job with `gh pr checks <number> --watch`, then run `curl -fsS -X POST https://pr-<number>.smart-assistant.bambom.org/api/telegram/webhook/refresh`. CI skips a draft pull request, so its preview appears only after the pull request is marked ready for review. Preview pods share one bot token, so the bot answers only the preview whose webhook was refreshed last. A later push redeploys the same preview and keeps its webhook; refresh again only when another preview took the bot.
+After the first push of a pull request, wait for the CI `deploy` job with `gh pr checks <number> --watch`, then run `curl -sS --fail-with-body -X POST https://pr-<number>.smart-assistant.bambom.org/api/telegram/webhook/refresh`; a `502` lists the bots that failed. CI skips a draft pull request, so its preview appears only after the pull request is marked ready for review. Preview pods share one dev database with its bots and their tokens, so a bot answers only the preview whose webhooks were refreshed last; the refresh takes every bot of the database. A later push redeploys the same preview and keeps its webhooks; refresh again only when another preview took the bots. Never add a production bot token to a preview: the refresh would take the production bot.
 
 ## Documentation
 
@@ -72,10 +72,12 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Ask for a destructive action with `confirm: true` on its button. Never build the two presses with a flag in the state: the engine cancels a pending confirmation on every other press and move.
 - Check the `false` that `sceneEngine.start` and `scene.handOver` return: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.
-- Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, never by hand.
+- Start every Valkey key that holds data of a user or a chat with the bot id, `telegram:<botId>:…`: Telegram ids, chat ids and update ids repeat across bots, and the tests run one bot. See [Bots and webhooks](apps/server/src/plugins/app/telegram/README.md#bots-and-webhooks).
+- Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, or with `buildTelegramDeepLinkUrl` when the username of the bot is stored, never by hand.
 - When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
 - Name a command in snake case, such as `new_invite`.
+- Register the access section of a feature domain as a module, `access.register(section, { subjects })`, so a bot can turn it off; a section without it is on in every bot. See [Modules](apps/server/src/plugins/app/access/README.md#modules).
 - Declare the access subjects of a domain next to its entity and take a typed view with `accessService.subjects<M>()`; do not augment a shared interface with `declare module`. Put a `guard` on every entry point, read lists through `access.accessibleBy` in the query, and check every write in the service with `access.assert` on the loaded document wrapped in `subject(name, document)`, never on the subject name. `plugins/app/access/README.md` explains why.
 
 ## Rules
@@ -94,6 +96,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep test setup direct. When a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, look for a simpler behavior boundary or a small explicit test helper.
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
+- When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
 ## Infrastructure
 
@@ -103,5 +106,5 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
-- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret.
+- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `BOTS_ENCRYPTION_KEY`, `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
 - `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.

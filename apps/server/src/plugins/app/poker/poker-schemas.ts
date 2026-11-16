@@ -102,7 +102,10 @@ export type PokerRoomSceneControl = TelegramSceneControl<
     typeof pokerRoomScreens
 >;
 
-export type PokerRoomUrlResolver = (token: string) => Promise<string>;
+export type PokerRoomUrlResolver = (
+    botId: string,
+    token: string,
+) => Promise<string>;
 
 export interface PokerView {
     ctx: TelegramContext;

@@ -6,12 +6,20 @@ import Fastify, {
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
 import { MongoClient } from "mongodb";
+import { randomBytes } from "node:crypto";
 import { TestContext } from "node:test";
 import { options as appOptions } from "../app.js";
 import { Env } from "../env.js";
 import accessDefaultGrantsPlugin from "../plugins/app/access/access-default-grants.js";
 import accessPlugin from "../plugins/app/access/access-service.js";
 import appLoggerPlugin from "../plugins/app/app-logger.js";
+import { BotTokenCipher } from "../plugins/app/bots/bot-token-cipher.js";
+import botsRegistryPlugin, {
+    BotsRegistry,
+} from "../plugins/app/bots/bots-registry.js";
+import botsRepositoryPlugin, {
+    BotsRepository,
+} from "../plugins/app/bots/bots-repository.js";
 import cachePlugin, { CacheService } from "../plugins/app/cache-service.js";
 import i18nPlugin from "../plugins/app/i18n-service.js";
 import lockPlugin from "../plugins/app/lock-service.js";
@@ -23,13 +31,19 @@ import settingsRepositoryPlugin from "../plugins/app/settings/settings-repositor
 import settingsServicePlugin, {
     SettingsService,
 } from "../plugins/app/settings/settings-service.js";
-import telegramApiPlugin from "../plugins/app/telegram/telegram-api-service.js";
 import telegramPlugin, {
     TelegramBotService,
 } from "../plugins/app/telegram/telegram-bot-service.js";
+import telegramBotsPlugin, {
+    TelegramApiFactory,
+    TelegramBots,
+} from "../plugins/app/telegram/telegram-bots.js";
 import telegramChatsPlugin, {
     TelegramChats,
 } from "../plugins/app/telegram/telegram-chats.js";
+import telegramCommandMenusPlugin, {
+    TelegramCommandMenus,
+} from "../plugins/app/telegram/telegram-command-menus.js";
 import telegramMetricsPlugin from "../plugins/app/telegram/telegram-metrics.js";
 import telegramRouterPlugin, {
     TelegramRouter,
@@ -68,6 +82,8 @@ export interface BuildTelegramBotServiceTestAppOptions {
     mongoClient: MongoClient;
     t: TestContext;
     telegramApiService?: TelegramApiServiceMock;
+    telegramApiFactory?: TelegramApiFactory;
+    modules?: string[];
     environment?: Env["ENVIRONMENT"];
     env?: Record<string, string>;
     sessionStoreOptions?: TelegramSessionStoreOptions;
@@ -81,6 +97,8 @@ export interface BuildTelegramBotServiceTestAppOptions {
 
 export interface TelegramBotServiceTestApp {
     app: FastifyInstance;
+    botsRegistry: BotsRegistry;
+    botsRepository: BotsRepository;
     cache: CacheService;
     keyPrefix: string;
     metrics: MetricsService;
@@ -88,6 +106,8 @@ export interface TelegramBotServiceTestApp {
     telegramChats: TelegramChats;
     telegramApiService: TelegramApiServiceMock;
     telegramBotService: TelegramBotService;
+    telegramBots: TelegramBots;
+    telegramCommandMenus: TelegramCommandMenus;
     telegramUpdateHandler: TelegramUpdateHandler;
     usersRepository: UsersRepository;
 }
@@ -97,6 +117,8 @@ export async function buildTelegramBotServiceTestApp({
     mongoClient,
     t,
     telegramApiService = buildTelegramApiServiceMock({ t }),
+    telegramApiFactory,
+    modules = ["poker", "ping"],
     environment = "production",
     env = {},
     sessionStoreOptions,
@@ -116,7 +138,7 @@ export async function buildTelegramBotServiceTestApp({
         ...envAutoConfig,
         env: false,
         data: {
-            ...withoutInviteToken(process.env),
+            ...withoutLocalSecrets(process.env),
             ENVIRONMENT: environment,
             RESOURCE_NAME: resourceName,
             ...env,
@@ -137,12 +159,17 @@ export async function buildTelegramBotServiceTestApp({
     app.register(settingsRepositoryPlugin);
     app.register(settingsServicePlugin);
     app.register(accessDefaultGrantsPlugin);
+    app.register(botsRepositoryPlugin);
+    app.register(botsRegistryPlugin);
     app.register(usersServicePlugin);
     app.register(metricsPlugin);
     app.register(lockPlugin);
     app.register(rateLimiterPlugin);
     app.register(telegramMetricsPlugin);
-    app.register(telegramApiPlugin, { telegramApiService });
+    app.register(telegramBotsPlugin, {
+        telegramApiService,
+        telegramApiFactory,
+    });
     app.register(telegramSessionStorePlugin, {
         telegramSessionStore: sessionStoreOptions,
     });
@@ -150,6 +177,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(telegramChatsPlugin);
     app.register(telegramRouterPlugin);
     app.register(telegramSystemHandlersPlugin);
+    app.register(telegramCommandMenusPlugin);
     app.register(telegramPlugin);
     app.register(telegramUpdateHandlerPlugin);
 
@@ -181,6 +209,16 @@ export async function buildTelegramBotServiceTestApp({
     }
 
     const valkey = app.getDecorator<Redis>("valkey");
+    const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
+    const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
+    const testBot = await botsRepository.updateModules(
+        botsRegistry.rootId,
+        modules,
+    );
+
+    if (testBot) {
+        botsRegistry.put(testBot);
+    }
 
     t.after(async () => {
         try {
@@ -192,6 +230,8 @@ export async function buildTelegramBotServiceTestApp({
 
     return {
         app,
+        botsRegistry,
+        botsRepository,
         cache: app.getDecorator<CacheService>("cache"),
         keyPrefix,
         metrics: app.getDecorator<MetricsService>("metrics"),
@@ -200,6 +240,10 @@ export async function buildTelegramBotServiceTestApp({
         telegramApiService,
         telegramBotService:
             app.getDecorator<TelegramBotService>("telegramBotService"),
+        telegramBots: app.getDecorator<TelegramBots>("telegramBots"),
+        telegramCommandMenus: app.getDecorator<TelegramCommandMenus>(
+            "telegramCommandMenus",
+        ),
         telegramUpdateHandler: app.getDecorator<TelegramUpdateHandler>(
             "telegramUpdateHandler",
         ),
@@ -207,10 +251,36 @@ export async function buildTelegramBotServiceTestApp({
     };
 }
 
-function withoutInviteToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export async function buildTwoBotsTestApp(
+    options: BuildTelegramBotServiceTestAppOptions,
+): Promise<TelegramBotServiceTestApp & { child: TelegramApiServiceMock }> {
+    const key = randomBytes(32).toString("base64");
+    const child = buildTelegramApiServiceMock({ t: options.t });
+    const app = await buildTelegramBotServiceTestApp({
+        ...options,
+        telegramApiFactory: () => child,
+        env: { ...options.env, BOTS_ENCRYPTION_KEY: key },
+    });
+    const bot = await app.botsRepository.createIfMissing({
+        _id: "42",
+        username: "child_bot",
+        token: new BotTokenCipher(key).encrypt("42:child-token"),
+    });
+
+    if (!bot) {
+        throw new Error("Bot 42 is already stored");
+    }
+
+    app.botsRegistry.put(bot);
+
+    return { ...app, child };
+}
+
+function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const copy = { ...env };
 
     delete copy.INVITE_TOKEN;
+    delete copy.BOTS_ENCRYPTION_KEY;
 
     return copy;
 }

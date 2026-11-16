@@ -21,6 +21,8 @@ interface BuildTelegramApiServiceMockOptions {
 
 export interface TelegramApiServiceMock extends TelegramApiClient {
     setWebhook: Mock<TelegramApiClient["setWebhook"]>;
+    deleteWebhook: Mock<TelegramApiClient["deleteWebhook"]>;
+    getWebhookInfo: Mock<TelegramApiClient["getWebhookInfo"]>;
     sendMessage: Mock<TelegramApiClient["sendMessage"]>;
     getMe: Mock<TelegramApiClient["getMe"]>;
     answerCallbackQuery: Mock<TelegramApiClient["answerCallbackQuery"]>;
@@ -62,6 +64,15 @@ export function buildTelegramApiServiceMock({
                 buildTelegramSendMessageResponse({ message_id: messageId })
             );
         }),
+        deleteWebhook: t.mock.fn(async () => buildTelegramTrueResponse()),
+        getWebhookInfo: t.mock.fn(async () => ({
+            ok: true as const,
+            result: {
+                url: "",
+                has_custom_certificate: false,
+                pending_update_count: 0,
+            },
+        })),
         getMe: t.mock.fn(
             async () => opts.getMeResponse ?? buildTelegramGetMeResponse(),
         ),

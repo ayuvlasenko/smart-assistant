@@ -33,11 +33,11 @@ export class UsersService {
     }
 
     findOrCreateByTelegramId(
-        data: Pick<UserEntity, "telegramId"> & UserProfile,
+        data: Pick<UserEntity, "botId" | "telegramId"> & UserProfile,
     ): Promise<UserLookup> {
         return this.usersRepository.findOneByTelegramIdOrCreate({
             ...data,
-            isBanned: this.settingsService.read(autoBanSetting),
+            isBanned: this.settingsService.read(autoBanSetting, data.botId),
         });
     }
 

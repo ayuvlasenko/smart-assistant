@@ -4,7 +4,7 @@ import fp from "fastify-plugin";
 import { ClientSession, Document, Filter, ObjectId } from "mongodb";
 import { InviteEntity } from "./invite-entity.js";
 
-export type InviteData = Pick<InviteEntity, "token" | "grants"> &
+export type InviteData = Pick<InviteEntity, "botId" | "token" | "grants"> &
     Partial<Pick<InviteEntity, "createdBy" | "maxUses" | "expiresAt">>;
 
 export interface InvitesPageOptions {
@@ -28,6 +28,7 @@ export class InvitesRepository {
         const now = new Date();
         const invite: InviteEntity = {
             _id: new ObjectId(),
+            botId: data.botId,
             token: data.token,
             grants: data.grants,
             ...(data.createdBy ? { createdBy: data.createdBy } : {}),
@@ -59,13 +60,15 @@ export class InvitesRepository {
     }
 
     findOneByToken(
+        botId: string,
         token: string,
         session?: ClientSession,
     ): Promise<InviteEntity | null> {
-        return this.collection().findOne({ token }, { session });
+        return this.collection().findOne({ botId, token }, { session });
     }
 
     activate(
+        botId: string,
         token: string,
         userId: ObjectId,
         now: Date,
@@ -73,6 +76,7 @@ export class InvitesRepository {
     ): Promise<InviteEntity | null> {
         return this.collection().findOneAndUpdate(
             {
+                botId,
                 token,
                 "activations.userId": { $ne: userId },
                 $expr: isActiveExpression(now),
@@ -102,12 +106,14 @@ export class InvitesRepository {
     }
 
     async revokeBootstrapInvites(
+        botId: string,
         now: Date,
         exceptToken?: string,
         session?: ClientSession,
     ): Promise<number> {
         const result = await this.collection().updateMany(
             {
+                botId,
                 createdBy: { $exists: false },
                 revokedAt: { $exists: false },
                 ...(exceptToken === undefined

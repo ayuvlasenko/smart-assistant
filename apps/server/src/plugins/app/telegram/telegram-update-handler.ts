@@ -14,9 +14,9 @@ import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
-import { TelegramApiClient } from "./telegram-api-service.js";
-import { TelegramBotService } from "./telegram-bot-service.js";
+import { TelegramBot } from "./telegram-bots.js";
 import { TelegramChats } from "./telegram-chats.js";
+import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
     BannedTelegramUserError,
     DuplicateTelegramUpdateError,
@@ -35,6 +35,7 @@ import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramRouter } from "./telegram-router.js";
 
 interface TelegramUpdateRun {
+    bot: TelegramBot;
     update: Update;
     log: FastifyBaseLogger;
     responder: TelegramResponder;
@@ -45,7 +46,6 @@ const updateClaimTtlMilliseconds = 60 * 60 * 1000;
 
 export class TelegramUpdateHandler {
     private readonly log: FastifyBaseLogger;
-    private readonly telegramApiService: TelegramApiClient;
     private readonly telegramRouter: TelegramRouter;
     private readonly telegramChats: TelegramChats;
     private readonly usersRepository: UsersRepository;
@@ -53,11 +53,10 @@ export class TelegramUpdateHandler {
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly telegramBotService: TelegramBotService;
+    private readonly telegramCommandMenus: TelegramCommandMenus;
 
     constructor(
         log: FastifyBaseLogger,
-        telegramApiService: TelegramApiClient,
         telegramRouter: TelegramRouter,
         telegramChats: TelegramChats,
         usersRepository: UsersRepository,
@@ -65,10 +64,9 @@ export class TelegramUpdateHandler {
         lockService: LockService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
-        telegramBotService: TelegramBotService,
+        telegramCommandMenus: TelegramCommandMenus,
     ) {
         this.log = log;
-        this.telegramApiService = telegramApiService;
         this.telegramRouter = telegramRouter;
         this.telegramChats = telegramChats;
         this.usersRepository = usersRepository;
@@ -76,23 +74,25 @@ export class TelegramUpdateHandler {
         this.lockService = lockService;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
-        this.telegramBotService = telegramBotService;
+        this.telegramCommandMenus = telegramCommandMenus;
     }
 
-    async handle(update: Update): Promise<void> {
+    async handle(bot: TelegramBot, update: Update): Promise<void> {
         const telegramUser = extractTelegramUser(update);
         const log = this.log.child({
+            botId: bot.id,
             updateId: update.update_id,
             chatId: extractTelegramChat(update)?.id ?? telegramUser?.id,
             telegramUserId: telegramUser?.id,
         });
         const run: TelegramUpdateRun = {
+            bot,
             update,
             log,
             responder: new TelegramResponder(
                 extractTelegramChat(update)?.id,
                 update.callback_query,
-                this.telegramApiService,
+                bot.api,
                 log,
             ),
             language: defaultLanguage,
@@ -103,7 +103,7 @@ export class TelegramUpdateHandler {
             "Received update",
         );
 
-        const finishUpdate = this.telegramMetrics.startUpdate(update);
+        const finishUpdate = this.telegramMetrics.startUpdate(bot.id, update);
 
         try {
             await this.process(run, telegramUser);
@@ -117,7 +117,7 @@ export class TelegramUpdateHandler {
         run: TelegramUpdateRun,
         telegramUser: User | undefined,
     ): Promise<void> {
-        await this.assertNewUpdate(run.update);
+        await this.assertNewUpdate(run);
         assertPrivateChat(run.update);
 
         if (!telegramUser) {
@@ -128,14 +128,17 @@ export class TelegramUpdateHandler {
 
         run.language = user.languageCode;
 
-        await this.telegramBotService.syncCommands(user);
+        await this.telegramCommandMenus.sync(user);
         await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
     }
 
-    private async assertNewUpdate(update: Update): Promise<void> {
+    private async assertNewUpdate({
+        bot,
+        update,
+    }: TelegramUpdateRun): Promise<void> {
         const claim = await this.lockService.tryAcquire(
-            `telegram:update:${update.update_id}`,
+            `telegram:${bot.id}:update:${update.update_id}`,
             updateClaimTtlMilliseconds,
         );
 
@@ -151,6 +154,7 @@ export class TelegramUpdateHandler {
         const languageCode = resolveLanguage(telegramUser.language_code);
         const { user, isCreated } =
             await this.usersService.findOrCreateByTelegramId({
+                botId: run.bot.id,
                 telegramId: String(telegramUser.id),
                 ...readProfile(telegramUser, languageCode ?? defaultLanguage),
             });
@@ -306,7 +310,6 @@ export default fp(
             "telegramUpdateHandler",
             new TelegramUpdateHandler(
                 appLogger.child({ module: "telegram" }),
-                fastify.getDecorator<TelegramApiClient>("telegramApiService"),
                 fastify.getDecorator<TelegramRouter>("telegramRouter"),
                 fastify.getDecorator<TelegramChats>("telegramChats"),
                 fastify.getDecorator<UsersRepository>("usersRepository"),
@@ -314,7 +317,9 @@ export default fp(
                 fastify.getDecorator<LockService>("lockService"),
                 fastify.getDecorator<I18nService>("i18nService"),
                 fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-                fastify.getDecorator<TelegramBotService>("telegramBotService"),
+                fastify.getDecorator<TelegramCommandMenus>(
+                    "telegramCommandMenus",
+                ),
             ),
         );
     },
@@ -324,9 +329,8 @@ export default fp(
             "app-logger",
             "lock-service",
             "i18n-service",
-            "telegram-api-service",
-            "telegram-bot-service",
             "telegram-chats",
+            "telegram-command-menus",
             "telegram-metrics",
             "telegram-router",
             "users-repository",

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
+import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
 import { UsersService } from "./users-service.js";
 
 let databaseName!: string;
@@ -44,6 +45,7 @@ void describe("UsersService", () => {
         const usersService = app.getDecorator<UsersService>("usersService");
         const { user: banned } =
             await usersRepository.findOneByTelegramIdOrCreate({
+                botId: testTelegramBotId,
                 telegramId: "987654901",
                 isBanned: true,
                 languageCode: "en",
@@ -67,5 +69,37 @@ void describe("UsersService", () => {
                 },
             ],
         );
+    });
+
+    void it("keeps a separate user for every bot of one Telegram account", async (t) => {
+        const { app } = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+        });
+        const usersService = app.getDecorator<UsersService>("usersService");
+        const profile = {
+            telegramId: "987654902",
+            languageCode: "en" as const,
+        };
+
+        const first = await usersService.findOrCreateByTelegramId({
+            botId: testTelegramBotId,
+            ...profile,
+        });
+        const other = await usersService.findOrCreateByTelegramId({
+            botId: "42",
+            ...profile,
+        });
+        const again = await usersService.findOrCreateByTelegramId({
+            botId: testTelegramBotId,
+            ...profile,
+        });
+
+        assert.equal(first.isCreated, true);
+        assert.equal(other.isCreated, true);
+        assert.notDeepEqual(other.user._id, first.user._id);
+        assert.equal(again.isCreated, false);
+        assert.deepEqual(again.user._id, first.user._id);
     });
 });

@@ -25,6 +25,7 @@ export interface PokerRound {
 }
 
 export interface PokerRoomEntity extends BaseEntity {
+    botId: string;
     token: string;
     createdBy: ObjectId;
     title?: string;

@@ -38,6 +38,7 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
             ENVIRONMENT: opts.environment ?? "production",
             RESOURCE_NAME: keyPrefix.slice("smart-assistant:".length, -1),
             INVITE_TOKEN: undefined,
+            BOTS_ENCRYPTION_KEY: undefined,
         },
         () => app.ready(),
     );

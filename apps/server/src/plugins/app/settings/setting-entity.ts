@@ -1,7 +1,9 @@
 import { ObjectId } from "mongodb";
 
 export interface SettingEntity {
-    _id: string;
+    _id: ObjectId;
+    botId: string;
+    name: string;
     value: unknown;
     version: number;
     updatedBy: ObjectId;

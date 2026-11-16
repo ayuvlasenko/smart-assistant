@@ -48,8 +48,8 @@ export default fp(
 
         fastify
             .getDecorator<Emittery<SettingsEvents>>("eventEmitter")
-            .on("settings.settingChanged", () => {
-                telegramChats.publish([settingsTopic]);
+            .on("settings.settingChanged", ({ data }) => {
+                telegramChats.publish(data.botId, [settingsTopic]);
             });
     },
     {

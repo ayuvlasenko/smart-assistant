@@ -45,11 +45,13 @@ export type TelegramDeliveryKind = "publish" | "deliver";
 export type TelegramCommandMenuSync = "unchanged" | "set" | "failed";
 
 export class TelegramMetrics {
-    private readonly updates: Counter<"type" | "result">;
+    private readonly updates: Counter<"type" | "result" | "bot">;
     private readonly updateDuration: Histogram<"type">;
     private readonly sceneEvents: Counter<"scene" | "event">;
     private readonly buttonPresses: Counter<"action" | "result">;
-    private readonly apiRequests: Counter<"method" | "result" | "error_code">;
+    private readonly apiRequests: Counter<
+        "method" | "result" | "error_code" | "bot"
+    >;
     private readonly apiRequestDuration: Histogram<"method">;
     private readonly rateLimitWait: Histogram<"method" | "priority">;
     private readonly retryAfter: Histogram<"method">;
@@ -62,8 +64,8 @@ export class TelegramMetrics {
     constructor(metrics: MetricsService) {
         this.updates = metrics.counter({
             name: "telegram_updates_total",
-            help: "Telegram updates by update type and handling result",
-            labelNames: ["type", "result"],
+            help: "Telegram updates by update type, handling result and bot",
+            labelNames: ["type", "result", "bot"],
         });
         this.updateDuration = metrics.histogram({
             name: "telegram_update_duration_seconds",
@@ -83,7 +85,7 @@ export class TelegramMetrics {
         this.apiRequests = metrics.counter({
             name: "telegram_api_requests_total",
             help: "Telegram Bot API requests by method, result and Bot API error code",
-            labelNames: ["method", "result", "error_code"],
+            labelNames: ["method", "result", "error_code", "bot"],
         });
         this.apiRequestDuration = metrics.histogram({
             name: "telegram_api_request_duration_seconds",
@@ -130,13 +132,16 @@ export class TelegramMetrics {
         });
     }
 
-    startUpdate(update: Update): (result: TelegramUpdateResult) => void {
+    startUpdate(
+        botId: string,
+        update: Update,
+    ): (result: TelegramUpdateResult) => void {
         const type = extractTelegramUpdateType(update);
         const stopTimer = this.updateDuration.startTimer({ type });
 
         return (result) => {
             stopTimer();
-            this.updates.inc({ type, result });
+            this.updates.inc({ type, result, bot: botId });
         };
     }
 
@@ -149,6 +154,7 @@ export class TelegramMetrics {
     }
 
     startApiRequest(
+        botId: string,
         method: string,
     ): (result: TelegramApiResult, errorCode?: number) => void {
         const stopTimer = this.apiRequestDuration.startTimer({ method });
@@ -159,6 +165,7 @@ export class TelegramMetrics {
                 method,
                 result,
                 error_code: errorCode === undefined ? "" : String(errorCode),
+                bot: botId,
             });
         };
     }

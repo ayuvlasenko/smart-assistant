@@ -1,34 +1,22 @@
-import { BotCommand } from "@grammyjs/types";
+import { WebhookInfo } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
-import Emittery from "emittery";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { createHash, randomUUID } from "node:crypto";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
-import {
-    defaultLanguage,
-    I18nService,
-    languages,
-    Translate,
-} from "../i18n-service.js";
+import { I18nService } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
-import { UserEntity } from "../users/user-entity.js";
-import { UsersEvents } from "../users/users-events.js";
+import { TelegramBot, TelegramBots } from "./telegram-bots.js";
+import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
-    TelegramApiClient,
-    TelegramMethodArgs,
-} from "./telegram-api-service.js";
-import {
-    buildTelegramDeepLink,
+    buildTelegramBotUrl,
+    buildTelegramDeepLinkUrl,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
 import { TelegramApiError } from "./telegram-errors.js";
-import { isAllowed } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
-import { TelegramMetrics } from "./telegram-metrics.js";
-import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
+import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 type TelegramBotConfig = Pick<
     Env,
@@ -39,212 +27,197 @@ type TelegramBotConfig = Pick<
     | "TELEGRAM_WEBHOOK_URL"
 >;
 
-const telegramWebhookClaimKey = "telegram:webhook:set";
+export type TelegramBotWebhook =
+    | { botId: string; status: "refreshed"; webhookUrl: string; botUrl: string }
+    | { botId: string; status: "failed"; error: string };
+
 const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
-const telegramBotUsernameCacheKey = "telegram:bot:username";
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
-const telegramChatCommandsCacheTtlMilliseconds = 24 * 60 * 60 * 1000;
-const telegramCommandsGenerationKey = "telegram:commands:generation";
-const telegramCommandsGenerationTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
+    botId: string,
 ): string {
-    if (config.TELEGRAM_WEBHOOK_URL) {
-        return config.TELEGRAM_WEBHOOK_URL;
+    const baseUrl = config.TELEGRAM_WEBHOOK_URL;
+
+    if (baseUrl) {
+        return `${baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl}/${botId}`;
     }
 
     return new URL(
-        `/api/telegram/webhook/${config.RESOURCE_NAME}`,
+        `/api/telegram/webhook/${config.RESOURCE_NAME}/${botId}`,
         config.DOMAIN,
     ).toString();
 }
 
 export class TelegramBotService {
     private readonly log: FastifyBaseLogger;
-    private readonly telegramApiService: TelegramApiClient;
-    private readonly telegramRouter: TelegramRouter;
+    private readonly telegramBots: TelegramBots;
+    private readonly telegramCommandMenus: TelegramCommandMenus;
     private readonly cache: CacheService;
     private readonly lockService: LockService;
-    private readonly i18nService: I18nService;
-    private readonly telegramMetrics: TelegramMetrics;
     private readonly config: TelegramBotConfig;
 
     constructor(
         log: FastifyBaseLogger,
-        telegramApiService: TelegramApiClient,
-        telegramRouter: TelegramRouter,
+        telegramBots: TelegramBots,
+        telegramCommandMenus: TelegramCommandMenus,
         cache: CacheService,
         lockService: LockService,
-        i18nService: I18nService,
-        telegramMetrics: TelegramMetrics,
         config: TelegramBotConfig,
     ) {
         this.log = log;
-        this.telegramApiService = telegramApiService;
-        this.telegramRouter = telegramRouter;
+        this.telegramBots = telegramBots;
+        this.telegramCommandMenus = telegramCommandMenus;
         this.cache = cache;
         this.lockService = lockService;
-        this.i18nService = i18nService;
-        this.telegramMetrics = telegramMetrics;
         this.config = config;
     }
 
-    async setWebhookOnStart(): Promise<void> {
+    async setWebhooksOnStart(): Promise<void> {
         if (this.config.ENVIRONMENT === "preview") {
             this.log.info(
-                "Telegram webhook is not set on preview start, claim it with POST /api/telegram/webhook/refresh",
+                "Telegram webhooks are not set on preview start, claim them with POST /api/telegram/webhook/refresh",
             );
             return;
         }
 
-        const claim = await this.lockService.tryAcquire(
-            telegramWebhookClaimKey,
-            telegramWebhookClaimTtlMilliseconds,
-        );
-
-        if (!claim) {
-            this.log.info("Telegram webhook setup skipped");
-            return;
-        }
-
-        try {
-            await this.setWebhook();
-        } catch (err) {
-            await this.lockService.release(claim);
-            throw err;
+        for (const bot of this.telegramBots.list()) {
+            try {
+                await this.setWebhookOnStart(bot);
+            } catch (err) {
+                this.log.error(
+                    { err, botId: bot.id },
+                    "Failed to set the webhook of a bot on start",
+                );
+            }
         }
     }
 
-    async setWebhook(): Promise<string> {
-        const url = resolveTelegramWebhookUrl(this.config);
-        const result = await this.telegramApiService.setWebhook({
+    async setWebhook(bot: TelegramBot): Promise<string> {
+        const url = resolveTelegramWebhookUrl(this.config, bot.id);
+        const result = await bot.api.setWebhook({
             url,
-            secret_token: this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+            secret_token: telegramWebhookSecret(
+                this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                bot.id,
+            ),
         });
 
         if (!result.ok) {
             throw new TelegramApiError("setWebhook", result);
         }
 
-        this.log.info({ url }, "Telegram webhook set successfully");
-
-        return url;
-    }
-
-    async refreshWebhook(): Promise<string> {
-        const url = await this.setWebhook();
-
-        await this.setDefaultCommands();
-        await this.cache.set(telegramCommandsGenerationKey, randomUUID(), {
-            ttlMilliseconds: telegramCommandsGenerationTtlMilliseconds,
-        });
-
-        return url;
-    }
-
-    async resolveBotUrl(): Promise<string> {
-        return `https://t.me/${await this.resolveUsername()}`;
-    }
-
-    async resolveDeepLinkUrl(link: TelegramDeepLink): Promise<string> {
-        const payload = buildTelegramDeepLink(link);
-
-        return `${await this.resolveBotUrl()}?start=${payload}`;
-    }
-
-    async setCommandsOnStart(): Promise<void> {
-        if (this.config.ENVIRONMENT === "preview") {
-            return;
-        }
-
-        await this.setDefaultCommands();
-    }
-
-    async syncCommands(user: UserEntity): Promise<void> {
-        if (user.isBanned) {
-            return;
-        }
-
-        const commands = describeCommands(
-            this.telegramRouter
-                .listCommands()
-                .filter(({ guard }) => isAllowed(guard, user)),
-            this.i18nService.getT(user.languageCode),
+        this.log.info(
+            { botId: bot.id, url },
+            "Telegram webhook set successfully",
         );
-        const key = `telegram:commands:${user.telegramId}`;
+
+        return url;
+    }
+
+    async deleteWebhook(bot: TelegramBot): Promise<void> {
+        const result = await bot.api.deleteWebhook();
+
+        if (!result.ok) {
+            throw new TelegramApiError("deleteWebhook", result);
+        }
+
+        this.log.info({ botId: bot.id }, "Telegram webhook deleted");
+    }
+
+    async readWebhook(bot: TelegramBot): Promise<WebhookInfo> {
+        const result = await bot.api.getWebhookInfo();
+
+        if (!result.ok) {
+            throw new TelegramApiError("getWebhookInfo", result);
+        }
+
+        return result.result;
+    }
+
+    async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
+        const webhooks: TelegramBotWebhook[] = [];
+
+        for (const bot of this.telegramBots.list()) {
+            try {
+                webhooks.push(await this.refreshWebhook(bot));
+            } catch (err) {
+                this.log.error(
+                    { err, botId: bot.id },
+                    "Failed to refresh the webhook of a bot",
+                );
+                webhooks.push({
+                    botId: bot.id,
+                    status: "failed",
+                    error:
+                        err instanceof TelegramApiError
+                            ? err.message
+                            : "Telegram request failed",
+                });
+            }
+        }
+
+        return webhooks;
+    }
+
+    async resolveBotUrl(botId: string): Promise<string> {
+        return buildTelegramBotUrl(
+            await this.resolveUsername(this.telegramBots.get(botId)),
+        );
+    }
+
+    async resolveDeepLinkUrl(
+        botId: string,
+        link: TelegramDeepLink,
+    ): Promise<string> {
+        return buildTelegramDeepLinkUrl(
+            await this.resolveUsername(this.telegramBots.get(botId)),
+            link,
+        );
+    }
+
+    private async setWebhookOnStart(bot: TelegramBot): Promise<void> {
+        const claim = await this.lockService.tryAcquire(
+            `telegram:${bot.id}:webhook:set`,
+            telegramWebhookClaimTtlMilliseconds,
+        );
+
+        if (!claim) {
+            this.log.info({ botId: bot.id }, "Telegram webhook setup skipped");
+            return;
+        }
 
         try {
-            const generation = await this.cache.get(
-                telegramCommandsGenerationKey,
-                Type.String(),
-            );
-            const hash = createHash("sha256")
-                .update(JSON.stringify({ generation, commands }))
-                .digest("base64url");
-
-            if ((await this.cache.get(key, Type.String())) === hash) {
-                this.telegramMetrics.recordCommandMenuSync("unchanged");
-                return;
-            }
-
-            await this.setCommands({
-                commands,
-                scope: { type: "chat", chat_id: Number(user.telegramId) },
-            });
-            await this.cache.set(key, hash, {
-                ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
-            });
-            this.telegramMetrics.recordCommandMenuSync("set");
-
-            this.log.info(
-                {
-                    userId: user._id,
-                    commands: commands.map(({ command }) => command),
-                },
-                "Telegram chat commands set successfully",
-            );
+            await this.setWebhook(bot);
         } catch (err) {
-            this.telegramMetrics.recordCommandMenuSync("failed");
-            this.log.error(
-                { err, userId: user._id },
-                "Failed to set telegram chat commands",
-            );
+            await this.lockService.release(claim);
+            throw err;
         }
     }
 
-    private async setDefaultCommands(): Promise<void> {
-        const commands = this.telegramRouter
-            .listCommands()
-            .filter(({ guard }) => !guard);
+    private async refreshWebhook(
+        bot: TelegramBot,
+    ): Promise<TelegramBotWebhook> {
+        const botUrl = await this.resolveBotUrl(bot.id);
+        const webhookUrl = await this.setWebhook(bot);
 
-        for (const languageCode of [undefined, ...languages]) {
-            await this.setCommands({
-                commands: describeCommands(
-                    commands,
-                    this.i18nService.getT(languageCode ?? defaultLanguage),
-                ),
-                ...(languageCode ? { language_code: languageCode } : {}),
-            });
-        }
+        await this.telegramCommandMenus.refresh(bot);
 
-        this.log.info(
-            { commands: commands.map(({ name }) => name) },
-            "Telegram commands set successfully",
-        );
+        return { botId: bot.id, status: "refreshed", webhookUrl, botUrl };
     }
 
-    private resolveUsername(): Promise<string> {
+    private resolveUsername(bot: TelegramBot): Promise<string> {
         return this.cache.remember(
-            telegramBotUsernameCacheKey,
+            `telegram:${bot.id}:username`,
             Type.String(),
             telegramBotUsernameCacheTtlMilliseconds,
-            () => this.fetchUsername(),
+            () => this.fetchUsername(bot),
         );
     }
 
-    private async fetchUsername(): Promise<string> {
-        const result = await this.telegramApiService.getMe();
+    private async fetchUsername(bot: TelegramBot): Promise<string> {
+        const result = await bot.api.getMe();
 
         if (!result.ok) {
             throw new TelegramApiError("getMe", result);
@@ -252,26 +225,6 @@ export class TelegramBotService {
 
         return result.result.username;
     }
-
-    private async setCommands(
-        ...args: TelegramMethodArgs<"setMyCommands">
-    ): Promise<void> {
-        const result = await this.telegramApiService.setMyCommands(...args);
-
-        if (!result.ok) {
-            throw new TelegramApiError("setMyCommands", result);
-        }
-    }
-}
-
-function describeCommands(
-    commands: TelegramCommandInfo[],
-    t: Translate,
-): BotCommand[] {
-    return commands.map(({ name, description }) => ({
-        command: name,
-        description: description(t),
-    }));
 }
 
 export default fp(
@@ -280,12 +233,10 @@ export default fp(
         const i18nService = fastify.getDecorator<I18nService>("i18nService");
         const telegramBotService = new TelegramBotService(
             appLogger.child({ module: "telegram" }),
-            fastify.getDecorator<TelegramApiClient>("telegramApiService"),
-            fastify.getDecorator<TelegramRouter>("telegramRouter"),
+            fastify.getDecorator<TelegramBots>("telegramBots"),
+            fastify.getDecorator<TelegramCommandMenus>("telegramCommandMenus"),
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<LockService>("lockService"),
-            i18nService,
-            fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
             fastify.getDecorator<Env>("config"),
         );
 
@@ -293,15 +244,8 @@ export default fp(
 
         fastify.decorate("telegramBotService", telegramBotService);
 
-        fastify
-            .getDecorator<Emittery<UsersEvents>>("eventEmitter")
-            .on("users.accessChanged", ({ data }) =>
-                telegramBotService.syncCommands(data.user),
-            );
-
         fastify.addHook("onListen", async () => {
-            await telegramBotService.setWebhookOnStart();
-            await telegramBotService.setCommandsOnStart();
+            await telegramBotService.setWebhooksOnStart();
         });
     },
     {
@@ -310,12 +254,10 @@ export default fp(
             "@fastify/env",
             "app-logger",
             "cache",
-            "emittery",
             "i18n-service",
             "lock-service",
-            "telegram-api-service",
-            "telegram-metrics",
-            "telegram-router",
+            "telegram-bots",
+            "telegram-command-menus",
         ],
     },
 );

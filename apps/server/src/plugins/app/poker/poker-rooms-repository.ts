@@ -11,7 +11,7 @@ import { PokerRoomPatch } from "./poker-room-transitions.js";
 
 export type PokerRoomData = Pick<
     PokerRoomEntity,
-    "token" | "createdBy" | "deck" | "autoReveal" | "participants"
+    "botId" | "token" | "createdBy" | "deck" | "autoReveal" | "participants"
 > &
     Partial<Pick<PokerRoomEntity, "title">>;
 
@@ -54,8 +54,11 @@ export class PokerRoomsRepository {
         return this.collection().findOne(filter);
     }
 
-    findOneByToken(token: string): Promise<PokerRoomEntity | null> {
-        return this.collection().findOne({ token });
+    findOneByToken(
+        botId: string,
+        token: string,
+    ): Promise<PokerRoomEntity | null> {
+        return this.collection().findOne({ botId, token });
     }
 
     findPage({

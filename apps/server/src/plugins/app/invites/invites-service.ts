@@ -11,6 +11,7 @@ import {
     adminGrant,
 } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
+import { botIdOfToken } from "../bots/bot-entity.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
@@ -24,7 +25,7 @@ import {
     InviteWithoutGrantsError,
 } from "./invites-errors.js";
 import { InvitesEvents } from "./invites-events.js";
-import { InvitesRepository } from "./invites-repository.js";
+import { InviteData, InvitesRepository } from "./invites-repository.js";
 
 export interface InviteDraft {
     grants: string[];
@@ -87,6 +88,7 @@ export class InvitesService {
     async create(actor: UserEntity, draft: InviteDraft): Promise<InviteEntity> {
         const grants = [...new Set(draft.grants)];
         const data = {
+            botId: actor.botId,
             createdBy: actor._id,
             grants,
             maxUses: draft.maxUses,
@@ -108,16 +110,11 @@ export class InvitesService {
             }
         }
 
-        const invite = await this.invitesRepository.create({
-            token: randomBytes(inviteTokenBytes).toString("base64url"),
-            ...data,
-        });
+        return this.insert(data);
+    }
 
-        await this.eventEmitter.emit("invites.inviteChanged", {
-            inviteId: invite._id,
-        });
-
-        return invite;
+    createOwnerInvite(botId: string): Promise<InviteEntity> {
+        return this.insert({ botId, grants: [adminGrant], maxUses: 1 });
     }
 
     async activate(
@@ -126,6 +123,7 @@ export class InvitesService {
     ): Promise<InviteActivationResult> {
         const now = new Date();
         const activated = await this.invitesRepository.activate(
+            user.botId,
             token,
             user._id,
             now,
@@ -138,6 +136,7 @@ export class InvitesService {
             );
 
             await this.eventEmitter.emit("invites.inviteChanged", {
+                botId: user.botId,
                 inviteId: activated._id,
             });
 
@@ -220,6 +219,7 @@ export class InvitesService {
 
         if (revoked) {
             await this.eventEmitter.emit("invites.inviteChanged", {
+                botId: actor.botId,
                 inviteId: revoked._id,
             });
         }
@@ -227,39 +227,66 @@ export class InvitesService {
         return revoked;
     }
 
-    async bootstrap(token: string | undefined): Promise<InvitesBootstrap> {
+    async bootstrap(
+        botId: string,
+        token: string | undefined,
+    ): Promise<InvitesBootstrap> {
         const now = new Date();
 
         if (
             !token ||
-            (await this.usersRepository.existsWithGrant(adminGrant))
+            (await this.usersRepository.existsWithGrant(botId, adminGrant))
         ) {
             return {
                 invite: "none",
-                revoked:
-                    await this.invitesRepository.revokeBootstrapInvites(now),
+                revoked: await this.invitesRepository.revokeBootstrapInvites(
+                    botId,
+                    now,
+                ),
             };
         }
 
         const revoked = await this.invitesRepository.revokeBootstrapInvites(
+            botId,
             now,
             token,
         );
 
         return {
-            invite: await this.prepareBootstrapInvite(token, now),
+            invite: await this.prepareBootstrapInvite(botId, token, now),
             revoked,
         };
     }
 
+    private async insert(
+        data: Omit<InviteData, "token">,
+    ): Promise<InviteEntity> {
+        const invite = await this.invitesRepository.create({
+            token: randomBytes(inviteTokenBytes).toString("base64url"),
+            ...data,
+        });
+
+        await this.eventEmitter.emit("invites.inviteChanged", {
+            botId: invite.botId,
+            inviteId: invite._id,
+        });
+
+        return invite;
+    }
+
     private async prepareBootstrapInvite(
+        botId: string,
         token: string,
         now: Date,
     ): Promise<InvitesBootstrap["invite"]> {
-        const invite = await this.invitesRepository.findOneByToken(token);
+        const invite = await this.invitesRepository.findOneByToken(
+            botId,
+            token,
+        );
 
         if (!invite) {
             await this.invitesRepository.create({
+                botId,
                 token,
                 grants: [adminGrant],
                 maxUses: 1,
@@ -285,7 +312,10 @@ export class InvitesService {
         token: string,
         now: Date,
     ): Promise<InviteActivationResult> {
-        const invite = await this.invitesRepository.findOneByToken(token);
+        const invite = await this.invitesRepository.findOneByToken(
+            user.botId,
+            token,
+        );
 
         if (!invite) {
             return { status: "notFound" };
@@ -326,13 +356,15 @@ export default fp(
         const log = fastify
             .getDecorator<AppLogger>("appLogger")
             .child({ module: "invites" });
-        const inviteToken = fastify.getDecorator<Env>("config").INVITE_TOKEN;
+        const config = fastify.getDecorator<Env>("config");
 
         fastify.decorate("invitesService", invitesService);
 
         fastify.addHook("onReady", async () => {
-            const { invite, revoked } =
-                await invitesService.bootstrap(inviteToken);
+            const { invite, revoked } = await invitesService.bootstrap(
+                botIdOfToken(config.TELEGRAM_BOT_TOKEN),
+                config.INVITE_TOKEN,
+            );
 
             if (invite === "unusable") {
                 log.warn(

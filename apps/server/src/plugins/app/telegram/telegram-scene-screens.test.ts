@@ -11,7 +11,10 @@ import {
     TestContext,
 } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
     TelegramSceneBot,
@@ -259,7 +262,7 @@ void describe("Telegram scene screens", () => {
         assert.deepEqual(await bot.readMessageTexts(chat.id), ["VIP"]);
 
         shop.isVip = false;
-        bot.telegramChats.publish(["shop.vip"]);
+        bot.telegramChats.publish(testTelegramBotId, ["shop.vip"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(await bot.readMessageTexts(chat.id), ["List 0"]);
@@ -305,7 +308,7 @@ void describe("Telegram scene screens", () => {
         await bot.pressButton(ada, "Open a");
         await bot.sendText(bob, "/shop");
         shop.stock.a = 1;
-        bot.telegramChats.publish(["shop.item:a"]);
+        bot.telegramChats.publish(testTelegramBotId, ["shop.item:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(await bot.readMessageTexts(ada.id), [

@@ -110,6 +110,7 @@ export class PokerRoomsService {
     ): Promise<PokerRoomEntity> {
         const now = new Date();
         const data = {
+            botId: actor.botId,
             token: randomBytes(roomTokenBytes).toString("base64url"),
             createdBy: actor._id,
             ...(draft.title === undefined ? {} : { title: draft.title }),
@@ -136,7 +137,10 @@ export class PokerRoomsService {
 
     async join(actor: UserEntity, token: string): Promise<PokerJoinResult> {
         for (let attempt = 0; attempt < saveAttempts; attempt += 1) {
-            const room = await this.pokerRoomsRepository.findOneByToken(token);
+            const room = await this.pokerRoomsRepository.findOneByToken(
+                actor.botId,
+                token,
+            );
 
             if (!room) {
                 return { status: "notFound" };
@@ -156,6 +160,7 @@ export class PokerRoomsService {
 
             const maxParticipants = this.settingsService.read(
                 pokerMaxParticipantsSetting,
+                room.botId,
             );
 
             if (room.participants.length >= maxParticipants) {
@@ -222,6 +227,7 @@ export class PokerRoomsService {
     async isRemoved(actor: UserEntity, roomId: ObjectId): Promise<boolean> {
         const room = await this.pokerRoomsRepository.findOne({
             _id: roomId,
+            botId: actor.botId,
             "removedParticipants.userId": actor._id,
         });
 
@@ -397,6 +403,7 @@ export class PokerRoomsService {
         );
 
         await this.eventEmitter.emit("poker.roomChanged", {
+            botId: room.botId,
             roomId: room._id,
             change,
             userIds: [...userIds.values()],
