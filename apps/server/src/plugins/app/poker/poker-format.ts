@@ -9,7 +9,10 @@ import {
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { UserEntity } from "../users/user-entity.js";
 import { PokerDeckName } from "./poker-decks.js";
-import { PokerRoomEntity } from "./poker-room-entity.js";
+import {
+    listKnownPokerParticipants,
+    PokerRoomEntity,
+} from "./poker-room-entity.js";
 import {
     PokerAgreement,
     PokerCardVotes,
@@ -104,7 +107,7 @@ export function describePokerParticipants(
     users: UserEntity[],
     viewerId: ObjectId,
 ): Map<string, string> {
-    const named = room.participants.map((participant) => {
+    const named = listKnownPokerParticipants(room).map((participant) => {
         const user = users.find(({ _id }) => _id.equals(participant.userId));
 
         return {

@@ -7,6 +7,10 @@ export type PokerRoomChange =
     | "revealed"
     | "roundStarted"
     | "roundRenamed"
+    | "autoRevealChanged"
+    | "roleChanged"
+    | "removed"
+    | "left"
     | "closed";
 
 export interface PokerEvents {

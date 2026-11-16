@@ -62,7 +62,10 @@ function describeDraft(t: Translate, draft: PokerDraft): string[] {
         formatBold(t("poker:formTitle")),
         formatLabeled(t("poker:deckLabel"), formatPokerDeckName(t, draft.deck)),
         formatLabeled(t("poker:titleLabel"), formatTitle(t, draft)),
-        formatLabeled(t("poker:autoRevealLabel"), formatAutoReveal(t, draft)),
+        formatLabeled(
+            t("poker:autoRevealLabel"),
+            t(draft.autoReveal ? "poker:autoRevealAll" : "poker:autoRevealOff"),
+        ),
     ];
 }
 
@@ -72,8 +75,4 @@ function formatLabeled(label: string, value: string): string {
 
 function formatTitle(t: Translate, draft: PokerDraft): string {
     return draft.title ?? t("poker:noTitle");
-}
-
-function formatAutoReveal(t: Translate, draft: PokerDraft): string {
-    return t(draft.autoReveal ? "poker:on" : "poker:off");
 }

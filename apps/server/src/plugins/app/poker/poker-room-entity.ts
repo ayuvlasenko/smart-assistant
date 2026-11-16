@@ -2,11 +2,16 @@ import { ObjectId } from "mongodb";
 import { BaseEntity } from "../../../entity.js";
 import { PokerDeckName } from "./poker-decks.js";
 
+export type PokerParticipantRole = "voter" | "observer";
+
 export interface PokerParticipant {
     userId: ObjectId;
     emoji: string;
+    role: PokerParticipantRole;
     joinedAt: Date;
 }
+
+export type PokerAutoReveal = { missingVotes: number } | null;
 
 export type PokerRoundStatus = "voting" | "revealed";
 
@@ -25,10 +30,11 @@ export interface PokerRoomEntity extends BaseEntity {
     createdBy: ObjectId;
     title?: string;
     deck: PokerDeckName;
-    autoReveal: boolean;
+    autoReveal: PokerAutoReveal;
     lastActivityAt: Date;
     closedAt?: Date;
     participants: PokerParticipant[];
+    removedParticipants?: PokerParticipant[];
     round: PokerRound;
     rounds: PokerRound[];
 }
@@ -80,14 +86,6 @@ export function isPokerParticipantIdle(
     );
 }
 
-export function listActivePokerParticipants(
-    room: PokerRoomEntity,
-): PokerParticipant[] {
-    return room.participants.filter(
-        (participant) => !isPokerParticipantIdle(room, participant),
-    );
-}
-
 export function findPokerParticipant(
     room: PokerRoomEntity,
     userId: ObjectId,
@@ -97,11 +95,54 @@ export function findPokerParticipant(
     );
 }
 
-export function hasEveryPokerParticipantVoted(room: PokerRoomEntity): boolean {
-    const active = listActivePokerParticipants(room);
+export function listKnownPokerParticipants(
+    room: PokerRoomEntity,
+): PokerParticipant[] {
+    return [...room.participants, ...(room.removedParticipants ?? [])];
+}
 
-    return (
-        active.length > 0 &&
-        active.every(({ userId }) => room.round.votes[userId.toHexString()])
+export function listActivePokerParticipants(
+    room: PokerRoomEntity,
+): PokerParticipant[] {
+    return room.participants.filter(
+        (participant) =>
+            participant.role !== "observer" &&
+            !isPokerParticipantIdle(room, participant),
     );
+}
+
+export function readPokerAutoRevealTarget(
+    room: PokerRoomEntity,
+): number | null {
+    if (!room.autoReveal) {
+        return null;
+    }
+
+    return Math.max(
+        listActivePokerParticipants(room).length - room.autoReveal.missingVotes,
+        1,
+    );
+}
+
+export function stepPokerAutoReveal(
+    room: PokerRoomEntity,
+    step: -1 | 1,
+): PokerAutoReveal {
+    const active = listActivePokerParticipants(room).length;
+    const votes = (readPokerAutoRevealTarget(room) ?? 0) + step;
+
+    if (votes <= 0) {
+        return null;
+    }
+
+    return { missingVotes: Math.max(active - votes, 0) };
+}
+
+export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
+    const target = readPokerAutoRevealTarget(room);
+    const voted = listActivePokerParticipants(room).filter(
+        ({ userId }) => room.round.votes[userId.toHexString()],
+    ).length;
+
+    return room.round.status === "voting" && target !== null && voted >= target;
 }

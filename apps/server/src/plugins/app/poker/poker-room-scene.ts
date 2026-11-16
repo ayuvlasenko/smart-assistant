@@ -15,6 +15,10 @@ import {
 } from "./poker-format.js";
 import { renderPokerHistory } from "./poker-history-screen.js";
 import {
+    renderPokerParticipant,
+    renderPokerParticipants,
+} from "./poker-participants-screen.js";
+import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
     PokerSubjects,
@@ -57,10 +61,23 @@ export function createPokerRoomScene(
         const room = await load(ctx, scene);
 
         if (!room) {
+            const isRemoved = await pokerRoomsService.isRemoved(
+                ctx.user,
+                new ObjectId(scene.state.roomId),
+            );
+
             return [
                 buildPokerMessage(
-                    [escapeTelegramHtml(ctx.t("poker:roomMissing"))],
-                    [],
+                    [
+                        escapeTelegramHtml(
+                            ctx.t(
+                                isRemoved
+                                    ? "poker:roomRemoved"
+                                    : "poker:roomMissing",
+                            ),
+                        ),
+                    ],
+                    [[scene.button(ctx.t("poker:hideButton"), "hide", null)]],
                 ),
             ];
         }
@@ -102,14 +119,35 @@ export function createPokerRoomScene(
                 params: pokerRoomScreens.round,
                 render: (ctx, scene) =>
                     renderRoom(ctx, scene, (view) =>
-                        renderPokerRound(view, { isMenu: false }),
+                        renderPokerRound(view, "actions"),
                     ),
             },
             menu: {
                 params: pokerRoomScreens.menu,
                 render: (ctx, scene) =>
                     renderRoom(ctx, scene, (view) =>
-                        renderPokerRound(view, { isMenu: true }),
+                        renderPokerRound(view, "menu"),
+                    ),
+            },
+            autoReveal: {
+                params: pokerRoomScreens.autoReveal,
+                render: (ctx, scene) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerRound(view, "autoReveal"),
+                    ),
+            },
+            participants: {
+                params: pokerRoomScreens.participants,
+                render: (ctx, scene, { page }) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerParticipants(view, page),
+                    ),
+            },
+            participant: {
+                params: pokerRoomScreens.participant,
+                render: (ctx, scene, { userId }) =>
+                    renderRoom(ctx, scene, (view) =>
+                        renderPokerParticipant(view, userId),
                     ),
             },
             history: {
@@ -161,6 +199,70 @@ export function createPokerRoomScene(
                     scene.state.titleRound = round;
                     await scene.reset();
                     await scene.ask("title");
+                },
+            },
+            autoReveal: {
+                value: pokerRoomButtonValues.autoReveal,
+                handle: async (ctx, scene, autoReveal) => {
+                    const room = await load(ctx, scene);
+
+                    if (room) {
+                        await pokerRoomsService.changeAutoReveal(
+                            ctx.user,
+                            room,
+                            autoReveal,
+                        );
+                    }
+                },
+            },
+            role: {
+                value: pokerRoomButtonValues.role,
+                handle: async (ctx, scene, { userId, role }) => {
+                    const room = await load(ctx, scene);
+
+                    if (room) {
+                        await pokerRoomsService.changeRole(ctx.user, room, {
+                            userId: new ObjectId(userId),
+                            role,
+                        });
+                    }
+
+                    if (scene.screen.name === "menu") {
+                        await scene.reset();
+                    }
+
+                    if (scene.screen.name === "participant") {
+                        await scene.back();
+                    }
+                },
+            },
+            remove: {
+                value: pokerRoomButtonValues.remove,
+                confirm: true,
+                handle: async (ctx, scene, userId) => {
+                    const room = await load(ctx, scene);
+                    const removed =
+                        room &&
+                        (await pokerRoomsService.removeParticipant(
+                            ctx.user,
+                            room,
+                            new ObjectId(userId),
+                        ));
+
+                    if (removed && userId === ctx.user._id.toHexString()) {
+                        await scene.end({ messages: "delete" });
+                        return;
+                    }
+
+                    await scene.back();
+                },
+            },
+            participantsPage: {
+                value: pokerRoomButtonValues.participantsPage,
+                handle: async (ctx, scene, page) => {
+                    if (scene.screen.name === "participants") {
+                        scene.screen.params.page = page;
+                    }
                 },
             },
             close: {
