@@ -51,6 +51,7 @@ async function configureMigrations(): Promise<void> {
     config.set({
         ...projectConfig,
         migrationsDir: fileURLToPath(new URL("migrations", serverRoot)),
+        lockTtl: 0,
     });
 }
 
