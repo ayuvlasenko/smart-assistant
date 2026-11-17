@@ -262,7 +262,7 @@ Each button carries the value it sets, not a step, so two participants who press
 3. The engine of the voter draws the screen of the voter at the end of the update.
 4. The background run takes the session lock of each of the other two participants, loads the room again and edits their screens.
 
-**Edge cases.** The redraw reads the room under the session lock of each participant, after the lock is free. When several votes come while an edit waits for the rate limiter, the next redraw already shows all of them, and the redraws after it find the same content hash and call no API. So each chat gets at most about one edit per second, whatever the number of votes. Two large active rooms can still reach the limit of the bot, see `docs/backlog/background-delivery-waits-for-rate-limit-under-session-lock.md`.
+**Edge cases.** The redraw reads the room under the session lock of each participant, after the lock is free. When several votes come while an edit waits for the rate limiter, the next redraw already shows all of them, and the redraws after it find the same content hash and call no API. So each chat gets at most about one edit per second, whatever the number of votes. Two large active rooms can still reach the limit of the bot. Then the redraws wait for a delivery permit without a session lock, see [Updates for other users](../telegram/README.md#updates-for-other-users).
 
 **Metrics.** `poker-handlers.ts` counts every event in `poker_room_changes_total{change}`, such as `created`, `joined` or `voted`, and observes the number of participants after each join in `poker_room_participants`.
 

@@ -126,6 +126,25 @@ void describe("TelegramApiService", () => {
         assert.equal((await pausedSend).ok, true);
     });
 
+    void it("makes another chat wait while a 429 pauses the messages of the bot", async (t) => {
+        const { telegramApiService } = await buildApiService(t, [
+            rateLimitedResponse,
+            { ok: true, result: true },
+            { ok: true, result: true },
+        ]);
+        const pausedSend = telegramApiService.sendMessage({
+            chat_id: 1,
+            text: "hello",
+        });
+        await setTimeout(100);
+        const startedAt = performance.now();
+
+        await telegramApiService.sendMessage({ chat_id: 2, text: "hello" });
+
+        assert.ok(performance.now() - startedAt >= 700);
+        assert.equal((await pausedSend).ok, true);
+    });
+
     void it("records the rate limiter wait of setMyCommands", async (t) => {
         const { metrics, telegramApiService } = await buildApiService(t, [
             { ok: true, result: true },

@@ -2,8 +2,11 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
-import { RateLimitGrant, RateLimitQueue } from "./rate-limit-queue.js";
+import {
+    RateLimitGrant,
+    RateLimitQueue,
+    RateLimitTake,
+} from "./rate-limit-queue.js";
 
 export interface RateLimitBucket {
     key: string;
@@ -18,6 +21,7 @@ export interface RateLimitAcquireOptions {
 }
 
 const waitingTtlMilliseconds = 2_000;
+const ownClassName = "own";
 
 const tokenBucketFunctions = `
 local function currentTime()
@@ -104,6 +108,7 @@ export class RateLimiter {
     private readonly client: Redis;
     private readonly podId = randomUUID();
     private readonly queues = new Map<string, RateLimitQueue>();
+    private readonly scriptHashes = new Map<string, string>();
 
     constructor(client: Redis) {
         this.client = client;
@@ -113,64 +118,39 @@ export class RateLimiter {
         bucket: RateLimitBucket,
         { className, signal }: RateLimitAcquireOptions,
     ): Promise<number> {
-        return bucket.shares
-            ? this.queueOf(bucket, bucket.shares).acquire(className, signal)
-            : this.acquireOwn(bucket, signal);
+        return this.queueOf(bucket).acquire(
+            bucket.shares ? className : ownClassName,
+            signal,
+        );
     }
 
     async pause(
         bucket: RateLimitBucket,
         delayMilliseconds: number,
     ): Promise<void> {
-        await this.client.eval(
+        await this.run(
             pauseScript,
-            1,
-            bucket.key,
-            bucket.ratePerSecond,
-            bucket.burst,
-            delayMilliseconds,
+            [bucket.key],
+            [bucket.ratePerSecond, bucket.burst, delayMilliseconds],
         );
     }
 
-    private async acquireOwn(
-        bucket: RateLimitBucket,
-        signal: AbortSignal | undefined,
-    ): Promise<number> {
-        const startedAt = performance.now();
-
-        for (;;) {
-            signal?.throwIfAborted();
-
-            const waitMilliseconds = Number(
-                await this.client.eval(
-                    takeScript,
-                    1,
-                    bucket.key,
-                    bucket.ratePerSecond,
-                    bucket.burst,
-                ),
-            );
-
-            if (waitMilliseconds <= 0) {
-                return performance.now() - startedAt;
-            }
-
-            await sleep(waitMilliseconds, signal);
-        }
-    }
-
-    private queueOf(
-        bucket: RateLimitBucket,
-        shares: Record<string, number>,
-    ): RateLimitQueue {
+    private queueOf(bucket: RateLimitBucket): RateLimitQueue {
         const existing = this.queues.get(bucket.key);
 
         if (existing) {
             return existing;
         }
 
-        const queue = new RateLimitQueue(Object.keys(shares), (waiting) =>
-            this.takeShared(bucket, Object.entries(shares), waiting),
+        const shares = bucket.shares && Object.entries(bucket.shares);
+        const take: RateLimitTake = shares
+            ? (waitingClasses) =>
+                  this.takeShared(bucket, shares, waitingClasses)
+            : (waitingClasses) => this.takeOwn(bucket, waitingClasses);
+        const queue = new RateLimitQueue(
+            shares ? shares.map(([className]) => className) : [ownClassName],
+            take,
+            () => this.queues.delete(bucket.key),
         );
 
         this.queues.set(bucket.key, queue);
@@ -178,31 +158,54 @@ export class RateLimiter {
         return queue;
     }
 
+    private async takeOwn(
+        bucket: RateLimitBucket,
+        waitingClasses: Set<string>,
+    ): Promise<RateLimitGrant> {
+        if (waitingClasses.size === 0) {
+            return { className: undefined, waitMilliseconds: 0 };
+        }
+
+        const waitMilliseconds = Number(
+            await this.run(
+                takeScript,
+                [bucket.key],
+                [bucket.ratePerSecond, bucket.burst],
+            ),
+        );
+
+        return waitMilliseconds <= 0
+            ? { className: ownClassName, waitMilliseconds: 0 }
+            : { className: undefined, waitMilliseconds };
+    }
+
     private async takeShared(
         bucket: RateLimitBucket,
         shares: [string, number][],
         waitingClasses: Set<string>,
     ): Promise<RateLimitGrant> {
-        const keys = [
-            bucket.key,
-            ...shares.map(([className]) => `${bucket.key}:class:${className}`),
-            ...shares.map(
-                ([className]) => `${bucket.key}:waiting:${className}`,
-            ),
-        ];
-        const result = (await this.client.eval(
+        const result = (await this.run(
             takeSharedScript,
-            keys.length,
-            ...keys,
-            bucket.ratePerSecond,
-            bucket.burst,
-            waitingTtlMilliseconds,
-            shares.length,
-            this.podId,
-            ...shares.flatMap(([className, share]) => [
-                share,
-                waitingClasses.has(className) ? "1" : "0",
-            ]),
+            [
+                bucket.key,
+                ...shares.map(
+                    ([className]) => `${bucket.key}:class:${className}`,
+                ),
+                ...shares.map(
+                    ([className]) => `${bucket.key}:waiting:${className}`,
+                ),
+            ],
+            [
+                bucket.ratePerSecond,
+                bucket.burst,
+                waitingTtlMilliseconds,
+                shares.length,
+                this.podId,
+                ...shares.flatMap(([className, share]) => [
+                    share,
+                    waitingClasses.has(className) ? "1" : "0",
+                ]),
+            ],
         )) as [number, string];
         const [index, waitMilliseconds] = result;
 
@@ -214,18 +217,46 @@ export class RateLimiter {
             ),
         };
     }
+
+    private async run(
+        script: string,
+        keys: string[],
+        args: (number | string)[],
+    ): Promise<unknown> {
+        const hash = this.scriptHashes.get(script) ?? (await this.load(script));
+
+        try {
+            return await this.client.evalsha(
+                hash,
+                keys.length,
+                ...keys,
+                ...args,
+            );
+        } catch (err) {
+            if (!isMissingScript(err)) {
+                throw err;
+            }
+
+            return this.client.evalsha(
+                await this.load(script),
+                keys.length,
+                ...keys,
+                ...args,
+            );
+        }
+    }
+
+    private async load(script: string): Promise<string> {
+        const hash = (await this.client.script("LOAD", script)) as string;
+
+        this.scriptHashes.set(script, hash);
+
+        return hash;
+    }
 }
 
-async function sleep(
-    milliseconds: number,
-    signal: AbortSignal | undefined,
-): Promise<void> {
-    try {
-        await delay(milliseconds, undefined, { signal });
-    } catch (err) {
-        signal?.throwIfAborted();
-        throw err;
-    }
+function isMissingScript(err: unknown): boolean {
+    return err instanceof Error && err.message.startsWith("NOSCRIPT");
 }
 
 export default fp(

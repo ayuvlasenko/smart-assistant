@@ -10,8 +10,10 @@ import { UsersRepository } from "../users/users-repository.js";
 import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
+import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
+import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import {
@@ -54,6 +56,7 @@ export class TelegramChats {
     private readonly i18nService: I18nService;
     private readonly telegramBots: TelegramBots;
     private readonly telegramMetrics: TelegramMetrics;
+    private readonly deliveryPermits: TelegramDeliveryPermits;
     private readonly log: FastifyBaseLogger;
     private readonly config: Pick<Env, "TIME_ZONE">;
 
@@ -64,6 +67,7 @@ export class TelegramChats {
         i18nService: I18nService,
         telegramBots: TelegramBots,
         telegramMetrics: TelegramMetrics,
+        deliveryPermits: TelegramDeliveryPermits,
         log: FastifyBaseLogger,
         config: Pick<Env, "TIME_ZONE">,
     ) {
@@ -79,6 +83,7 @@ export class TelegramChats {
         this.i18nService = i18nService;
         this.telegramBots = telegramBots;
         this.telegramMetrics = telegramMetrics;
+        this.deliveryPermits = deliveryPermits;
         this.log = log;
         this.config = config;
     }
@@ -318,7 +323,9 @@ export class TelegramChats {
             chat.log,
         );
 
-        return this.withContext(chat, undefined, responder, handle);
+        return this.deliveryPermits.run(bot.id, () =>
+            this.withContext(chat, undefined, responder, handle),
+        );
     }
 
     private withContext<TUpdate extends Update | undefined, T>(
@@ -364,6 +371,7 @@ export default fp(
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
+            new TelegramDeliveryPermits(telegramDeliveryLimit),
             appLogger.child({ module: "telegram" }),
             fastify.getDecorator<Env>("config"),
         );

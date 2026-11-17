@@ -39,10 +39,12 @@ const botMessages: TelegramRateLimit = {
 };
 
 const botCommands: TelegramRateLimit = {
-    ratePerSecond: 5,
-    burst: 5,
+    ratePerSecond: 2,
+    burst: 6,
     scopeOf: () => "commands",
 };
+
+export const telegramDeliveryLimit = Math.ceil(botMessages.ratePerSecond);
 
 const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
     {

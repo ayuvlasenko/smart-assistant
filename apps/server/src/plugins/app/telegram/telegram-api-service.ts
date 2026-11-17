@@ -263,13 +263,16 @@ export class TelegramApiService {
         retryAfterSeconds: number,
         signal: AbortSignal,
     ): Promise<void> {
-        const [narrowestBucket] = buckets;
         const delayMilliseconds = retryAfterSeconds * 1000;
 
         this.telegramMetrics.recordRetryAfter(method, retryAfterSeconds);
 
-        if (narrowestBucket) {
-            await this.rateLimiter.pause(narrowestBucket, delayMilliseconds);
+        if (buckets.length > 0) {
+            await Promise.all(
+                buckets.map((bucket) =>
+                    this.rateLimiter.pause(bucket, delayMilliseconds),
+                ),
+            );
             return;
         }
 

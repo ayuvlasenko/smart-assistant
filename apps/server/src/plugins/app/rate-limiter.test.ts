@@ -36,6 +36,31 @@ void describe("RateLimiter", () => {
         assert.ok(wait >= 250 && wait < 600);
     });
 
+    void it("takes a token after Valkey lost its scripts", async (t) => {
+        const { client, rateLimiter } = await buildCacheServiceTestApp({ t });
+        const bucket = { key: "rate:scripts", ratePerSecond: 20, burst: 3 };
+
+        await acquire(rateLimiter, bucket);
+        await client.script("FLUSH");
+
+        assert.ok((await acquire(rateLimiter, bucket)) < 500);
+    });
+
+    void it("asks Valkey about once per token while many calls wait for one bucket", async (t) => {
+        const { client, rateLimiter } = await buildCacheServiceTestApp({ t });
+        const bucket = { key: "rate:waiters", ratePerSecond: 50, burst: 1 };
+        const evalsha = t.mock.method(client, "evalsha");
+
+        await Promise.all(
+            Array.from({ length: 10 }, () => acquire(rateLimiter, bucket)),
+        );
+
+        assert.ok(
+            evalsha.mock.callCount() <= 30,
+            `asked Valkey ${evalsha.mock.callCount()} times`,
+        );
+    });
+
     void it("rejects a wait with the reason of the aborted signal", async (t) => {
         const { rateLimiter } = await buildCacheServiceTestApp({ t });
         const reason = new Error("stopped");
