@@ -170,6 +170,34 @@ export class UsersRepository {
         );
     }
 
+    async setSetting(
+        _id: ObjectId,
+        name: string,
+        value: unknown,
+        session?: ClientSession,
+    ): Promise<UserEntity> {
+        const path = `settings.${name}`;
+        const user = await this.mongo.db
+            .collection<UserEntity>("users")
+            .findOneAndUpdate(
+                { _id },
+                {
+                    ...(value === undefined
+                        ? { $unset: { [path]: "" } }
+                        : { $set: { [path]: value } }),
+                    $currentDate: { updatedAt: true },
+                    $inc: { version: 1 },
+                },
+                { session, returnDocument: "after" },
+            );
+
+        if (!user) {
+            throw new NotFoundError("User");
+        }
+
+        return user;
+    }
+
     async save(entity: UserEntity, session?: ClientSession): Promise<void> {
         const { _id, version, ...document } = entity;
         const result = await this.mongo.db

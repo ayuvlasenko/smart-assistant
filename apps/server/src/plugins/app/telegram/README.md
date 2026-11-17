@@ -48,7 +48,7 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 - `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. Code that already has the username of the bot calls `buildTelegramDeepLinkUrl(username, { name, value })`. See [Deep links](#deep-links).
 - `telegramStartEntries.register(module, handler, { guard })` declares what `/start` opens in a bot whose start module is that module, usually the handler of the main command of the module. See [The start module](#the-start-module).
 - When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
-- Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
+- Send every user-facing text through `ctx.t`. It speaks the language of `languageOf(ctx.user)`, and follows `ctx.refreshUser`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
 
 ### A scene
@@ -342,7 +342,7 @@ sequenceDiagram
 
 **Logs.** Every update ends with one line, `Update handled`, with the result label of `telegram_updates_total`, the time in `durationMs` and `route`: `command:<name>`, `deepLink:<name>`, `scene` for a button press or an input text, or `route` for an `on` or `when` route. When the bot stays silent because a guard refused the user, `refusedRoute` names the command or the deep link. Every line of the update carries `botId`, `updateId` and `telegramUserId`, and `userId` once the user is loaded, also the lines that a handler writes through `ctx.log`. The request ends with one `request completed` line with the status and `responseTime`, and both lines share `reqId`.
 
-**New users.** The user lookup is one upsert by the bot id and the Telegram id through `UsersService.findOrCreateByTelegramId`. One person gets a separate user in every bot, with its own ban, grants and language. A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
+**New users.** The user lookup is one upsert by the bot id and the Telegram id through `UsersService.findOrCreateByTelegramId`. One person gets a separate user in every bot, with its own ban, grants and language. `languageCode` follows the language of the Telegram client on every update; the texts use `languageOf(user)`, which prefers the language the user picked in `/settings`, see [A setting of a user](../settings/README.md#a-setting-of-a-user). A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
 
 ## Session and lock
 
@@ -777,8 +777,9 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **Walk-through.**
 
-1. `TelegramCommandMenus.sync` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
-2. It lists the commands whose guard allows the user, and the commands of `buildUserWithoutGrants` in the same bot, both in the user's language.
+1. `TelegramCommandMenus.sync` runs on every update of a user with access, on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
+2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
+   So a user who picked another language in `/settings` gets a menu of the chat in that language.
 3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
 4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
 5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.

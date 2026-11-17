@@ -1,13 +1,13 @@
 # Settings
 
-This directory keeps the values that an admin changes in the chat with `/settings`, such as the limit of participants in a poker room. A domain registers its own settings here and reads them; the directory does not know any feature domain.
+This directory keeps the values that people change in the chat with `/settings`. A setting of a bot is a value for everybody in the bot, such as the limit of participants in a poker room, and an admin changes it. A setting of a user is a value of one user, such as the language, and every user changes their own. A domain registers its own settings here and reads them; the directory does not know any feature domain.
 
 ## Constraints
 
 - A guard and a CASL ability are synchronous, `(user) => boolean`, and the default grants are a setting, so a setting must be readable without a call to MongoDB or Valkey.
 - Several pods serve the bot, and an admin changes a value on one of them.
 
-## Using a setting
+## Using a setting of a bot
 
 A setting is a constant of the domain that owns it. There are three kinds:
 
@@ -47,7 +47,7 @@ const maxParticipants = settingsService.read(
 - Make the default value the behaviour the code had before the setting, so a deploy changes nothing until an admin does. A setting that adds a new limit on purpose, such as `poker.maxParticipants`, is the exception; its domain README says what changes on the deploy.
 - The plugin that registers a setting depends on `settings-service`. `settings-service` depends on `access-service`, so `AccessService` cannot register a setting itself; `access/access-default-grants.ts` does it for the default grants.
 
-The settings in the code now are `users.autoBan`, `access.defaultGrants` and `poker.maxParticipants`.
+The settings of a bot in the code now are `users.autoBan`, `access.defaultGrants` and `poker.maxParticipants`.
 
 ## Values on every pod
 
@@ -73,7 +73,7 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 
 1. The number input of the `settings` scene calls `SettingsService.write`. It checks `update Setting`, which only `admin` has, and checks the value against the setting: the range of a number, the options of the choices.
 2. `SettingsRepository.save` upserts the document, and the service logs `Setting changed`.
-3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the menu of every admin of the bot redraws. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the bot settings of every admin of the bot redraw. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
 4. Pod B reads all documents on its next refresh, at most 10 seconds later, and replaces its snapshot.
 
 **Edge cases.**
@@ -82,16 +82,78 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 - The first snapshot is read while the plugin loads, so the server does not start with defaults instead of the stored values; when MongoDB fails then, the server does not start. A failed refresh later logs `Failed to refresh settings` and keeps the old snapshot.
 - A flag and a choice change relative to the stored document: `toggle` and `toggleChoice` compute the new value inside one MongoDB update and put the stored result into the snapshot. So a second press that lands on a pod with a stale snapshot does not undo the first one. A number is a plain `write` of the typed value, and of two admins who type one at the same time the later write wins.
 
+## A setting of a user
+
+**Problem.** A value of one user, such as the language, has no place in the `settings` collection: its documents belong to a bot. A store of its own with one document per user would be read on every update, and a document that is saved as a whole loses a change when two settings change at once.
+
+**Idea.** The user document keeps the settings of the user, each in its own field, and the transport loads that document for every update anyway. A write sets or removes one field, so two writes never overwrite each other.
+
+**Data.** `settings.<domain>.<name>` of the user document; the name of a setting is that path, such as `users.language`. A setting at its default has no field.
+
+```json
+{
+    "_id": "66f1c2…",
+    "botId": "6741c2f09a3b5d0012e4a7c1",
+    "telegramId": "42",
+    "languageCode": "en",
+    "settings": { "users": { "language": "uk" } }
+}
+```
+
+A setting of a user has one kind, `choice`: one value among `options(botId)`, with a `defaultValue` that is one of them. The owner registers a section with `UserSettingsService.register` and reads the value with `readUserChoice(setting, user)`, a plain function that needs only the user. `user-language.ts` is the reference:
+
+```ts
+export const languageSetting: UserChoiceSetting = {
+    kind: "choice",
+    name: "users.language",
+    title: (t) => t("users:languageSetting"),
+    emoji: "🌐",
+    defaultValue: "auto",
+    options: () => [
+        { value: "auto", title: (t) => t("users:languageAuto") },
+        { value: "uk", title: () => "Українська" },
+    ],
+};
+
+userSettingsService.register({
+    name: "users",
+    title: (t) => t("users:generalSection"),
+    settings: [languageSetting],
+});
+
+const language = readUserChoice(languageSetting, user);
+```
+
+**Walk-through.** A user picks `Українська`.
+
+1. The `pick` button of the `settings` scene calls `UserSettingsService.write(user, setting, "uk")`. It checks the value against the options.
+2. `UsersRepository.setSetting` runs one update, `$set: { "settings.users.language": "uk" }`, and returns the stored user. The default value runs `$unset` of the same field.
+3. The service logs `User setting changed` and emits `settings.userSettingChanged` with the stored user. `settings-handlers.ts` calls `TelegramCommandMenus.sync`, so the menu of the chat follows the language, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+4. The handler passes the stored user to `ctx.refreshUser`, so the same update draws the screen in the new language.
+
+**Edge cases.**
+
+- `readUserChoice` reads the default for a stored value that is no longer an option, so a deploy that removes an option needs no migration.
+- `register` refuses a name that is not `<domain>.<name>`, because the name is a path in the document.
+- A section with the name of an access module shows only in the bots that have the module, like a section of bot settings.
+- One person has a separate user in every bot, so a setting belongs to one bot.
+- `languageOf(user)` in `user-language.ts` is the language of the texts: the picked language, or `languageCode` of the Telegram client when the setting is `auto`. Read the language through it and never from `languageCode`.
+
+The only setting of a user in the code now is `users.language`.
+
 ## The menu
 
-`/settings` starts the `settings` scene with the key `settings` and the guard `update Setting`, so only an admin sees the command. The `list` screen shows every section with the value of each setting and under it one button per setting, each in its own row and named with the setting's `emoji` and title. There is no dismiss button: a second `/settings` moves the same message to the bottom of the chat, and the scene expires 24 hours after its last use. A flag switches at once with `toggle`; a number asks for a whole number and asks again while it is out of the range, then calls `write`; choices push the `choices` screen with the name of the setting in its params, a checkbox per option and `‹ Back`, and each checkbox calls `toggleChoice`. The number input is not a screen, so it keeps the name of its setting in `numberSetting` of the state until the answer arrives. Every change puts the stored value into the snapshot, so the screen shows what MongoDB holds.
+`/settings` starts the `settings` scene with the key `settings` for every user. The `list` screen shows the settings of the user with their values, one button per setting, and `⚙️ Bot settings` for a user who passes `update Setting`, which only `admin` has. A setting of the user pushes the `choice` screen with one row per option, and a press calls `UserSettingsService.write`.
+
+`⚙️ Bot settings` pushes the `bot` screen. It shows every section with the value of each setting and under it one button per setting, each in its own row and named with the setting's `emoji` and title. The screens `bot` and `choices`, their buttons and the number input carry the guard `update Setting`, and only these two screens watch the topic `settings`. There is no dismiss button: a second `/settings` moves the same message to the bottom of the chat, and the scene expires 24 hours after its last use. A flag switches at once with `toggle`; a number asks for a whole number and asks again while it is out of the range, then calls `write`; choices push the `choices` screen with the name of the setting in its params, a checkbox per option and `‹ Back`, and each checkbox calls `toggleChoice`. The number input is not a screen, so it keeps the name of its setting in `numberSetting` of the state until the answer arrives. Every change puts the stored value into the snapshot, so the screen shows what MongoDB holds.
 
 ## Files
 
-| File                                                               | Owns                                                                         | Section                                     |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------- |
-| `settings-service.ts`                                              | The kinds of settings, their registration, the snapshot, `read` and `write`  | [Values on every pod](#values-on-every-pod) |
-| `settings-repository.ts`                                           | The `settings` collection                                                    | [Values on every pod](#values-on-every-pod) |
-| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                       |                                             |
-| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its two screens                                   | [The menu](#the-menu)                       |
-| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, `settings.settingChanged`, texts |                                             |
+| File                                                               | Owns                                                                        | Section                                     |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------- |
+| `settings-service.ts`                                              | The kinds of settings, their registration, the snapshot, `read` and `write` | [Values on every pod](#values-on-every-pod) |
+| `user-settings-service.ts`                                         | The settings of a user: their registration, `readUserChoice` and `write`    | [A setting of a user](#a-setting-of-a-user) |
+| `settings-repository.ts`                                           | The `settings` collection                                                   | [Values on every pod](#values-on-every-pod) |
+| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                      |                                             |
+| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its four screens                                 | [The menu](#the-menu)                       |
+| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, the two events, texts           |                                             |

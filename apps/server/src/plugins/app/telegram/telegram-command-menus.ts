@@ -16,6 +16,7 @@ import {
     Translate,
 } from "../i18n-service.js";
 import { buildUserWithoutGrants, UserEntity } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersEvents } from "../users/users-events.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
@@ -119,13 +120,15 @@ export class TelegramCommandMenus {
             return;
         }
 
-        const translate = this.i18nService.getT(user.languageCode);
-        const commands = this.describeCommandsOf(user, translate);
+        const commands = this.describeCommandsOf(
+            user,
+            this.i18nService.getT(languageOf(user)),
+        );
         const commandMenu = isDeepStrictEqual(
             commands,
             this.describeCommandsOf(
                 buildUserWithoutGrants(user.botId),
-                translate,
+                this.i18nService.getT(user.languageCode),
             ),
         )
             ? undefined

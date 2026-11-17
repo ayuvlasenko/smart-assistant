@@ -12,6 +12,7 @@ import {
 import { LockHoldTimeoutError, LockLostError } from "../lock-errors.js";
 import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
 import { TelegramBot } from "./telegram-bots.js";
@@ -150,7 +151,7 @@ export class TelegramUpdateHandler {
 
         const user = await this.resolveUser(run, telegramUser);
 
-        run.language = user.languageCode;
+        run.language = languageOf(user);
 
         await this.telegramCommandMenus.sync(user);
         run.route = await this.dispatch(run, user, telegramUser.id);

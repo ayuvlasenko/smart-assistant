@@ -5,6 +5,7 @@ import {
     TelegramSceneInputSchemas,
 } from "../telegram/telegram-scene.js";
 import { SettingsService } from "./settings-service.js";
+import { UserSettingsService } from "./user-settings-service.js";
 
 export const settingsStateSchema = Type.Object({
     numberSetting: Type.Union([Type.String(), Type.Null()]),
@@ -12,10 +13,14 @@ export const settingsStateSchema = Type.Object({
 
 export const settingsScreens = {
     list: Type.Object({}),
+    choice: Type.Object({ setting: Type.String() }),
+    bot: Type.Object({}),
     choices: Type.Object({ setting: Type.String() }),
 };
 
 export const settingsButtonValues = {
+    openOwn: Type.String(),
+    pick: Type.String(),
     open: Type.String(),
     choose: Type.String(),
 };
@@ -33,4 +38,6 @@ export interface SettingsView {
     ctx: TelegramContext;
     scene: SettingsSceneControl;
     settingsService: SettingsService;
+    userSettingsService: UserSettingsService;
+    canChangeBot: boolean;
 }

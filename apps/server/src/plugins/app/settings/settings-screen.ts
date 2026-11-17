@@ -8,8 +8,69 @@ import {
     Setting,
     SettingsService,
 } from "./settings-service.js";
+import { readUserChoice, UserSetting } from "./user-settings-service.js";
 
-export function renderSettingsList(view: SettingsView): TelegramMessageContent {
+export function renderOwnSettings(view: SettingsView): TelegramMessageContent {
+    const { ctx, scene, userSettingsService, canChangeBot } = view;
+    const { t } = ctx;
+    const sections = userSettingsService.listSections(ctx.user.botId);
+
+    return buildSettingsMessage(
+        [
+            formatBold(t("settings:title")),
+            ...sections.flatMap((section) => [
+                "",
+                formatBold(section.title(t)),
+                ...section.settings.map((setting) =>
+                    escapeTelegramHtml(
+                        `${setting.title(t)}: ${formatOwnValue(t, setting, view)}`,
+                    ),
+                ),
+            ]),
+        ],
+        [
+            ...sections
+                .flatMap(({ settings }) => settings)
+                .map((setting) => [
+                    scene.button(
+                        `${setting.emoji} ${setting.title(t)}`,
+                        "openOwn",
+                        setting.name,
+                    ),
+                ]),
+            canChangeBot
+                ? [scene.screenButton(t("settings:botButton"), "bot")]
+                : [],
+        ],
+    );
+}
+
+export function renderOwnSettingChoice(
+    view: SettingsView,
+    setting: UserSetting,
+): TelegramMessageContent {
+    const { ctx, scene } = view;
+    const { t } = ctx;
+    const chosen = readUserChoice(setting, ctx.user);
+
+    return buildSettingsMessage(
+        [formatBold(t("settings:title")), "", formatBold(setting.title(t))],
+        [
+            ...setting
+                .options(ctx.user.botId)
+                .map((option) => [
+                    scene.button(
+                        `${option.value === chosen ? "🔘" : "⚪"} ${option.title(t)}`,
+                        "pick",
+                        option.value,
+                    ),
+                ]),
+            [scene.backButton(t("settings:backButton"))],
+        ],
+    );
+}
+
+export function renderBotSettings(view: SettingsView): TelegramMessageContent {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
     const sections = settingsService.listSections(ctx.user.botId);
@@ -25,7 +86,7 @@ export function renderSettingsList(view: SettingsView): TelegramMessageContent {
 
     return buildSettingsMessage(
         [
-            formatBold(t("settings:title")),
+            formatBold(t("settings:botTitle")),
             ...sections.flatMap((section) => [
                 "",
                 formatBold(section.title(t)),
@@ -36,7 +97,7 @@ export function renderSettingsList(view: SettingsView): TelegramMessageContent {
                 ),
             ]),
         ],
-        buttons,
+        [...buttons, [scene.backButton(t("settings:backButton"))]],
     );
 }
 
@@ -49,7 +110,7 @@ export function renderSettingsChoices(
     const selected = settingsService.read(setting, ctx.user.botId);
 
     return buildSettingsMessage(
-        [formatBold(t("settings:title")), "", formatBold(setting.title(t))],
+        [formatBold(t("settings:botTitle")), "", formatBold(setting.title(t))],
         [
             ...setting
                 .options(ctx.user.botId)
@@ -79,6 +140,19 @@ function buildSettingsMessage(
 
 function formatBold(text: string): string {
     return `<b>${escapeTelegramHtml(text)}</b>`;
+}
+
+function formatOwnValue(
+    t: Translate,
+    setting: UserSetting,
+    { ctx }: SettingsView,
+): string {
+    const chosen = readUserChoice(setting, ctx.user);
+    const option = setting
+        .options(ctx.user.botId)
+        .find(({ value }) => value === chosen);
+
+    return option ? option.title(t) : chosen;
 }
 
 function formatValue(

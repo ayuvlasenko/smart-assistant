@@ -5,7 +5,9 @@ import { ObjectId } from "mongodb";
 import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { FlagSetting, SettingsService } from "../settings/settings-service.js";
+import { UserSettingsService } from "../settings/user-settings-service.js";
 import { UserEntity, UserProfile } from "./user-entity.js";
+import { languageSetting } from "./user-language.js";
 import { UsersEvents } from "./users-events.js";
 import { usersLocales } from "./users-locales.js";
 import { UserLookup, UsersRepository } from "./users-repository.js";
@@ -71,6 +73,13 @@ export default fp(
             title: (t) => t("users:section"),
             settings: [autoBanSetting],
         });
+        fastify
+            .getDecorator<UserSettingsService>("userSettingsService")
+            .register({
+                name: "users",
+                title: (t) => t("users:generalSection"),
+                settings: [languageSetting],
+            });
 
         fastify.decorate(
             "usersService",
@@ -91,6 +100,7 @@ export default fp(
             "emittery",
             "i18n-service",
             "settings-service",
+            "user-settings-service",
             "users-repository",
         ],
     },

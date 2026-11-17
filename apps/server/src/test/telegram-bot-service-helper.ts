@@ -31,6 +31,7 @@ import settingsRepositoryPlugin from "../plugins/app/settings/settings-repositor
 import settingsServicePlugin, {
     SettingsService,
 } from "../plugins/app/settings/settings-service.js";
+import userSettingsServicePlugin from "../plugins/app/settings/user-settings-service.js";
 import telegramPlugin, {
     TelegramBotService,
 } from "../plugins/app/telegram/telegram-bot-service.js";
@@ -159,6 +160,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(accessPlugin);
     app.register(settingsRepositoryPlugin);
     app.register(settingsServicePlugin);
+    app.register(userSettingsServicePlugin);
     app.register(accessDefaultGrantsPlugin);
     app.register(botsRepositoryPlugin);
     app.register(botsRegistryPlugin);

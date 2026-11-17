@@ -6,6 +6,7 @@ import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
@@ -343,8 +344,8 @@ export class TelegramChats {
                     user,
                     session,
                     log,
-                    translatorOf: ({ languageCode }) =>
-                        this.i18nService.getT(languageCode),
+                    translatorOf: (current) =>
+                        this.i18nService.getT(languageOf(current)),
                     timeZone: user.timeZone ?? this.config.TIME_ZONE,
                     responder,
                 });
