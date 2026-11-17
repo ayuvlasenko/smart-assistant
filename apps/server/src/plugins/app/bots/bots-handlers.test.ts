@@ -500,15 +500,6 @@ void describe("/bots", () => {
         const other = await bot.botsService.add(actor, otherToken);
 
         assert.equal(other.status, "added");
-        await mongo.collection("bots").createIndex(
-            { telegramId: 1 },
-            {
-                unique: true,
-                name: "telegramId_unique",
-                partialFilterExpression: { telegramId: { $exists: true } },
-            },
-        );
-        t.after(() => mongo.collection("bots").dropIndex("telegramId_unique"));
         t.mock.method(
             bot.botsRepository,
             "findOneByTelegramId",

@@ -291,6 +291,9 @@ importers:
         specifier: 15.1.3
         version: 15.1.3
     devDependencies:
+      '@types/migrate-mongo':
+        specifier: 14.0.0
+        version: 14.0.0
       '@types/node':
         specifier: 26.6.3
         version: 26.6.3
@@ -747,6 +750,9 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
+
+  '@types/migrate-mongo@14.0.0':
+    resolution: {integrity: sha512-kqotmIvA6aic6u54YqSZWIO0PIvSp9Kzxx+bQm19ZVEZX45/qzUfRDJIQn+pCRKweRZH8d9QbVoYBtHJ/3c2hQ==}
 
   '@types/node@26.6.3':
     resolution: {integrity: sha512-dsqMQQoeTLqu9wynDD00q573mNzso3IdQOAfHRJqLCcmCFPoGo9A1bDpUcv/9tnKpErQWv9uKeGfl37EIS02Yg==}
@@ -2478,6 +2484,19 @@ snapshots:
   '@types/estree@1.0.8': {}
 
   '@types/json-schema@7.0.15': {}
+
+  '@types/migrate-mongo@14.0.0':
+    dependencies:
+      '@types/node': 26.6.3
+      mongodb: 7.7.0
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-providers'
+      - '@mongodb-js/zstd'
+      - gcp-metadata
+      - kerberos
+      - mongodb-client-encryption
+      - snappy
+      - socks
 
   '@types/node@26.6.3':
     dependencies:

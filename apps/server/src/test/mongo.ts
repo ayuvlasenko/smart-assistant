@@ -1,5 +1,7 @@
+import { config, up } from "migrate-mongo";
 import { Db, MongoClient } from "mongodb";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 export interface BuildTestMongoOptions {
     databaseName?: string;
@@ -12,7 +14,10 @@ export interface TestMongo {
     mongo: Db;
 }
 
-export function createTestDatabaseName(): string {
+const serverRoot = new URL("../../", import.meta.url);
+let migrationsConfigured: Promise<void> | undefined;
+
+function createTestDatabaseName(): string {
     return `smart_assistant_test_${randomUUID().replaceAll("-", "")}`;
 }
 
@@ -24,11 +29,29 @@ export async function buildTestMongo(
 
     await client.connect();
 
-    return {
-        client,
-        databaseName,
-        mongo: client.db(databaseName),
+    const mongo = client.db(databaseName);
+
+    await migrate(mongo, client);
+
+    return { client, databaseName, mongo };
+}
+
+async function migrate(mongo: Db, client: MongoClient): Promise<void> {
+    migrationsConfigured ??= configureMigrations();
+    await migrationsConfigured;
+    await up(mongo, client);
+}
+
+async function configureMigrations(): Promise<void> {
+    const file = new URL("migrate-mongo-config.js", serverRoot);
+    const { default: projectConfig } = (await import(file.href)) as {
+        default: config.Config;
     };
+
+    config.set({
+        ...projectConfig,
+        migrationsDir: fileURLToPath(new URL("migrations", serverRoot)),
+    });
 }
 
 function resolveDatabaseUrl(databaseUrl?: string): string {
