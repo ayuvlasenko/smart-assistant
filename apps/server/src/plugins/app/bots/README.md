@@ -105,7 +105,7 @@ The root record has `isRoot` and the `telegramId` of `TELEGRAM_BOT_TOKEN`, and n
 1. On start, `BotsRegistry.start` calls `ensureRoot` with the number of `TELEGRAM_BOT_TOKEN`. It marks the document with that `telegramId` as the root bot, or writes the number to the root document, or creates the root document with no modules. Then the registry reads every bot.
 2. It takes the token of the root bot from `TELEGRAM_BOT_TOKEN` and adds `bots` to its modules. It decrypts the token of every other bot.
 3. Every 10 seconds it reads all bots again and replaces the snapshot.
-4. An update for a bot that is not in the snapshot yet, such as a bot created on another pod a second ago, calls `load`, which reads that bot from MongoDB.
+4. An update for a bot that is not in the snapshot yet, such as a bot created on another pod a second ago, calls `loadByTelegramId` with the Telegram id from the webhook path, which reads that bot from MongoDB.
 
 **Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. A decrypted token whose number differs from the `telegramId` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
 

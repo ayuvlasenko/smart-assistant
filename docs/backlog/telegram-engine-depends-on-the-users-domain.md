@@ -8,7 +8,7 @@ added: 2026-10-31
 
 The engine in `plugins/app/telegram/` imports `UserEntity`, `UsersService`, `UsersRepository` and `UsersEvents` from the users domain, and reads `Env` for its config. That is fine while one app uses the engine. It blocks moving the engine into a package that several bots share, because every bot would need our users collection and our env names.
 
-Since the bots are stored in MongoDB, `telegram-bots.ts` also imports `BotsRegistry` and `RegisteredBot` from the bots domain, while `bots-service.ts` imports three services of the engine, so the two domains depend on each other. A port with `rootId`, `find`, `load` and `list`, implemented by the registry, removes that import the same way as `TelegramUsers` below.
+Since the bots are stored in MongoDB, `telegram-bots.ts` also imports `BotsRegistry` and `RegisteredBot` from the bots domain, while `bots-service.ts` imports three services of the engine, so the two domains depend on each other. A port with `rootId`, `find`, `loadByTelegramId` and `list`, implemented by the registry, removes that import the same way as `TelegramUsers` below.
 
 Whether to do it is open until a second bot that reuses the engine is planned. Until then the decoupling only costs: an attempt in PR #18 was dropped because it added type plumbing with no benefit to one app. The attempt is kept on the local branch `backup/pr-18-engine-refactor` (86f8abd) in the worktree `jittery-gorilla`; it was never pushed.
 
