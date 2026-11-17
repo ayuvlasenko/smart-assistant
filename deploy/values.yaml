@@ -28,8 +28,8 @@ server:
       failureThreshold: 5
   shutdown:
     preStopSeconds: 5
-    closeGraceMilliseconds: 20000
-    terminationGracePeriodSeconds: 30
+    closeGraceMilliseconds: 65000
+    terminationGracePeriodSeconds: 75
   resources:
     requests:
       memory: "256Mi"
