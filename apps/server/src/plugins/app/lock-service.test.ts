@@ -33,6 +33,45 @@ void describe("LockService", () => {
         assert.deepEqual(events, ["first", "second"]);
     });
 
+    void it("keeps the waiters of one pod in a queue in memory and asks Valkey for one of them at a time", async (t) => {
+        const { cache, lockService } = await buildCacheServiceTestApp({ t });
+        const order: number[] = [];
+        const first = await lockService.acquire("lock:10", lockOptions);
+        const attempts = t.mock.method(cache, "set");
+        const waiters = [1, 2, 3, 4, 5].map((waiter) =>
+            lockService.acquire("lock:10", lockOptions).then(async (lock) => {
+                order.push(waiter);
+                await lock[Symbol.asyncDispose]();
+            }),
+        );
+
+        await setTimeout(200);
+
+        assert.equal(attempts.mock.callCount(), 0);
+
+        await first[Symbol.asyncDispose]();
+        await Promise.all(waiters);
+
+        assert.deepEqual(order, [1, 2, 3, 4, 5]);
+        assert.equal(attempts.mock.callCount(), 5);
+    });
+
+    void it("lets the next waiter of the pod go when the owner holds the lock for too long", async (t) => {
+        const { lockService } = await buildCacheServiceTestApp({ t });
+        const stuck = await lockService.acquire("lock:11", {
+            ...lockOptions,
+            ttlMilliseconds: 150,
+            maxHoldMilliseconds: 100,
+        });
+        const next = await lockService.acquire("lock:11", lockOptions);
+
+        assert.ok(stuck.signal.reason instanceof LockHoldTimeoutError);
+        assert.notEqual(next.token, stuck.token);
+
+        await next[Symbol.asyncDispose]();
+        await stuck[Symbol.asyncDispose]();
+    });
+
     void it("waits for a taken lock until its TTL runs out", async (t) => {
         const { client, lockService } = await buildCacheServiceTestApp({ t });
 

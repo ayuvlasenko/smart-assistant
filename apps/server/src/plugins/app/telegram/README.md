@@ -365,7 +365,7 @@ A hash keeps all the state of a user under one key, so one Lua call writes it at
 
 **Walk-through.**
 
-1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. It tries again every 50 ms until it gets the lock. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait.
+1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. The handlers of one pod wait for the same lock in a queue in memory, in the order they came, and only the first of them asks Valkey. It asks again every 50 ms while a handler of another pod holds the lock. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait, with the time in the queue.
 2. While the update runs, the lock extends itself every 10 s, so a long update does not lose it. The lock gives the handler an `AbortSignal`, and `TelegramChats` puts it into the scope of the Bot API calls, see [Rate limits](#rate-limits).
 3. `TelegramSession.read` loads a field the first time somebody asks for it and keeps it in memory. A handler that touches one scene reads one field.
 4. `write`, `remove`, `index` and `unindex` only record the change.
