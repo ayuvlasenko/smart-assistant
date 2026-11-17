@@ -2,8 +2,8 @@ import fastifyAutoload from "@fastify/autoload";
 import Fastify, { FastifyServerOptions } from "fastify";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
-import { requestIdOptions } from "../request-logging.js";
-import { createLogCollector } from "../test/log-collector.js";
+import { requestIdOptions } from "../logger-request.js";
+import { createLoggerCollector } from "../test/logger-collector.js";
 
 const prometheusContentType = "text/plain; version=0.0.4; charset=utf-8";
 const metricsBody = [
@@ -58,7 +58,7 @@ void describe("GET /metrics", () => {
     });
 
     void it("does not write access logs for scrapes", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const app = await buildMetricsRouteApp(t, {
             logger: logs.logger,
         });

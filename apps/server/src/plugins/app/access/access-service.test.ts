@@ -6,80 +6,85 @@ import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { AccessControl, AccessService, adminGrant } from "./access-service.js";
 
 void describe("AccessService", () => {
-    void it("gives every ability to a user with the admin grant", () => {
+    void it("gives every ability to a user with the admin grant", async () => {
         const access = buildAccess();
         const admin = buildUserEntity({ grants: [adminGrant] });
 
-        assert.equal(access.can(admin, "use", "Ping"), true);
-        assert.equal(access.can(admin, "delete", "Invite"), true);
+        assert.equal(await access.can(admin, "use", "Ping"), true);
+        assert.equal(await access.can(admin, "delete", "Invite"), true);
         assert.equal(access.holds(admin, "ping.use"), true);
     });
 
-    void it("gives only the abilities of the user's grants", () => {
+    void it("gives only the abilities of the user's grants", async () => {
         const access = buildAccess();
         const user = buildUserEntity({ grants: ["ping.use"] });
 
-        assert.equal(access.can(user, "use", "Ping"), true);
-        assert.equal(access.can(user, "read", "Invite"), false);
+        assert.equal(await access.can(user, "use", "Ping"), true);
+        assert.equal(await access.can(user, "read", "Invite"), false);
         assert.equal(access.holds(user, "ping.use"), true);
         assert.equal(access.holds(user, adminGrant), false);
     });
 
-    void it("adds the default grants to every user without a ban, except admin", () => {
+    void it("adds the default grants to every user without a ban, except admin", async () => {
         const service = new AccessService();
         const access = buildAccess(service);
         const user = buildUserEntity();
 
-        service.useDefaultGrants(() => ["ping.use", adminGrant]);
+        service.useDefaultGrants(() =>
+            Promise.resolve(["ping.use", adminGrant]),
+        );
 
-        assert.equal(access.can(user, "use", "Ping"), true);
-        assert.equal(access.can(user, "read", "Invite"), false);
+        assert.equal(await access.can(user, "use", "Ping"), true);
+        assert.equal(await access.can(user, "read", "Invite"), false);
         assert.equal(access.holds(user, "ping.use"), false);
         assert.equal(
-            access.can(buildUserEntity({ isBanned: true }), "use", "Ping"),
+            await access.can(
+                buildUserEntity({ isBanned: true }),
+                "use",
+                "Ping",
+            ),
             false,
         );
     });
 
-    void it("ignores grants that are not registered", () => {
+    void it("ignores grants that are not registered", async () => {
         const access = buildAccess();
         const user = buildUserEntity({ grants: ["removed.feature"] });
 
-        assert.equal(access.can(user, "use", "Ping"), false);
+        assert.equal(await access.can(user, "use", "Ping"), false);
     });
 
-    void it("gives nothing to a banned user", () => {
+    void it("gives nothing to a banned user", async () => {
         const access = buildAccess();
         const user = buildUserEntity({ isBanned: true, grants: [adminGrant] });
 
-        assert.equal(access.can(user, "use", "Ping"), false);
+        assert.equal(await access.can(user, "use", "Ping"), false);
         assert.equal(access.holds(user, adminGrant), false);
     });
 
-    void it("throws a forbidden error from assert and allows the same check through a guard", () => {
+    void it("throws a forbidden error from assert and allows the same check through a guard", async () => {
         const access = buildAccess();
         const user = buildUserEntity({ grants: ["ping.use"] });
         const canReadInvites = access.guard("read", "Invite");
 
-        assert.throws(() => {
-            access.assert(user, "read", "Invite");
-        }, ForbiddenError);
-        assert.doesNotThrow(() => {
-            access.assert(user, "use", "Ping");
-        });
-        assert.equal(canReadInvites(user), false);
+        await assert.rejects(
+            access.assert(user, "read", "Invite"),
+            ForbiddenError,
+        );
+        await access.assert(user, "use", "Ping");
+        assert.equal(await canReadInvites(user), false);
         assert.equal(
-            canReadInvites(buildUserEntity({ grants: [adminGrant] })),
+            await canReadInvites(buildUserEntity({ grants: [adminGrant] })),
             true,
         );
     });
 
-    void it("checks the conditions of a rule against a concrete object", () => {
+    void it("checks the conditions of a rule against a concrete object", async () => {
         const access = buildAccess();
         const user = buildUserEntity({ grants: ["invites.own"] });
 
         assert.equal(
-            access.can(
+            await access.can(
                 user,
                 "update",
                 subject("Invite", {
@@ -90,7 +95,7 @@ void describe("AccessService", () => {
             true,
         );
         assert.equal(
-            access.can(
+            await access.can(
                 user,
                 "update",
                 subject("Invite", {
@@ -102,14 +107,14 @@ void describe("AccessService", () => {
         );
     });
 
-    void it("limits every rule, also the admin one, to the bot of the user", () => {
+    void it("limits every rule, also the admin one, to the bot of the user", async () => {
         const access = buildAccess();
         const admin = buildUserEntity({ botId: "42", grants: [adminGrant] });
         const owner = buildUserEntity({ botId: "42", grants: ["invites.own"] });
 
-        assert.equal(access.can(admin, "read", "Invite"), true);
+        assert.equal(await access.can(admin, "read", "Invite"), true);
         assert.equal(
-            access.can(
+            await access.can(
                 admin,
                 "update",
                 subject("Invite", { botId: "42", createdBy: owner._id }),
@@ -117,7 +122,7 @@ void describe("AccessService", () => {
             true,
         );
         assert.equal(
-            access.can(
+            await access.can(
                 admin,
                 "update",
                 subject("Invite", { botId: "43", createdBy: owner._id }),
@@ -125,7 +130,7 @@ void describe("AccessService", () => {
             false,
         );
         assert.equal(
-            access.can(
+            await access.can(
                 owner,
                 "update",
                 subject("Invite", { botId: "43", createdBy: owner._id }),
@@ -134,42 +139,45 @@ void describe("AccessService", () => {
         );
     });
 
-    void it("reads the default grants of the bot of the user", () => {
+    void it("reads the default grants of the bot of the user", async () => {
         const service = new AccessService();
         const access = buildAccess(service);
 
-        service.useDefaultGrants((botId) => {
-            return botId === "42" ? ["ping.use"] : [];
-        });
+        service.useDefaultGrants((botId) =>
+            Promise.resolve(botId === "42" ? ["ping.use"] : []),
+        );
 
         assert.equal(
-            access.can(buildUserEntity({ botId: "42" }), "use", "Ping"),
+            await access.can(buildUserEntity({ botId: "42" }), "use", "Ping"),
             true,
         );
         assert.equal(
-            access.can(buildUserEntity({ botId: "43" }), "use", "Ping"),
+            await access.can(buildUserEntity({ botId: "43" }), "use", "Ping"),
             false,
         );
     });
 
-    void it("turns the rules of a user into a MongoDB query", () => {
+    void it("turns the rules of a user into a MongoDB query", async () => {
         const access = buildAccess();
         const owner = buildUserEntity({ grants: ["invites.own"] });
         const admin = buildUserEntity({ grants: [adminGrant] });
         const outsider = buildUserEntity({ grants: ["ping.use"] });
 
-        assert.deepEqual(access.accessibleBy(admin, "read", "Invite"), {
+        assert.deepEqual(await access.accessibleBy(admin, "read", "Invite"), {
             $or: [{ botId: admin.botId }],
         });
-        assert.deepEqual(access.accessibleBy(owner, "read", "Invite"), {
+        assert.deepEqual(await access.accessibleBy(owner, "read", "Invite"), {
             $or: [{ createdBy: owner._id, botId: owner.botId }],
         });
-        assert.deepEqual(access.accessibleBy(outsider, "read", "Invite"), {
-            $expr: { $eq: [0, 1] },
-        });
+        assert.deepEqual(
+            await access.accessibleBy(outsider, "read", "Invite"),
+            {
+                $expr: { $eq: [0, 1] },
+            },
+        );
     });
 
-    void it("closes the subjects of a module that the bot of the user does not have, also for an admin", () => {
+    void it("closes the subjects of a module that the bot of the user does not have, also for an admin", async () => {
         const service = new AccessService();
         const access = buildAccess(service);
 
@@ -189,26 +197,31 @@ void describe("AccessService", () => {
             },
             { subjects: ["Report"] },
         );
-        service.useModules((botId) => (botId === "42" ? ["reports"] : []));
+        service.useModules((botId) =>
+            Promise.resolve(botId === "42" ? ["reports"] : []),
+        );
 
         const adminOf = (botId: string) =>
             buildUserEntity({ botId, grants: [adminGrant, "reports.read"] });
 
-        assert.equal(access.can(adminOf("42"), "read", "Report"), true);
-        assert.equal(access.can(adminOf("43"), "read", "Report"), false);
-        assert.equal(access.can(adminOf("43"), "read", "Invite"), true);
-        assert.deepEqual(access.accessibleBy(adminOf("43"), "read", "Report"), {
-            $expr: { $eq: [0, 1] },
-        });
-        assert.equal(access.isEnabled("43", "reports"), false);
-        assert.equal(access.isEnabled("43", "invites"), true);
+        assert.equal(await access.can(adminOf("42"), "read", "Report"), true);
+        assert.equal(await access.can(adminOf("43"), "read", "Report"), false);
+        assert.equal(await access.can(adminOf("43"), "read", "Invite"), true);
+        assert.deepEqual(
+            await access.accessibleBy(adminOf("43"), "read", "Report"),
+            {
+                $expr: { $eq: [0, 1] },
+            },
+        );
+        assert.equal(await access.isEnabled("43", "reports"), false);
+        assert.equal(await access.isEnabled("43", "invites"), true);
         assert.deepEqual(
             access.listModules().map(({ name }) => name),
             ["reports"],
         );
     });
 
-    void it("refuses to register a grant twice", () => {
+    void it("refuses to register a grant twice", async () => {
         const access = buildAccess();
 
         assert.throws(() => {
@@ -226,7 +239,7 @@ void describe("AccessService", () => {
         }, /Access grant "ping.use" is already registered/);
     });
 
-    void it("lists sections in the order of registration", () => {
+    void it("lists sections in the order of registration", async () => {
         const access = buildAccess();
 
         assert.deepEqual(

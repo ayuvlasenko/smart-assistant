@@ -3,28 +3,30 @@ import fp from "fastify-plugin";
 import { Env } from "../../../env.js";
 import { AccessService } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
-import { BotEntity, botIdOfToken, EncryptedBotToken } from "./bot-entity.js";
+import {
+    BotEntity,
+    EncryptedBotToken,
+    telegramIdOfToken,
+} from "./bot-entity.js";
 import { BotTokenCipher } from "./bot-token-cipher.js";
 import { BotsRepository } from "./bots-repository.js";
 
 export interface RegisteredBot {
     id: string;
+    telegramId: string;
     token: string;
     modules: readonly string[];
+    startModule?: string;
 }
 
 export const botsModule = "bots";
 
-const refreshIntervalMilliseconds = 10_000;
-
 export class BotsRegistry {
-    readonly rootId: string;
     private readonly rootToken: string;
     private readonly botsRepository: BotsRepository;
     private readonly cipher: BotTokenCipher | undefined;
     private readonly log: FastifyBaseLogger;
-    private bots = new Map<string, RegisteredBot>();
-    private refreshTimer: NodeJS.Timeout | undefined;
+    private startedRootId: string | undefined;
 
     constructor(
         botsRepository: BotsRepository,
@@ -35,24 +37,43 @@ export class BotsRegistry {
         this.botsRepository = botsRepository;
         this.cipher = cipher;
         this.rootToken = rootToken;
-        this.rootId = botIdOfToken(rootToken);
         this.log = log;
+    }
+
+    get rootId(): string {
+        if (this.startedRootId === undefined) {
+            throw new Error("The bots registry is not started");
+        }
+
+        return this.startedRootId;
     }
 
     get canStoreTokens(): boolean {
         return this.cipher !== undefined;
     }
 
-    find(botId: string): RegisteredBot | undefined {
-        return this.bots.get(botId);
+    async find(botId: string): Promise<RegisteredBot | undefined> {
+        const bot = await this.botsRepository.findOneById(botId);
+
+        return bot ? this.register(bot) : undefined;
     }
 
-    list(): RegisteredBot[] {
-        return [...this.bots.values()];
+    async findByTelegramId(
+        telegramId: string,
+    ): Promise<RegisteredBot | undefined> {
+        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
+
+        return bot ? this.register(bot) : undefined;
     }
 
-    modulesOf(botId: string): readonly string[] {
-        return this.find(botId)?.modules ?? [];
+    async list(): Promise<RegisteredBot[]> {
+        const bots = await this.botsRepository.findAll();
+
+        return bots.flatMap((bot) => this.register(bot) ?? []);
+    }
+
+    async modulesOf(botId: string): Promise<readonly string[]> {
+        return (await this.find(botId))?.modules ?? [];
     }
 
     encrypt(token: string): EncryptedBotToken {
@@ -63,70 +84,44 @@ export class BotsRegistry {
         return this.cipher.encrypt(token);
     }
 
-    async load(botId: string): Promise<RegisteredBot | undefined> {
-        const known = this.find(botId);
-
-        if (known) {
-            return known;
-        }
-
-        const bot = await this.botsRepository.findOneById(botId);
-
-        if (bot) {
-            this.put(bot);
-        }
-
-        return this.find(botId);
-    }
-
-    put(bot: BotEntity): void {
-        const registered = this.register(bot);
-
-        if (registered) {
-            this.bots.set(bot._id, registered);
-        } else {
-            this.bots.delete(bot._id);
-        }
-    }
-
     async start(): Promise<void> {
-        await this.botsRepository.ensure(this.rootId);
-        await this.refresh();
-    }
+        const { bot, previousTelegramId } =
+            await this.botsRepository.ensureRoot(
+                telegramIdOfToken(this.rootToken),
+            );
 
-    async refresh(): Promise<void> {
-        const bots = new Map<string, RegisteredBot>();
+        this.startedRootId = bot._id;
 
-        for (const bot of await this.botsRepository.findAll()) {
-            const registered = this.register(bot);
-
-            if (registered) {
-                bots.set(bot._id, registered);
-            }
+        if (previousTelegramId) {
+            this.log.warn(
+                {
+                    botId: bot._id,
+                    telegramId: bot.telegramId,
+                    previousTelegramId,
+                },
+                "Root bot moved to another Telegram bot",
+            );
         }
 
-        this.bots = bots;
-    }
-
-    startRefresh(): void {
-        this.refreshTimer = setInterval(() => {
-            this.refresh().catch((err: unknown) => {
-                this.log.error({ err }, "Failed to refresh bots");
-            });
-        }, refreshIntervalMilliseconds);
-        this.refreshTimer.unref();
-    }
-
-    stopRefresh(): void {
-        clearInterval(this.refreshTimer);
+        this.log.info(
+            {
+                bots: (await this.list()).map(({ id, modules }) => ({
+                    botId: id,
+                    modules,
+                })),
+            },
+            "Bots loaded",
+        );
     }
 
     private register(bot: BotEntity): RegisteredBot | undefined {
-        if (bot._id === this.rootId) {
+        if (bot._id === this.startedRootId) {
             return {
                 id: bot._id,
+                telegramId: telegramIdOfToken(this.rootToken),
                 token: this.rootToken,
                 modules: [...bot.modules, botsModule],
+                startModule: bot.startModule,
             };
         }
 
@@ -136,7 +131,7 @@ export class BotsRegistry {
 
         const token = this.decrypt(bot._id, bot.token);
 
-        if (token && botIdOfToken(token) !== bot._id) {
+        if (token && telegramIdOfToken(token) !== bot.telegramId) {
             this.log.error(
                 { botId: bot._id },
                 "Bot token belongs to another bot",
@@ -144,7 +139,15 @@ export class BotsRegistry {
             return undefined;
         }
 
-        return token ? { id: bot._id, token, modules: bot.modules } : undefined;
+        return token
+            ? {
+                  id: bot._id,
+                  telegramId: bot.telegramId,
+                  token,
+                  modules: bot.modules,
+                  startModule: bot.startModule,
+              }
+            : undefined;
     }
 
     private decrypt(
@@ -187,13 +190,6 @@ export default fp(
         fastify
             .getDecorator<AccessService>("accessService")
             .useModules((botId) => registry.modulesOf(botId));
-        fastify.addHook("onReady", async () => {
-            registry.startRefresh();
-        });
-        fastify.addHook("onClose", async () => {
-            registry.stopRefresh();
-        });
-
         fastify.decorate("botsRegistry", registry);
     },
     {

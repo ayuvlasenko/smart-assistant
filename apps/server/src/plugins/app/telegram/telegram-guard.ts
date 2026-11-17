@@ -1,10 +1,10 @@
 import { UserEntity } from "../users/user-entity.js";
 
-export type TelegramGuard = (user: UserEntity) => boolean;
+export type TelegramGuard = (user: UserEntity) => boolean | Promise<boolean>;
 
-export function isAllowed(
+export async function isAllowed(
     guard: TelegramGuard | undefined,
     user: UserEntity,
-): boolean {
-    return !guard || guard(user);
+): Promise<boolean> {
+    return !guard || (await guard(user));
 }

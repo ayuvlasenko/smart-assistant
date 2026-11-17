@@ -1,19 +1,25 @@
 import { Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
+import { TelegramContext } from "../telegram/telegram-context.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { numberStep } from "../telegram/telegram-steps.js";
 import { SettingsSubjects } from "./setting-entity.js";
 import {
     settingsButtonValues,
+    SettingsSceneControl,
     settingsScreens,
     SettingsState,
     settingsStateSchema,
+    SettingsView,
 } from "./settings-schemas.js";
 import {
+    renderBotSettings,
+    renderOwnSettingChoice,
+    renderOwnSettings,
     renderSettingsChoices,
-    renderSettingsList,
 } from "./settings-screen.js";
 import { ChoicesSetting, SettingsService } from "./settings-service.js";
+import { UserSettingsService } from "./user-settings-service.js";
 
 export const settingsTopic = "settings";
 
@@ -25,42 +31,104 @@ export function buildSettingsState(): SettingsState {
 
 export function createSettingsScene(
     settingsService: SettingsService,
+    userSettingsService: UserSettingsService,
     access: AccessControl<SettingsSubjects>,
 ): TelegramScene<typeof settingsStateSchema> {
     const canUpdate = access.guard("update", "Setting");
+    const viewOf = async (
+        ctx: TelegramContext,
+        scene: SettingsSceneControl,
+    ): Promise<SettingsView> => ({
+        ctx,
+        scene,
+        settingsService,
+        userSettingsService,
+        canChangeBot: await canUpdate(ctx.user),
+    });
 
     return defineScene({
         name: "settings",
         state: settingsStateSchema,
         ttl: settingsSceneTtlMilliseconds,
-        guard: canUpdate,
         key: () => "settings",
-        watch: () => [settingsTopic],
         root: { name: "list", params: {} },
         screens: {
             list: {
                 params: settingsScreens.list,
                 render: async (ctx, scene) => [
-                    renderSettingsList({ ctx, scene, settingsService }),
+                    await renderOwnSettings(await viewOf(ctx, scene)),
+                ],
+            },
+            choice: {
+                params: settingsScreens.choice,
+                render: async (ctx, scene, { setting }) => {
+                    const view = await viewOf(ctx, scene);
+                    const own = userSettingsService.find(setting);
+
+                    return [
+                        own
+                            ? renderOwnSettingChoice(view, own)
+                            : await renderOwnSettings(view),
+                    ];
+                },
+            },
+            bot: {
+                params: settingsScreens.bot,
+                guard: canUpdate,
+                watch: () => [settingsTopic],
+                render: async (ctx, scene) => [
+                    await renderBotSettings(await viewOf(ctx, scene)),
                 ],
             },
             choices: {
                 params: settingsScreens.choices,
+                guard: canUpdate,
+                watch: () => [settingsTopic],
                 render: async (ctx, scene, { setting }) => {
-                    const view = { ctx, scene, settingsService };
+                    const view = await viewOf(ctx, scene);
                     const choices = findChoices(settingsService, setting);
 
                     return [
-                        choices
+                        await (choices
                             ? renderSettingsChoices(view, choices)
-                            : renderSettingsList(view),
+                            : renderBotSettings(view)),
                     ];
                 },
             },
         },
         buttons: {
+            openOwn: {
+                value: settingsButtonValues.openOwn,
+                handle: async (ctx, scene, name) => {
+                    if (userSettingsService.find(name)) {
+                        await scene.push("choice", { setting: name });
+                    }
+                },
+            },
+            pick: {
+                value: settingsButtonValues.pick,
+                handle: async (ctx, scene, option) => {
+                    const setting =
+                        scene.screen.name === "choice"
+                            ? userSettingsService.find(
+                                  scene.screen.params.setting,
+                              )
+                            : undefined;
+
+                    if (setting) {
+                        ctx.refreshUser(
+                            await userSettingsService.write(
+                                ctx.user,
+                                setting,
+                                option,
+                            ),
+                        );
+                    }
+                },
+            },
             open: {
                 value: settingsButtonValues.open,
+                guard: canUpdate,
                 handle: async (ctx, scene, name) => {
                     const setting = settingsService.find(name);
 
@@ -81,6 +149,7 @@ export function createSettingsScene(
             },
             choose: {
                 value: settingsButtonValues.choose,
+                guard: canUpdate,
                 handle: async (ctx, scene, option) => {
                     const setting =
                         scene.screen.name === "choices"

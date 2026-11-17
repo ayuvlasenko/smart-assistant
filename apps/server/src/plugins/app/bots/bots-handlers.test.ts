@@ -12,23 +12,34 @@ import {
 } from "node:test";
 import { Env } from "../../../env.js";
 import { BotsBot, buildBotsBot } from "../../../test/bots-bot.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
+import {
+    buildTelegramApiServiceMock,
+    TelegramApiServiceMock,
+} from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
-    testTelegramBotId,
+    testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { AccessService, adminGrant } from "../access/access-service.js";
 import pingHandlersPlugin from "../ping/ping-handlers.js";
 import { pingLocales } from "../ping/ping-locales.js";
+import pokerHandlersPlugin, {
+    pokerJoinGrant,
+} from "../poker/poker-handlers.js";
+import { pokerLocales } from "../poker/poker-locales.js";
+import pokerRoomsRepositoryPlugin from "../poker/poker-rooms-repository.js";
+import pokerRoomsServicePlugin from "../poker/poker-rooms-service.js";
 import { resolveTelegramWebhookUrl } from "../telegram/telegram-bot-service.js";
+import { telegramLocales } from "../telegram/telegram-locales.js";
 import { telegramWebhookSecret } from "../telegram/telegram-webhook-secret.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotsSubjects } from "./bot-entity.js";
+import { BotsConnector } from "./bots-connector.js";
 import { botsLocales } from "./bots-locales.js";
 
 let databaseName!: string;
@@ -38,6 +49,7 @@ let mongo!: Db;
 const en = botsLocales.en;
 const childToken = "42:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const childLabel = "@child_42_bot";
+const otherToken = "44:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
 let nextUpdateId = 5_000_000;
 
 before(async () => {
@@ -61,7 +73,7 @@ after(async () => {
 
 void describe("/bots", () => {
     void it("adds a bot from its token, deletes the token message and shows a link for its owner", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const bot = await buildBot(t, { logger: logs.logger });
         const admin = buildTelegramPrivateChat({ id: 987657001 });
 
@@ -70,15 +82,19 @@ void describe("/bots", () => {
         await bot.pressButton(admin, en.addButton);
 
         const answer = await bot.sendText(admin, childToken);
-        const stored = await bot.botsRepository.findOneById("42");
+        const stored = await bot.botsRepository.findOneByTelegramId("42");
         const childApi = bot.childApis.get("42");
+
+        assert.ok(stored);
+        assert.notEqual(stored._id, "42");
+
         const invite = await mongo
             .collection("invites")
-            .findOne({ botId: "42" });
+            .findOne({ botId: stored._id });
 
         assert.ok(invite);
 
-        assert.equal(stored?.username, "child_42_bot");
+        assert.equal(stored.username, "child_42_bot");
         assert.ok(!JSON.stringify(stored).includes(childToken));
         assert.ok(
             readDeletedIds(bot).includes(answer.message?.message_id ?? 0),
@@ -91,11 +107,11 @@ void describe("/bots", () => {
                 {
                     url: resolveTelegramWebhookUrl(
                         bot.app.getDecorator<Env>("config"),
-                        "42",
+                        stored.telegramId,
                     ),
                     secret_token: telegramWebhookSecret(
                         process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN ?? "",
-                        "42",
+                        stored.telegramId,
                     ),
                 },
             ],
@@ -123,22 +139,23 @@ void describe("/bots", () => {
         nextUpdateId += 1;
 
         const updateId = nextUpdateId;
+        const childId = result.bot._id;
 
         await sendTo(
             bot,
-            "42",
+            childId,
             owner,
             `/start invite_${result.ownerInvite.token}`,
             updateId,
         );
-        await sendTo(bot, testTelegramBotId, owner, "/start", updateId);
+        await sendTo(bot, testBotId, owner, "/start", updateId);
 
         const childOwner = await bot.usersRepository.findOneByTelegramId(
-            "42",
+            childId,
             String(owner.id),
         );
         const rootOwner = await bot.usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             String(owner.id),
         );
 
@@ -159,13 +176,14 @@ void describe("/bots", () => {
         const admin = buildTelegramPrivateChat({ id: 987657004 });
         const actor = await allowAdmin(bot, admin);
 
-        await bot.botsService.add(actor, childToken);
+        const childId = await addChild(bot, actor);
+
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.modulesButton);
         await bot.pressButton(admin, `⬜ ${pingLocales.en.section}`);
 
-        assert.deepEqual(bot.botsRegistry.modulesOf("42"), ["ping"]);
+        assert.deepEqual(await bot.botsRegistry.modulesOf(childId), ["ping"]);
         assert.ok(
             (await bot.readButtonLabels(admin.id)).includes(
                 `✅ ${pingLocales.en.section}`,
@@ -174,7 +192,77 @@ void describe("/bots", () => {
 
         await bot.pressButton(admin, `✅ ${pingLocales.en.section}`);
 
-        assert.deepEqual(bot.botsRegistry.modulesOf("42"), []);
+        assert.deepEqual(await bot.botsRegistry.modulesOf(childId), []);
+    });
+
+    void it("picks what /start opens in one bot only, and forgets a module that is turned off", async (t) => {
+        const bot = await buildBot(t, {
+            plugins: [
+                pingHandlersPlugin,
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const admin = buildTelegramPrivateChat({ id: 987657021 });
+        const player = buildTelegramPrivateChat({ id: 987657022 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const pokerTitle = pokerLocales.en.section;
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.startModuleButton);
+
+        assert.deepEqual(await bot.readButtonLabels(admin.id), [
+            `⚪ ${pokerTitle}`,
+            `🔘 ${en.startWelcomeButton}`,
+            en.backButton,
+        ]);
+
+        await bot.pressButton(admin, `⚪ ${pokerTitle}`);
+
+        assert.equal(
+            (await bot.telegramBots.find(childId))?.startModule,
+            "poker",
+        );
+        assert.ok(
+            (await bot.readButtonLabels(admin.id)).includes(`🔘 ${pokerTitle}`),
+        );
+
+        for (const botId of [childId, testBotId]) {
+            await mongo.collection("users").insertOne(
+                buildUserEntity({
+                    botId,
+                    telegramId: String(player.id),
+                    grants: [pokerJoinGrant],
+                }),
+            );
+            nextUpdateId += 1;
+            await sendTo(bot, botId, player, "/start", nextUpdateId);
+        }
+
+        assert.ok(
+            readTextsOf(bot.childApis.get("42"), player)
+                .at(-1)
+                ?.includes(pokerLocales.en.listEmpty),
+        );
+        assert.deepEqual(readTextsOf(bot.telegramApiService, player), [
+            telegramLocales.en.welcome,
+        ]);
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+
+        assert.equal(
+            (await bot.telegramBots.find(childId))?.startModule,
+            undefined,
+        );
+        assert.equal(
+            (await bot.botsService.setStartModule(actor, childId, "poker"))
+                ?.startModule,
+            undefined,
+        );
     });
 
     void it("stops a bot after a second press, removes its webhook and serves it no more", async (t) => {
@@ -182,16 +270,17 @@ void describe("/bots", () => {
         const admin = buildTelegramPrivateChat({ id: 987657005 });
         const actor = await allowAdmin(bot, admin);
 
-        await bot.botsService.add(actor, childToken);
+        const childId = await addChild(bot, actor);
+
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.stopButton);
 
-        assert.ok(bot.telegramBots.find("42"));
+        assert.ok(await bot.telegramBots.find(childId));
 
         await bot.pressButton(admin, en.confirmStopButton);
 
-        assert.equal(bot.telegramBots.find("42"), undefined);
+        assert.equal(await bot.telegramBots.find(childId), undefined);
         assert.equal(
             bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
             1,
@@ -211,7 +300,10 @@ void describe("/bots", () => {
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, en.addButton);
         await bot.sendText(admin, childToken);
-        await bot.botsService.stop(actor, "42");
+
+        const childId = await readChildId(bot);
+
+        await bot.botsService.stop(actor, childId);
         await bot.telegramChats.idle();
 
         assert.ok(
@@ -220,11 +312,13 @@ void describe("/bots", () => {
                 ?.includes(en.ownerInviteUnavailable),
         );
         assert.equal(
-            await bot.botsService.createOwnerInvite(actor, "42"),
+            await bot.botsService.createOwnerInvite(actor, childId),
             null,
         );
         assert.equal(
-            await mongo.collection("invites").countDocuments({ botId: "42" }),
+            await mongo
+                .collection("invites")
+                .countDocuments({ botId: childId }),
             1,
         );
 
@@ -243,7 +337,8 @@ void describe("/bots", () => {
         const admin = buildTelegramPrivateChat({ id: 987657008 });
         const actor = await allowAdmin(bot, admin);
 
-        await bot.botsService.add(actor, childToken);
+        const childId = await addChild(bot, actor);
+
         bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => {
             throw new Error("connect ECONNREFUSED api.telegram.org");
         });
@@ -254,7 +349,7 @@ void describe("/bots", () => {
 
         const invite = await mongo
             .collection("invites")
-            .findOne({ botId: "42" }, { sort: { createdAt: -1 } });
+            .findOne({ botId: childId }, { sort: { createdAt: -1 } });
 
         assert.ok(invite);
         assert.ok(
@@ -291,19 +386,184 @@ void describe("/bots", () => {
         assert.deepEqual(await bot.botsService.add(actor, rejectedToken), {
             status: "invalidToken",
         });
-        await bot.botsService.add(actor, childToken);
+        const childId = await addChild(bot, actor);
+
         assert.deepEqual(await bot.botsService.add(actor, childToken), {
             status: "alreadyAdded",
-            botId: "42",
+            botId: childId,
         });
         assert.deepEqual(
-            await bot.botsService.replaceToken(
-                actor,
-                "42",
-                "44:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-            ),
+            await bot.botsService.replaceToken(actor, childId, otherToken),
             { status: "otherBot" },
         );
+    });
+
+    void it("moves a bot to another Telegram bot after a second press and keeps its users and its id", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657009 });
+        const owner = buildTelegramPrivateChat({ id: 987657010 });
+        const actor = await allowAdmin(bot, admin);
+        const result = await bot.botsService.add(actor, childToken);
+
+        assert.equal(result.status, "added");
+
+        const childId = result.bot._id;
+        const link = { name: "invite", value: "token" };
+
+        nextUpdateId += 1;
+        await sendTo(
+            bot,
+            childId,
+            owner,
+            `/start invite_${result.ownerInvite.token}`,
+            nextUpdateId,
+        );
+
+        assert.ok(
+            (
+                await bot.telegramBotService.resolveDeepLinkUrl(childId, link)
+            ).includes("child_42_bot"),
+        );
+
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.moveButton);
+        await bot.pressButton(admin, en.confirmMoveButton);
+        await bot.sendText(admin, otherToken);
+
+        const moved = await bot.botsRepository.findOneById(childId);
+        const user = await bot.usersRepository.findOneByTelegramId(
+            childId,
+            String(owner.id),
+        );
+
+        assert.equal(moved?.telegramId, "44");
+        assert.equal(moved.username, "child_44_bot");
+        assert.equal((await bot.botsRegistry.find(childId))?.telegramId, "44");
+        assert.deepEqual(user?.grants, [adminGrant]);
+        assert.equal(
+            bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
+            1,
+        );
+        assert.deepEqual(
+            bot.childApis
+                .get("44")
+                ?.setWebhook.mock.calls.map(
+                    ({ arguments: [args] }) => args.url,
+                ),
+            [
+                resolveTelegramWebhookUrl(
+                    bot.app.getDecorator<Env>("config"),
+                    "44",
+                ),
+            ],
+        );
+        assert.ok((await bot.readMessageTexts(admin.id)).includes(en.botMoved));
+
+        await sendTo(bot, childId, owner, "/start", nextUpdateId);
+
+        assert.deepEqual(readTextsOf(bot.childApis.get("44"), owner), [
+            telegramLocales.en.welcome,
+        ]);
+        assert.ok(
+            (
+                await bot.telegramBotService.resolveDeepLinkUrl(childId, link)
+            ).includes("child_44_bot"),
+        );
+        assert.equal(await bot.telegramBots.findByTelegramId("42"), undefined);
+        assert.equal(
+            (await bot.telegramBots.findByTelegramId("44"))?.id,
+            childId,
+        );
+    });
+
+    void it("refuses to move a bot to itself and to a bot that is already added", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657011 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const other = await bot.botsService.add(actor, otherToken);
+
+        assert.equal(other.status, "added");
+        assert.deepEqual(
+            await bot.botsService.move(actor, childId, childToken),
+            { status: "sameBot" },
+        );
+        assert.deepEqual(
+            await bot.botsService.move(actor, childId, otherToken),
+            { status: "alreadyAdded", botId: other.bot._id },
+        );
+        assert.equal(
+            (await bot.botsRepository.findOneById(childId))?.telegramId,
+            "42",
+        );
+    });
+
+    void it("refuses a move when another bot takes the Telegram bot after the check, and keeps the webhook", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657019 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const other = await bot.botsService.add(actor, otherToken);
+
+        assert.equal(other.status, "added");
+        t.mock.method(
+            bot.botsRepository,
+            "findOneByTelegramId",
+            () => Promise.resolve(null),
+            { times: 1 },
+        );
+
+        assert.deepEqual(
+            await bot.botsService.move(actor, childId, otherToken),
+            { status: "alreadyAdded", botId: other.bot._id },
+        );
+        assert.equal(
+            (await bot.botsRepository.findOneById(childId))?.telegramId,
+            "42",
+        );
+        assert.equal(
+            bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
+            0,
+        );
+    });
+
+    void it("refuses a new token when the bot moves to another Telegram bot after the token is checked", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657020 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const botsConnector =
+            bot.app.getDecorator<BotsConnector>("botsConnector");
+        const readProfile = botsConnector.readProfile.bind(botsConnector);
+
+        t.mock.method(
+            botsConnector,
+            "readProfile",
+            async (token: string) => {
+                const profile = await readProfile(token);
+
+                await bot.botsRepository.moveToTelegramBot(
+                    childId,
+                    "44",
+                    bot.botsRegistry.encrypt(otherToken),
+                    "child_44_bot",
+                );
+
+                return profile;
+            },
+            { times: 1 },
+        );
+
+        assert.deepEqual(
+            await bot.botsService.replaceToken(actor, childId, childToken),
+            { status: "otherBot" },
+        );
+
+        const moved = await bot.botsRegistry.find(childId);
+
+        assert.equal(moved?.telegramId, "44");
+        assert.equal(moved.token, otherToken);
     });
 
     void it("keeps the bots away from the admin of any other bot", async (t) => {
@@ -314,11 +574,8 @@ void describe("/bots", () => {
         const adminOf = (botId: string) =>
             buildUserEntity({ botId, grants: [adminGrant] });
 
-        assert.equal(
-            access.can(adminOf(testTelegramBotId), "read", "Bot"),
-            true,
-        );
-        assert.equal(access.can(adminOf("42"), "read", "Bot"), false);
+        assert.equal(await access.can(adminOf(testBotId), "read", "Bot"), true);
+        assert.equal(await access.can(adminOf("42"), "read", "Bot"), false);
     });
 });
 
@@ -335,6 +592,22 @@ function buildBot(
     });
 }
 
+async function addChild(bot: BotsBot, actor: UserEntity): Promise<string> {
+    const result = await bot.botsService.add(actor, childToken);
+
+    assert.equal(result.status, "added");
+
+    return result.bot._id;
+}
+
+async function readChildId(bot: BotsBot): Promise<string> {
+    const child = await bot.botsRepository.findOneByTelegramId("42");
+
+    assert.ok(child);
+
+    return child._id;
+}
+
 async function allowAdmin(
     bot: BotsBot,
     chat: Chat.PrivateChat,
@@ -343,12 +616,12 @@ async function allowAdmin(
     await mongo
         .collection("users")
         .updateOne(
-            { botId: testTelegramBotId, telegramId: String(chat.id) },
+            { botId: testBotId, telegramId: String(chat.id) },
             { $set: { grants: [adminGrant] } },
         );
 
     const user = await bot.usersRepository.findOneByTelegramId(
-        testTelegramBotId,
+        testBotId,
         String(chat.id),
     );
 
@@ -367,7 +640,7 @@ async function sendTo(
     const [command = ""] = text.split(" ");
 
     await bot.telegramUpdateHandler.handle(
-        bot.telegramBots.get(botId),
+        await bot.telegramBots.get(botId),
         buildTelegramTextMessageUpdate({
             update_id: updateId,
             message: {
@@ -381,6 +654,16 @@ async function sendTo(
             },
         }),
     );
+}
+
+function readTextsOf(
+    api: TelegramApiServiceMock | undefined,
+    chat: Chat.PrivateChat,
+): string[] {
+    return (api?.sendMessage.mock.calls ?? [])
+        .map(({ arguments: [args] }) => args)
+        .filter(({ chat_id: chatId }) => chatId === chat.id)
+        .map(({ text }) => text);
 }
 
 function readDeletedIds(bot: BotsBot): number[] {

@@ -31,6 +31,7 @@ const retryMilliseconds = 50;
 const slowWaitSeconds = 1;
 
 export class LockService {
+    private readonly queues = new Map<string, Promise<void>>();
     private readonly waitDuration: Histogram<"name">;
     private readonly holdDuration: Histogram<"name">;
     private readonly cache: CacheService;
@@ -59,19 +60,15 @@ export class LockService {
     }
 
     async acquire(key: string, options: LockOptions): Promise<HeldLock> {
-        const lock = await this.waitForLock(key, options);
-        const stopTimer = this.holdDuration.startTimer({ name: options.name });
-        const hold = this.hold(lock, options);
+        const startedAt = performance.now();
+        const leaveQueue = await this.waitForTurn(key);
 
-        return {
-            ...lock,
-            signal: hold.signal,
-            [Symbol.asyncDispose]: async () => {
-                await hold[Symbol.asyncDispose]();
-                await this.release(lock);
-                stopTimer();
-            },
-        };
+        try {
+            return await this.takeLock(key, options, startedAt, leaveQueue);
+        } catch (err) {
+            leaveQueue();
+            throw err;
+        }
     }
 
     async tryAcquire(
@@ -97,11 +94,56 @@ export class LockService {
         return { key: lock.key, value: lock.token };
     }
 
+    private async waitForTurn(key: string): Promise<() => void> {
+        const previous = this.queues.get(key);
+        const { promise: turn, resolve: endTurn } =
+            Promise.withResolvers<void>();
+        const tail = (previous ?? Promise.resolve()).then(() => turn);
+
+        this.queues.set(key, tail);
+        await previous;
+
+        return () => {
+            endTurn();
+
+            if (this.queues.get(key) === tail) {
+                this.queues.delete(key);
+            }
+        };
+    }
+
+    private async takeLock(
+        key: string,
+        options: LockOptions,
+        startedAt: number,
+        leaveQueue: () => void,
+    ): Promise<HeldLock> {
+        const lock = await this.waitForLock(key, options, startedAt);
+        const stopTimer = this.holdDuration.startTimer({ name: options.name });
+        const hold = this.hold(lock, options);
+
+        hold.signal.addEventListener("abort", leaveQueue, { once: true });
+
+        return {
+            ...lock,
+            signal: hold.signal,
+            [Symbol.asyncDispose]: async () => {
+                try {
+                    await hold[Symbol.asyncDispose]();
+                    await this.release(lock);
+                    stopTimer();
+                } finally {
+                    leaveQueue();
+                }
+            },
+        };
+    }
+
     private async waitForLock(
         key: string,
         { name, ttlMilliseconds }: LockOptions,
+        startedAt: number,
     ): Promise<Lock> {
-        const startedAt = performance.now();
         let lock = await this.tryAcquire(key, ttlMilliseconds);
 
         while (!lock) {

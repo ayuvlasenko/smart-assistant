@@ -36,16 +36,16 @@ const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
-    botId: string,
+    telegramId: string,
 ): string {
     const baseUrl = config.TELEGRAM_WEBHOOK_URL;
 
     if (baseUrl) {
-        return `${baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl}/${botId}`;
+        return `${baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl}/${telegramId}`;
     }
 
     return new URL(
-        `/api/telegram/webhook/${config.RESOURCE_NAME}/${botId}`,
+        `/api/telegram/webhook/${config.RESOURCE_NAME}/${telegramId}`,
         config.DOMAIN,
     ).toString();
 }
@@ -82,7 +82,7 @@ export class TelegramBotService {
             return;
         }
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.listBotsOnStart()) {
             try {
                 await this.setWebhookOnStart(bot);
             } catch (err) {
@@ -95,12 +95,12 @@ export class TelegramBotService {
     }
 
     async setWebhook(bot: TelegramBot): Promise<string> {
-        const url = resolveTelegramWebhookUrl(this.config, bot.id);
+        const url = resolveTelegramWebhookUrl(this.config, bot.telegramId);
         const result = await bot.api.setWebhook({
             url,
             secret_token: telegramWebhookSecret(
                 this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                bot.id,
+                bot.telegramId,
             ),
         });
 
@@ -139,7 +139,7 @@ export class TelegramBotService {
     async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
         const webhooks: TelegramBotWebhook[] = [];
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.telegramBots.list()) {
             try {
                 webhooks.push(await this.refreshWebhook(bot));
             } catch (err) {
@@ -163,7 +163,7 @@ export class TelegramBotService {
 
     async resolveBotUrl(botId: string): Promise<string> {
         return buildTelegramBotUrl(
-            await this.resolveUsername(this.telegramBots.get(botId)),
+            await this.resolveUsername(await this.telegramBots.get(botId)),
         );
     }
 
@@ -172,14 +172,23 @@ export class TelegramBotService {
         link: TelegramDeepLink,
     ): Promise<string> {
         return buildTelegramDeepLinkUrl(
-            await this.resolveUsername(this.telegramBots.get(botId)),
+            await this.resolveUsername(await this.telegramBots.get(botId)),
             link,
         );
     }
 
+    private async listBotsOnStart(): Promise<TelegramBot[]> {
+        try {
+            return await this.telegramBots.list();
+        } catch (err) {
+            this.log.error({ err }, "Failed to read the bots on start");
+            return [];
+        }
+    }
+
     private async setWebhookOnStart(bot: TelegramBot): Promise<void> {
         const claim = await this.lockService.tryAcquire(
-            `telegram:${bot.id}:webhook:set`,
+            `telegram:${bot.telegramId}:webhook:set`,
             telegramWebhookClaimTtlMilliseconds,
         );
 
@@ -209,7 +218,7 @@ export class TelegramBotService {
 
     private resolveUsername(bot: TelegramBot): Promise<string> {
         return this.cache.remember(
-            `telegram:${bot.id}:username`,
+            `telegram:${bot.telegramId}:username`,
             Type.String(),
             telegramBotUsernameCacheTtlMilliseconds,
             () => this.fetchUsername(bot),

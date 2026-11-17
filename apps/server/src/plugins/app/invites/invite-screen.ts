@@ -39,7 +39,11 @@ export async function renderInvite(
 
     const status = readInviteStatus(invite, new Date());
     const isActive = status === "active";
-    const canRevoke = access.can(ctx.user, "update", subject("Invite", invite));
+    const canRevoke = await access.can(
+        ctx.user,
+        "update",
+        subject("Invite", invite),
+    );
     const summary = [
         formatInviteStatus(t, status),
         formatInviteUses(invite),

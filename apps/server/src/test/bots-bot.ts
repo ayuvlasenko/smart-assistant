@@ -1,4 +1,5 @@
 import { TestContext } from "node:test";
+import botsConnectorPlugin from "../plugins/app/bots/bots-connector.js";
 import botsHandlersPlugin from "../plugins/app/bots/bots-handlers.js";
 import botsServicePlugin, {
     BotsService,
@@ -33,6 +34,7 @@ export async function buildBotsBot(
             invitesRepositoryPlugin,
             invitesServicePlugin,
             invitesHandlersPlugin,
+            botsConnectorPlugin,
             botsServicePlugin,
             botsHandlersPlugin,
             ...(options.plugins ?? []),
@@ -51,18 +53,18 @@ function childApiOf(
     childApis: Map<string, TelegramApiServiceMock>,
     token: string,
 ): TelegramApiServiceMock {
-    const [botId = ""] = token.split(":");
-    let api = childApis.get(botId);
+    const [telegramId = ""] = token.split(":");
+    let api = childApis.get(telegramId);
 
     if (!api) {
         api = buildTelegramApiServiceMock({
             t,
             getMeResponse: buildTelegramGetMeResponse({
-                id: Number(botId),
-                username: `child_${botId}_bot`,
+                id: Number(telegramId),
+                username: `child_${telegramId}_bot`,
             }),
         });
-        childApis.set(botId, api);
+        childApis.set(telegramId, api);
     }
 
     return api;

@@ -1,10 +1,17 @@
 import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { BotEntity, EncryptedBotToken } from "./bot-entity.js";
+import { Filter, MongoServerError, ObjectId } from "mongodb";
+import { BotEntity, EncryptedBotToken, newRootBotId } from "./bot-entity.js";
+import { BotTelegramIdTakenError } from "./bots-errors.js";
 
-export type BotData = Pick<BotEntity, "_id" | "username" | "token"> &
+export type BotData = Pick<BotEntity, "telegramId" | "username" | "token"> &
     Partial<Pick<BotEntity, "createdBy">>;
+
+export interface RootBot {
+    bot: BotEntity;
+    previousTelegramId?: string;
+}
 
 export class BotsRepository {
     readonly mongo: Required<FastifyMongoObject>;
@@ -21,48 +28,70 @@ export class BotsRepository {
         return this.collection().findOne({ _id });
     }
 
-    async ensure(_id: string): Promise<BotEntity> {
-        const now = new Date();
-        const bot = await this.collection().findOneAndUpdate(
-            { _id },
-            {
-                $setOnInsert: {
-                    modules: [],
-                    version: 0,
-                    createdAt: now,
-                    updatedAt: now,
-                },
-            },
-            { upsert: true, returnDocument: "after" },
-        );
-
-        if (!bot) {
-            throw new Error(`Bot ${_id} was not stored`);
-        }
-
-        return bot;
+    findOneByTelegramId(telegramId: string): Promise<BotEntity | null> {
+        return this.collection().findOne({ telegramId });
     }
 
-    async createIfMissing(data: BotData): Promise<BotEntity | null> {
+    async ensureRoot(telegramId: string): Promise<RootBot> {
+        const known = await this.collection().findOneAndUpdate(
+            { telegramId },
+            { $set: { isRoot: true } },
+            { returnDocument: "after" },
+        );
+
+        if (known) {
+            await this.collection().updateMany(
+                { _id: { $ne: known._id }, isRoot: true },
+                { $unset: { isRoot: "" } },
+            );
+
+            return { bot: known };
+        }
+
+        const previous = await this.collection().findOneAndUpdate(
+            { isRoot: true },
+            {
+                $set: { telegramId },
+                $currentDate: { updatedAt: true },
+                $inc: { version: 1 },
+            },
+            { returnDocument: "before" },
+        );
+
+        if (previous) {
+            return {
+                bot: { ...previous, telegramId },
+                previousTelegramId: previous.telegramId,
+            };
+        }
+
+        return { bot: await this.createRoot(telegramId) };
+    }
+
+    async createIfMissing({
+        telegramId,
+        ...data
+    }: BotData): Promise<BotEntity | null> {
         const now = new Date();
-        const bot: BotEntity = {
+        const fields = {
             ...data,
+            _id: new ObjectId().toHexString(),
             modules: [],
             version: 0,
             createdAt: now,
             updatedAt: now,
         };
         const result = await this.collection().updateOne(
-            { _id: data._id },
-            { $setOnInsert: bot },
+            { telegramId },
+            { $setOnInsert: fields },
             { upsert: true },
         );
 
-        return result.upsertedCount ? bot : null;
+        return result.upsertedCount ? { ...fields, telegramId } : null;
     }
 
     updateModules(_id: string, modules: string[]): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { modules } });
+        return this.update({ _id }, { $set: { modules } });
     }
 
     toggleModule(_id: string, module: string): Promise<BotEntity | null> {
@@ -78,6 +107,18 @@ export class BotsRepository {
                                 { $concatArrays: ["$modules", [module]] },
                             ],
                         },
+                        startModule: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $in: [module, "$modules"] },
+                                        { $eq: ["$startModule", module] },
+                                    ],
+                                },
+                                "$$REMOVE",
+                                "$startModule",
+                            ],
+                        },
                         updatedAt: "$$NOW",
                         version: { $add: ["$version", 1] },
                     },
@@ -87,28 +128,63 @@ export class BotsRepository {
         );
     }
 
-    updateToken(
+    setStartModule(
         _id: string,
+        startModule: string | undefined,
+    ): Promise<BotEntity | null> {
+        return this.update(
+            { _id },
+            startModule === undefined
+                ? { $unset: { startModule: "" } }
+                : { $set: { startModule } },
+        );
+    }
+
+    replaceToken(
+        _id: string,
+        telegramId: string,
         token: EncryptedBotToken,
         username: string,
     ): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { token, username } });
+        return this.update({ _id, telegramId }, { $set: { token, username } });
+    }
+
+    async moveToTelegramBot(
+        _id: string,
+        telegramId: string,
+        token: EncryptedBotToken,
+        username: string,
+    ): Promise<BotEntity | null> {
+        try {
+            return await this.update(
+                { _id },
+                { $set: { telegramId, token, username } },
+            );
+        } catch (err) {
+            if (isDuplicateKeyError(err)) {
+                throw new BotTelegramIdTakenError(telegramId);
+            }
+
+            throw err;
+        }
     }
 
     disable(_id: string, now: Date): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { disabledAt: now } });
+        return this.update({ _id }, { $set: { disabledAt: now } });
     }
 
     enable(_id: string): Promise<BotEntity | null> {
-        return this.update(_id, { $unset: { disabledAt: "" } });
+        return this.update({ _id }, { $unset: { disabledAt: "" } });
     }
 
     private update(
-        _id: string,
-        change: { $set: Partial<BotEntity> } | { $unset: { disabledAt: "" } },
+        filter: Filter<BotEntity>,
+        change:
+            | { $set: Partial<BotEntity> }
+            | { $unset: Partial<Record<"disabledAt" | "startModule", "">> },
     ): Promise<BotEntity | null> {
         return this.collection().findOneAndUpdate(
-            { _id },
+            filter,
             {
                 ...change,
                 $currentDate: { updatedAt: true },
@@ -118,9 +194,37 @@ export class BotsRepository {
         );
     }
 
+    private async createRoot(telegramId: string): Promise<BotEntity> {
+        const now = new Date();
+        const bot = await this.collection().findOneAndUpdate(
+            { _id: newRootBotId },
+            {
+                $setOnInsert: {
+                    telegramId,
+                    isRoot: true,
+                    modules: [],
+                    version: 0,
+                    createdAt: now,
+                    updatedAt: now,
+                },
+            },
+            { upsert: true, returnDocument: "after" },
+        );
+
+        if (!bot) {
+            throw new Error("The root bot was not stored");
+        }
+
+        return bot;
+    }
+
     private collection() {
         return this.mongo.db.collection<BotEntity>("bots");
     }
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+    return err instanceof MongoServerError && err.code === 11000;
 }
 
 export default fp(

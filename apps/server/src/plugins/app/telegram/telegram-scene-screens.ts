@@ -41,7 +41,7 @@ export class TelegramSceneScreens {
         instance: TelegramSceneInstance,
         user: UserEntity,
         screen: TelegramScreenState,
-    ): boolean {
+    ): Promise<boolean> {
         return isAllowed(instance.scene.screens[screen.name]?.guard, user);
     }
 
@@ -59,7 +59,7 @@ export class TelegramSceneScreens {
         instance: TelegramSceneInstance,
         scene: TelegramSceneControl<Record<string, unknown>>,
     ): Promise<TelegramMessageContent[]> {
-        if (!this.canShow(instance, ctx.user, this.of(instance))) {
+        if (!(await this.canShow(instance, ctx.user, this.of(instance)))) {
             this.reset(instance);
         }
 

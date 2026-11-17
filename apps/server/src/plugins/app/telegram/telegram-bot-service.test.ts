@@ -4,14 +4,17 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { buildTestApp } from "../../../test/helper.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramBotServiceTestApp,
     buildTwoBotsTestApp,
 } from "../../../test/telegram-bot-service-helper.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import {
+    testBotId,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
@@ -56,7 +59,7 @@ void describe("TelegramBotService", () => {
         );
     });
 
-    void it("appends the bot id to the explicit webhook URL override", () => {
+    void it("appends the Telegram id to the explicit webhook URL override", () => {
         const webhookUrl = resolveTelegramWebhookUrl(
             {
                 DOMAIN: "https://smart-assistant.bambom.org",
@@ -124,7 +127,7 @@ void describe("TelegramBotService", () => {
     });
 
     void it("removes the guard and logs the bot when Telegram rejects webhook setup", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const telegramApiService = buildTelegramApiServiceMock({
             t,
             setWebhookResponse: {
@@ -155,7 +158,7 @@ void describe("TelegramBotService", () => {
                     (entry) =>
                         entry.msg ===
                             "Failed to set the webhook of a bot on start" &&
-                        entry.botId === testTelegramBotId,
+                        entry.botId === testBotId,
                 ),
         );
     });
@@ -212,21 +215,22 @@ void describe("TelegramBotService", () => {
                 description: "Unauthorized",
             },
         });
-        const { child, telegramBotService } = await buildTwoBotsTestApp({
-            databaseName,
-            mongoClient,
-            t,
-            telegramApiService: failing,
-            environment: "preview",
-        });
+        const { child, childBotId, telegramBotService } =
+            await buildTwoBotsTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                telegramApiService: failing,
+                environment: "preview",
+            });
 
         const webhooks = await telegramBotService.refreshWebhooks();
 
         assert.deepEqual(
             webhooks.map(({ botId, status }) => ({ botId, status })),
             [
-                { botId: testTelegramBotId, status: "failed" },
-                { botId: "42", status: "refreshed" },
+                { botId: testBotId, status: "failed" },
+                { botId: childBotId, status: "refreshed" },
             ],
         );
         assert.equal(failing.setWebhook.mock.callCount(), 0);
@@ -249,7 +253,7 @@ void describe("TelegramBotService", () => {
         });
 
         assert.deepEqual((await telegramBotService.refreshWebhooks())[0], {
-            botId: testTelegramBotId,
+            botId: testBotId,
             status: "failed",
             error: "Telegram request failed",
         });
@@ -290,9 +294,11 @@ void describe("TelegramBotService", () => {
             ttlMilliseconds: 3_600_000,
         });
 
-        const firstUrl = await telegramBotService.setWebhook(telegramBots.root);
+        const firstUrl = await telegramBotService.setWebhook(
+            await telegramBots.root(),
+        );
         const secondUrl = await telegramBotService.setWebhook(
-            telegramBots.root,
+            await telegramBots.root(),
         );
 
         assert.equal(
@@ -313,7 +319,7 @@ void describe("TelegramBotService", () => {
 
 void describe("telegram plugin on listen", () => {
     void it("sets the webhook once on production", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app, telegramApiService } = await buildTestApp({
             t,
             environment: "production",
@@ -336,7 +342,7 @@ void describe("telegram plugin on listen", () => {
     });
 
     void it("reports the skipped webhook on preview", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             t,
             environment: "preview",

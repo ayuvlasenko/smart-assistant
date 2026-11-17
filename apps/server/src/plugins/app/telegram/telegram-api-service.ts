@@ -23,6 +23,7 @@ export type TelegramApiClient = Pick<
     | "sendMessage"
     | "answerCallbackQuery"
     | "setMyCommands"
+    | "deleteMyCommands"
     | "editMessageReplyMarkup"
     | "deleteMessages"
     | "sendRichMessage"
@@ -48,10 +49,11 @@ export const telegramApiScope = new AsyncLocalStorage<TelegramApiScope>();
 const defaultRequestTimeoutMilliseconds = 10_000;
 const unscopedCallTimeoutMilliseconds = 60_000;
 const defaultRetryAfterSeconds = 1;
+const slowWaitMilliseconds = 1_000;
 
 export class TelegramApiService {
     private readonly baseUrl: string;
-    private readonly botId: string;
+    private readonly telegramId: string;
     private readonly log: FastifyBaseLogger;
     private readonly telegramMetrics: TelegramMetrics;
     private readonly rateLimiter: RateLimiter;
@@ -69,7 +71,7 @@ export class TelegramApiService {
         this.rateLimiter = rateLimiter;
         this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
         this.baseUrl = `https://api.telegram.org/bot${botToken}`;
-        this.botId = botToken.split(":", 1).join("");
+        this.telegramId = botToken.split(":", 1).join("");
     }
 
     getMe() {
@@ -98,6 +100,10 @@ export class TelegramApiService {
 
     setMyCommands(...args: TelegramMethodArgs<"setMyCommands">) {
         return this.call("setMyCommands", ...args);
+    }
+
+    deleteMyCommands(...args: TelegramMethodArgs<"deleteMyCommands">) {
+        return this.call("deleteMyCommands", ...args);
     }
 
     editMessageReplyMarkup(
@@ -158,7 +164,11 @@ export class TelegramApiService {
             signal: AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
             priority: "interactive",
         };
-        const buckets = telegramRateLimitBuckets(this.botId, method, params);
+        const buckets = telegramRateLimitBuckets(
+            this.telegramId,
+            method,
+            params,
+        );
 
         for (;;) {
             await this.waitForSlot(method, buckets, scope);
@@ -203,6 +213,16 @@ export class TelegramApiService {
                 waitMilliseconds / 1000,
             );
         }
+
+        if (
+            priority === "interactive" &&
+            waitMilliseconds >= slowWaitMilliseconds
+        ) {
+            this.log.warn(
+                { method, waitSeconds: waitMilliseconds / 1000 },
+                "Telegram rate limit wait was slow",
+            );
+        }
     }
 
     private async send<TMethod extends TelegramMethod>(
@@ -211,7 +231,7 @@ export class TelegramApiService {
         signal: AbortSignal,
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const stopRequest = this.telegramMetrics.startApiRequest(
-            this.botId,
+            this.telegramId,
             method,
         );
         let result: ApiResponse<TelegramMethodResult<TMethod>>;
@@ -263,13 +283,24 @@ export class TelegramApiService {
         retryAfterSeconds: number,
         signal: AbortSignal,
     ): Promise<void> {
-        const [narrowestBucket] = buckets;
         const delayMilliseconds = retryAfterSeconds * 1000;
 
         this.telegramMetrics.recordRetryAfter(method, retryAfterSeconds);
 
-        if (narrowestBucket) {
-            await this.rateLimiter.pause(narrowestBucket, delayMilliseconds);
+        if (buckets.length > 0) {
+            this.log.warn(
+                {
+                    method,
+                    retryAfter: retryAfterSeconds,
+                    buckets: buckets.map(({ key }) => key),
+                },
+                "Telegram rate limit buckets paused",
+            );
+            await Promise.all(
+                buckets.map((bucket) =>
+                    this.rateLimiter.pause(bucket, delayMilliseconds),
+                ),
+            );
             return;
         }
 

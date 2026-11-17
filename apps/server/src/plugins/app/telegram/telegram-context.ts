@@ -24,7 +24,7 @@ export interface TelegramContextOptions<TUpdate extends Update | undefined> {
     user: UserEntity;
     session: TelegramSession;
     log: FastifyBaseLogger;
-    t: Translate;
+    translatorOf: (user: UserEntity) => Translate;
     timeZone: string;
     responder: TelegramResponder;
 }
@@ -44,22 +44,41 @@ export class TelegramContext<
     TUpdate extends Update | undefined = Update | undefined,
 > {
     readonly update: TUpdate;
-    readonly user: UserEntity;
     readonly log: FastifyBaseLogger;
-    readonly t: Translate;
     readonly timeZone: string;
     readonly session: TelegramSession;
     readonly events = new Emittery<TelegramContextEvents>();
     private readonly responder: TelegramResponder;
+    private readonly translatorOf: (user: UserEntity) => Translate;
+    private currentUser: UserEntity;
+    private translate: Translate;
 
     constructor(options: TelegramContextOptions<TUpdate>) {
         this.update = options.update;
-        this.user = options.user;
         this.log = options.log;
-        this.t = options.t;
         this.timeZone = options.timeZone;
         this.session = options.session;
         this.responder = options.responder;
+        this.translatorOf = options.translatorOf;
+        this.currentUser = options.user;
+        this.translate = options.translatorOf(options.user);
+    }
+
+    get user(): UserEntity {
+        return this.currentUser;
+    }
+
+    get t(): Translate {
+        return this.translate;
+    }
+
+    refreshUser(user: UserEntity): void {
+        if (!user._id.equals(this.currentUser._id)) {
+            throw new Error("A context can't change its user");
+        }
+
+        this.currentUser = user;
+        this.translate = this.translatorOf(user);
     }
 
     has<TFilter extends TelegramUpdateFilter<Update>>(

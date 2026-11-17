@@ -20,10 +20,10 @@ pnpm --filter <workspace> add <package>
 Run a single test file:
 
 ```bash
-pnpm --filter server exec node --env-file=.env.test --import tsx --test src/path/to/file.test.ts
+pnpm --filter server exec node --import tsx --import ./src/test/load-test-env.ts --test src/path/to/file.test.ts
 ```
 
-Manage MongoDB migrations with `pnpm --filter server migrate:create|migrate:up|migrate:down|migrate:status`. `lockTtl` in `apps/server/migrate-mongo-config.js` equals `migration.activeDeadlineSeconds` in `deploy/migration/values.yaml`, 300 s: change both together, or a slow migration loses its lock while it still runs.
+Manage MongoDB migrations with `pnpm --filter server migrate:create|migrate:up|migrate:down|migrate:status`. CI runs the migrations of a branch before it starts the new pods, and a preview runs them on the shared dev database. So the old pods, and the other previews, work with the migrated data until they are replaced: write a migration that the old code survives, or say in the commit message what the old code does meanwhile. `lockTtl` in `apps/server/migrate-mongo-config.js` equals `migration.activeDeadlineSeconds` in `deploy/migration/values.yaml`, 300 s: change both together, or a slow migration loses its lock while it still runs.
 
 Before a commit, run `pnpm format`, then `pnpm --filter server typecheck`, `pnpm lint` and `pnpm test`; CI runs the same three checks. Lint does not replace typecheck: `build` excludes tests and `src/test/`.
 
@@ -37,6 +37,8 @@ After the first push of a pull request, wait for the CI `deploy` job with `gh pr
 - `docs/backlog/`: known problems that are not being fixed now, one file per item.
 
 Keep a README in line with the code you change. A README explains how a mechanism works and why; this file keeps only the rules. Follow the `write-docs` skill in `.agents/skills/` when you write or restructure documentation.
+
+Call something a constraint only when an external system or a measurement sets it, and name the source. A property of our own code is a choice: write what was chosen and what it costs, never that other code must follow from it.
 
 ## Architecture
 
@@ -57,7 +59,7 @@ Keep a README in line with the code you change. A README explains how a mechanis
 - Name a file and a directory in kebab case, after the main export of the file, with the domain prefix, so every file name is unique: `users-repository.ts` (`UsersRepository`), `user-entity.ts`, `create-account-scene.ts` (`createAccountScene`), `choose-account-step.ts`. A test is `<file>.test.ts` next to the file.
 - A file holds one abstraction: its main export, the types of its own public API, and private helpers. A type, schema, constant or function that describes another abstraction's data lives in that abstraction's file.
 - Split a file by abstraction, never by kind of code, and add no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload), `<domain>-schemas.ts` and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input. `local/file-layout` flags a file named after a kind of code, such as `*-types.ts`, and the order of the code inside a file; `telegram-router.ts` is the reference.
-- A source file over about 400 lines often holds a second abstraction, and `max-lines` warns about it. Split the file when the second abstraction stands on its own. Keep the file whole when a split would only couple the parts or move code to meet the count, and say why in the commit message. `local/file-layout` in `apps/server/eslint-rules/` checks the rest of the layout rules: fix its warnings in the code you touch.
+- `local/file-layout` in `apps/server/eslint-rules/` checks the layout rules: fix its warnings in the code you touch.
 - Throw a class from `<domain>-errors.ts` when code catches the error by type or reads its fields, such as `TelegramApiError`. Throw a plain `Error` for a bug or a wrong configuration that only stops the start or the update.
 
 ### Bot code
@@ -72,10 +74,13 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Ask for a destructive action with `confirm: true` on its button. Never build the two presses with a flag in the state: the engine cancels a pending confirmation on every other press and move.
 - Check the `false` that `sceneEngine.start` and `scene.handOver` return: a blocking scene refuses other scenes.
 - Never write to the session of another user. Emit a domain event and call `telegramChats.publish` or `telegramChats.deliver`.
-- Start every Valkey key that holds data of a user or a chat with the bot id, `telegram:<botId>:…`: Telegram ids, chat ids and update ids repeat across bots, and the tests run one bot. See [Bots and webhooks](apps/server/src/plugins/app/telegram/README.md#bots-and-webhooks).
+- Start every Valkey key that holds data of a user or a chat with the Telegram id of the bot, `telegram:<telegramId>:…`, from `bot.telegramId`: Telegram ids, chat ids and update ids repeat across bots, and the tests run one bot. Never use the internal `botId` there: it stays when the bot moves to another Telegram bot, and the state of the old one must not follow. See [Bots and webhooks](apps/server/src/plugins/app/telegram/README.md#bots-and-webhooks).
 - Build a deep link URL with `telegramBotService.resolveDeepLinkUrl`, or with `buildTelegramDeepLinkUrl` when the username of the bot is stored, never by hand.
 - When you add a Bot API method that sends, edits or deletes a message, add it to `telegramRateLimits` in `telegram-rate-limits.ts`. A method without a line has no rate limit. See [Rate limits](apps/server/src/plugins/app/telegram/README.md#rate-limits).
+- Never provoke a `429` on a deployed bot to measure a limit of Telegram: the limiter then pauses every bucket of the method, and the bot stops for all its users. Measure from a local script with the token of the preview bot.
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
+- Take the language of a user from `languageOf(user)`, never from `user.languageCode`: a user picks a language in `/settings`. After a handler changes the user of the update, such as the grants or a setting, pass the stored document to `ctx.refreshUser`.
+- Log a change of business state once, at `info`, with a fixed message and the ids of what changed as fields. In a handler, log through `ctx.log`: its lines carry `botId`, `updateId` and `userId`. Put an error under `err`. The logger hides a value only under a key that ends with a secret word, such as `token` or `password`, and a bot token inside a string, see `logger-value-walk.ts`; it does not know any other secret.
 - Name a command in snake case, such as `new_invite`.
 - Register the access section of a feature domain as a module, `access.register(section, { subjects })`, so a bot can turn it off; a section without it is on in every bot. See [Modules](apps/server/src/plugins/app/access/README.md#modules).
 - Declare the access subjects of a domain next to its entity and take a typed view with `accessService.subjects<M>()`; do not augment a shared interface with `declare module`. Put a `guard` on every entry point, read lists through `access.accessibleBy` in the query, and check every write in the service with `access.assert` on the loaded document wrapped in `subject(name, document)`, never on the subject name. `plugins/app/access/README.md` explains why.
@@ -96,15 +101,19 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep test setup direct. When a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, look for a simpler behavior boundary or a small explicit test helper.
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
+- A test never writes to the database that `DATABASE_URL` names: in CI it is the shared dev database of the previews. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
+- Create a test database through `buildTestMongo`, directly or through `buildTestApp`: it runs every migration, so the database has the indexes of production. A database made any other way has no index, and a test of a unique constraint passes there without the constraint.
 - When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
 ## Infrastructure
 
 - Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
-- `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values.
+- `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values. The tests load `apps/server/.env.test` over them, so a variable in that file never comes from the root `.env`.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
+- Production runs 2 to 4 pods under the autoscaler of `deploy/templates/hpa.yaml`, set in `server.replicas` of `deploy/values.yaml`; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
 - `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `BOTS_ENCRYPTION_KEY`, `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
+- The dashboard and the alert rules of the project live in the `infra` repository, under `monitoring/`. They read the metrics of the server by name and label, and their descriptions quote LogQL for its logs. When you rename a metric, a label, a log level or a quoted message, change them there too.
 - `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.

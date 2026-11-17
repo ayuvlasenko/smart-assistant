@@ -16,8 +16,8 @@ import {
     TestContext,
 } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { requestLogSerializers } from "../../../request-logging.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { loggerRequestSerializers } from "../../../logger-request.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramPrivateChat,
@@ -253,12 +253,12 @@ void describe("TelegramSceneEngine inputs", () => {
     });
 
     void it("logs and skips an invalid stored scene", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const bot = await buildTelegramSceneBot({
             databaseName,
             mongoClient,
             t,
-            logger: { ...logs.logger, serializers: requestLogSerializers },
+            logger: { ...logs.logger, serializers: loggerRequestSerializers },
             registerRoutes: (router, sceneEngine) => {
                 registerProfileScene(
                     router,

@@ -89,7 +89,7 @@ export class TelegramSceneEngine {
         scene: TelegramScene,
         state: SceneState,
     ): Promise<boolean> {
-        if (!this.canEnter(ctx, scene)) {
+        if (!(await this.canEnter(ctx, scene))) {
             return false;
         }
 
@@ -150,7 +150,7 @@ export class TelegramSceneEngine {
 
         const instance = await this.focusedInput(ctx);
 
-        if (instance && !this.inputs.canUse(instance, ctx.user)) {
+        if (instance && !(await this.inputs.canUse(instance, ctx.user))) {
             return next();
         }
 
@@ -179,7 +179,10 @@ export class TelegramSceneEngine {
         const storage = this.updateFor(ctx).storage;
         const instance = await storage.load(storage.idForKey(scene, key));
 
-        if (instance?.scene !== scene || !isAllowed(scene.guard, ctx.user)) {
+        if (
+            instance?.scene !== scene ||
+            !(await isAllowed(scene.guard, ctx.user))
+        ) {
             return false;
         }
 
@@ -198,7 +201,7 @@ export class TelegramSceneEngine {
 
         if (
             !instance?.record.topics.some((topic) => topics.includes(topic)) ||
-            !isAllowed(instance.scene.guard, ctx.user)
+            !(await isAllowed(instance.scene.guard, ctx.user))
         ) {
             return false;
         }
@@ -253,12 +256,15 @@ export class TelegramSceneEngine {
         await this.messages.render(ctx, instance, contents, { reshow });
     }
 
-    private canEnter(ctx: TelegramContext, scene: TelegramScene): boolean {
+    private async canEnter(
+        ctx: TelegramContext,
+        scene: TelegramScene,
+    ): Promise<boolean> {
         if (this.scenes.get(scene.name) !== scene) {
             throw new Error(`Telegram scene "${scene.name}" is not registered`);
         }
 
-        if (!isAllowed(scene.guard, ctx.user)) {
+        if (!(await isAllowed(scene.guard, ctx.user))) {
             this.recordForbidden(ctx, scene);
             return false;
         }
@@ -291,7 +297,7 @@ export class TelegramSceneEngine {
         scene: TelegramScene,
         state: SceneState,
     ): Promise<boolean> {
-        if (!this.canEnter(ctx, scene)) {
+        if (!(await this.canEnter(ctx, scene))) {
             return false;
         }
 
@@ -463,8 +469,8 @@ export class TelegramSceneEngine {
         name: string,
     ): Promise<void> {
         if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !isAllowed(instance.scene.inputs[name]?.guard, ctx.user)
+            !(await isAllowed(instance.scene.guard, ctx.user)) ||
+            !(await isAllowed(instance.scene.inputs[name]?.guard, ctx.user))
         ) {
             this.recordForbidden(ctx, instance.scene);
             return;
@@ -564,7 +570,10 @@ export class TelegramSceneEngine {
         target: TelegramScreenState | undefined,
         move: () => void,
     ): Promise<void> {
-        if (target && !this.screens.canShow(instance, ctx.user, target)) {
+        if (
+            target &&
+            !(await this.screens.canShow(instance, ctx.user, target))
+        ) {
             this.recordForbidden(ctx, instance.scene);
             return;
         }

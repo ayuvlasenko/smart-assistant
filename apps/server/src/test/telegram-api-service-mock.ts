@@ -27,6 +27,7 @@ export interface TelegramApiServiceMock extends TelegramApiClient {
     getMe: Mock<TelegramApiClient["getMe"]>;
     answerCallbackQuery: Mock<TelegramApiClient["answerCallbackQuery"]>;
     setMyCommands: Mock<TelegramApiClient["setMyCommands"]>;
+    deleteMyCommands: Mock<TelegramApiClient["deleteMyCommands"]>;
     editMessageReplyMarkup: Mock<TelegramApiClient["editMessageReplyMarkup"]>;
     deleteMessages: Mock<TelegramApiClient["deleteMessages"]>;
     deleteMessage: Mock<TelegramApiClient["deleteMessage"]>;
@@ -78,6 +79,7 @@ export function buildTelegramApiServiceMock({
         ),
         answerCallbackQuery: t.mock.fn(async () => buildTelegramTrueResponse()),
         setMyCommands: t.mock.fn(async () => buildTelegramTrueResponse()),
+        deleteMyCommands: t.mock.fn(async () => buildTelegramTrueResponse()),
         editMessageReplyMarkup: t.mock.fn(async () =>
             buildTelegramTrueResponse(),
         ),

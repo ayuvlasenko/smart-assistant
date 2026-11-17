@@ -16,11 +16,11 @@ export const requestIdOptions: Pick<
     requestIdHeader: false,
 };
 
-export const requestLogSerializers: FastifyLoggerOptions["serializers"] = {
-    req: serializeRequestForLog,
+export const loggerRequestSerializers: FastifyLoggerOptions["serializers"] = {
+    req: serializeRequest,
 };
 
-function serializeRequestForLog(request: FastifyRequest) {
+function serializeRequest(request: FastifyRequest) {
     const version = request.headers["accept-version"];
 
     return {

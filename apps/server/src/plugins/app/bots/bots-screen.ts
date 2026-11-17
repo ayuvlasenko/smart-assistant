@@ -52,6 +52,7 @@ export async function renderBot(
     }
 
     const isRoot = botsService.isRoot(bot._id);
+    const isServed = await botsService.isServed(bot._id);
     const webhook = bot.disabledAt
         ? undefined
         : await botsService.readWebhook(ctx.user, bot._id);
@@ -59,11 +60,15 @@ export async function renderBot(
     return buildBotsMessage(
         [
             formatBold(labelOf(t, botsService, bot)),
-            `<code>${escapeTelegramHtml(bot._id)}</code>`,
+            `<code>${escapeTelegramHtml(bot.telegramId)}</code>`,
             formatLabeled(t("bots:statusLabel"), statusOf(t, bot)),
             formatLabeled(
                 t("bots:modulesLabel"),
                 modulesOf(t, botsService, bot),
+            ),
+            formatLabeled(
+                t("bots:startLabel"),
+                startModuleOf(t, botsService, bot),
             ),
             ...(bot.disabledAt
                 ? []
@@ -79,7 +84,12 @@ export async function renderBot(
                 scene.screenButton(t("bots:modulesButton"), "modules", {
                     botId: bot._id,
                 }),
-                ...(isRoot || !botsService.isServed(bot._id)
+                scene.screenButton(t("bots:startModuleButton"), "startModule", {
+                    botId: bot._id,
+                }),
+            ],
+            [
+                ...(isRoot || !isServed
                     ? []
                     : [
                           scene.button(
@@ -88,13 +98,14 @@ export async function renderBot(
                               bot._id,
                           ),
                       ]),
-            ],
-            [
                 scene.button(t("bots:webhookButton"), "webhook", bot._id),
-                ...(isRoot
-                    ? []
-                    : [scene.button(t("bots:tokenButton"), "token", bot._id)]),
             ],
+            isRoot
+                ? []
+                : [
+                      scene.button(t("bots:tokenButton"), "token", bot._id),
+                      moveButton(t, scene, bot),
+                  ],
             [
                 scene.backButton(t("bots:backButton")),
                 ...(isRoot ? [] : [switchButton(t, scene, bot)]),
@@ -135,6 +146,54 @@ export async function renderBotModules(
     );
 }
 
+export async function renderBotStartModule(
+    { ctx, scene, botsService }: BotsView,
+    botId: string,
+): Promise<TelegramMessageContent> {
+    const { t } = ctx;
+    const bot = await botsService.find(ctx.user, botId);
+
+    if (!bot) {
+        return renderMissing(t, scene);
+    }
+
+    return buildBotsMessage(
+        [
+            formatBold(
+                t("bots:startModuleTitle", {
+                    bot: labelOf(t, botsService, bot),
+                }),
+            ),
+            escapeTelegramHtml(t("bots:startModuleText")),
+        ],
+        [
+            ...botsService
+                .listStartModules(bot)
+                .map((module) => [
+                    scene.button(
+                        formatChoice(
+                            module.title(t),
+                            bot.startModule === module.name,
+                        ),
+                        "pickStart",
+                        module.name,
+                    ),
+                ]),
+            [
+                scene.button(
+                    formatChoice(
+                        t("bots:startWelcomeButton"),
+                        bot.startModule === undefined,
+                    ),
+                    "pickStart",
+                    null,
+                ),
+            ],
+            [scene.backButton(t("bots:backButton"))],
+        ],
+    );
+}
+
 export async function renderBotOwnerInvite(
     { ctx, scene, botsService }: BotsView,
     botId: string,
@@ -147,7 +206,7 @@ export async function renderBotOwnerInvite(
         return renderMissing(t, scene);
     }
 
-    if (!bot.username || !botsService.isServed(bot._id)) {
+    if (!bot.username || !(await botsService.isServed(bot._id))) {
         return buildBotsMessage(
             [escapeTelegramHtml(t("bots:ownerInviteUnavailable"))],
             [[scene.backButton(t("bots:backButton"))]],
@@ -212,7 +271,7 @@ function labelOf(
         return t("bots:rootBot");
     }
 
-    return bot.username ? `@${bot.username}` : bot._id;
+    return bot.username ? `@${bot.username}` : bot.telegramId;
 }
 
 function statusOf(t: Translate, bot: BotEntity): string {
@@ -232,6 +291,22 @@ function modulesOf(
     return titles.length ? titles.join(", ") : t("bots:none");
 }
 
+function startModuleOf(
+    t: Translate,
+    botsService: BotsService,
+    bot: BotEntity,
+): string {
+    const module = botsService
+        .listStartModules(bot)
+        .find(({ name }) => name === bot.startModule);
+
+    return module ? module.title(t) : t("bots:startWelcome");
+}
+
+function formatChoice(title: string, isChosen: boolean): string {
+    return `${isChosen ? "🔘" : "⚪"} ${title}`;
+}
+
 function formatLabeled(label: string, value: string): string {
     return `${escapeTelegramHtml(label)}: ${escapeTelegramHtml(value)}`;
 }
@@ -249,6 +324,22 @@ function describeWebhook(
     return webhook.pending_update_count
         ? `${state}, ${t("bots:webhookPending", { count: webhook.pending_update_count })}`
         : state;
+}
+
+function moveButton(
+    t: Translate,
+    scene: BotsSceneControl,
+    bot: BotEntity,
+): InlineKeyboardButton {
+    return scene.button(
+        t(
+            scene.isConfirming("move", bot._id)
+                ? "bots:confirmMoveButton"
+                : "bots:moveButton",
+        ),
+        "move",
+        bot._id,
+    );
 }
 
 function switchButton(

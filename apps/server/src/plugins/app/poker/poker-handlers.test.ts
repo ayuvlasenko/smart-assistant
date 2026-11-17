@@ -19,6 +19,7 @@ import {
     measureTelegramHtml,
     telegramMessageTextLimit,
 } from "../telegram/telegram-html.js";
+import { telegramLocales } from "../telegram/telegram-locales.js";
 import { formatPokerRoomTime } from "./poker-format.js";
 import { pokerCreateGrant, pokerJoinGrant } from "./poker-handlers.js";
 import { pokerLocales } from "./poker-locales.js";
@@ -88,6 +89,33 @@ void describe("Poker access", () => {
 
         assert.equal((await readRoom()).participants.length, 2);
         assert.ok(bot.readSentTexts().includes(en.roomFull));
+    });
+
+    void it("opens the rooms on /start in a bot whose start module is poker", async (t) => {
+        const bot = await buildBot(t);
+        const member = buildTelegramPrivateChat({ id: 987655107 });
+        const stranger = buildTelegramPrivateChat({ id: 987655108 });
+
+        await allowWith(bot, member, [pokerJoinGrant]);
+        await bot.allowUser(stranger.id);
+        await bot.sendText(member, "/start");
+
+        assert.deepEqual(await bot.readMessageTexts(member.id), [
+            telegramLocales.en.welcome,
+        ]);
+
+        await startWith(bot, "poker");
+        await bot.sendText(member, "/start");
+        await bot.sendText(stranger, "/start");
+
+        assert.ok(
+            (await bot.readMessageTexts(member.id))
+                .at(-1)
+                ?.includes(en.listEmpty),
+        );
+        assert.deepEqual(await bot.readMessageTexts(stranger.id), [
+            telegramLocales.en.welcome,
+        ]);
     });
 
     void it("answers an unknown room link", async (t) => {
@@ -769,6 +797,10 @@ async function allowWith(
     await mongo
         .collection("users")
         .updateOne({ telegramId: String(chat.id) }, { $set: { grants } });
+}
+
+async function startWith(bot: PokerBot, module: string): Promise<void> {
+    await bot.botsRepository.setStartModule(bot.botsRegistry.rootId, module);
 }
 
 async function createRoomThroughForm(

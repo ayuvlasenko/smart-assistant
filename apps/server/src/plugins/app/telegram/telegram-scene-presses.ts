@@ -82,7 +82,7 @@ export class TelegramScenePresses {
     ): Promise<void> {
         const action = `${instance.scene.name}:input`;
 
-        if (!this.inputs.canUse(instance, ctx.user)) {
+        if (!(await this.inputs.canUse(instance, ctx.user))) {
             return this.rejectForbidden(ctx, action);
         }
 
@@ -100,7 +100,7 @@ export class TelegramScenePresses {
             return this.rejectExpired(ctx, action);
         }
 
-        this.record(instance, "input");
+        this.record(ctx, instance, "input");
     }
 
     private async pressScreen(
@@ -115,26 +115,26 @@ export class TelegramScenePresses {
         }
 
         if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !this.screens.canShow(instance, ctx.user, screen)
+            !(await isAllowed(instance.scene.guard, ctx.user)) ||
+            !(await this.screens.canShow(instance, ctx.user, screen))
         ) {
             return this.rejectForbidden(ctx, action);
         }
 
         await this.controlOf(ctx, instance).push(screen.name, screen.params);
-        this.record(instance, `screen:${screen.name}`);
+        this.record(ctx, instance, `screen:${screen.name}`);
     }
 
     private async pressBack(
         ctx: TelegramContext<Update>,
         instance: TelegramSceneInstance,
     ): Promise<void> {
-        if (!isAllowed(instance.scene.guard, ctx.user)) {
+        if (!(await isAllowed(instance.scene.guard, ctx.user))) {
             return this.rejectForbidden(ctx, `${instance.scene.name}:back`);
         }
 
         await this.controlOf(ctx, instance).back();
-        this.record(instance, "back");
+        this.record(ctx, instance, "back");
     }
 
     private async pressScene(
@@ -151,8 +151,8 @@ export class TelegramScenePresses {
         }
 
         if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !isAllowed(definition.guard, ctx.user)
+            !(await isAllowed(instance.scene.guard, ctx.user)) ||
+            !(await isAllowed(definition.guard, ctx.user))
         ) {
             return this.rejectForbidden(ctx, action);
         }
@@ -162,12 +162,12 @@ export class TelegramScenePresses {
         if (!definition.confirm) {
             instance.record.confirming = undefined;
         } else if (!this.buttons.confirm(instance, name, value)) {
-            this.record(instance, name);
+            this.record(ctx, instance, name);
             return;
         }
 
         await definition.handle(ctx, control, value);
-        this.record(instance, name);
+        this.record(ctx, instance, name);
     }
 
     private async rejectExpired(
@@ -190,10 +190,18 @@ export class TelegramScenePresses {
         await ctx.answerCallbackQuery();
     }
 
-    private record(instance: TelegramSceneInstance, button: string): void {
+    private record(
+        ctx: TelegramContext<Update>,
+        instance: TelegramSceneInstance,
+        button: string,
+    ): void {
         this.telegramMetrics.recordButtonPress(
             `${instance.scene.name}:${button}`,
             "handled",
+        );
+        ctx.log.info(
+            { scene: instance.scene.name, sceneId: instance.id, button },
+            "Telegram scene button pressed",
         );
     }
 }

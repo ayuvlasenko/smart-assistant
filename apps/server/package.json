@@ -26,7 +26,7 @@
     "migrate:up": "migrate-mongo up -f ./migrate-mongo-config.js",
     "migrate:down": "migrate-mongo down -f ./migrate-mongo-config.js",
     "migrate:status": "migrate-mongo status -f ./migrate-mongo-config.js",
-    "test": "node --env-file=.env.test --import tsx --test --test-concurrency=${TEST_CONCURRENCY:-4} \"src/**/*.test.ts\" \"src/**/*.test.js\" \"eslint-rules/**/*.test.js\""
+    "test": "node --import tsx --import ./src/test/load-test-env.ts --test --test-concurrency=${TEST_CONCURRENCY:-4} \"src/**/*.test.ts\" \"src/**/*.test.js\" \"eslint-rules/**/*.test.js\""
   },
   "author": "ayuvlasenko",
   "license": "MIT",
@@ -61,6 +61,7 @@
     "prom-client": "15.1.3"
   },
   "devDependencies": {
+    "@types/migrate-mongo": "14.0.0",
     "@types/node": "26.6.3",
     "@typescript/native": "npm:typescript@7.0.2",
     "concurrently": "10.0.5",

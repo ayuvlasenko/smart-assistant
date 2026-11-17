@@ -39,10 +39,12 @@ const botMessages: TelegramRateLimit = {
 };
 
 const botCommands: TelegramRateLimit = {
-    ratePerSecond: 5,
-    burst: 5,
+    ratePerSecond: 2,
+    burst: 6,
     scopeOf: () => "commands",
 };
+
+export const telegramDeliveryLimit = Math.ceil(botMessages.ratePerSecond);
 
 const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
     {
@@ -59,10 +61,11 @@ const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
         deleteMessage: [chatDeletes],
         deleteMessages: [chatDeletes],
         setMyCommands: [botCommands],
+        deleteMyCommands: [botCommands],
     };
 
 export function telegramRateLimitBuckets(
-    botId: string,
+    telegramId: string,
     method: TelegramMethod,
     params: unknown,
 ): RateLimitBucket[] {
@@ -72,7 +75,12 @@ export function telegramRateLimitBuckets(
 
             return scope === undefined
                 ? []
-                : [{ key: `rate-limit:telegram:${botId}:${scope}`, ...limit }];
+                : [
+                      {
+                          key: `rate-limit:telegram:${telegramId}:${scope}`,
+                          ...limit,
+                      },
+                  ];
         },
     );
 }

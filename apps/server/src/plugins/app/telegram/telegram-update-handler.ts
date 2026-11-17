@@ -12,6 +12,7 @@ import {
 import { LockHoldTimeoutError, LockLostError } from "../lock-errors.js";
 import { LockService } from "../lock-service.js";
 import { UserEntity, UserProfile } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
 import { TelegramBot } from "./telegram-bots.js";
@@ -40,6 +41,8 @@ interface TelegramUpdateRun {
     log: FastifyBaseLogger;
     responder: TelegramResponder;
     language: Language;
+    route?: string;
+    refusedRoute?: string;
 }
 
 const updateClaimTtlMilliseconds = 60 * 60 * 1000;
@@ -78,11 +81,13 @@ export class TelegramUpdateHandler {
     }
 
     async handle(bot: TelegramBot, update: Update): Promise<void> {
+        const startedAt = performance.now();
         const telegramUser = extractTelegramUser(update);
+        const chat = extractTelegramChat(update);
+        const updateType = extractTelegramUpdateType(update);
         const log = this.log.child({
             botId: bot.id,
             updateId: update.update_id,
-            chatId: extractTelegramChat(update)?.id ?? telegramUser?.id,
             telegramUserId: telegramUser?.id,
         });
         const run: TelegramUpdateRun = {
@@ -90,7 +95,7 @@ export class TelegramUpdateHandler {
             update,
             log,
             responder: new TelegramResponder(
-                extractTelegramChat(update)?.id,
+                chat?.id,
                 update.callback_query,
                 bot.api,
                 log,
@@ -98,18 +103,38 @@ export class TelegramUpdateHandler {
             language: defaultLanguage,
         };
 
-        log.info(
-            { updateType: extractTelegramUpdateType(update) },
-            "Received update",
+        log.debug({ updateType }, "Received update");
+
+        const finishUpdate = this.telegramMetrics.startUpdate(
+            bot.telegramId,
+            update,
         );
+        const result = await this.finish(run, telegramUser);
 
-        const finishUpdate = this.telegramMetrics.startUpdate(bot.id, update);
+        finishUpdate(result);
+        run.log.info(
+            {
+                updateType,
+                result,
+                route: run.route,
+                refusedRoute: run.refusedRoute,
+                chatId:
+                    chat && chat.id !== telegramUser?.id ? chat.id : undefined,
+                durationMs: Math.round(performance.now() - startedAt),
+            },
+            "Update handled",
+        );
+    }
 
+    private async finish(
+        run: TelegramUpdateRun,
+        telegramUser: User | undefined,
+    ): Promise<TelegramUpdateResult> {
         try {
             await this.process(run, telegramUser);
-            finishUpdate("handled");
+            return "handled";
         } catch (err) {
-            finishUpdate(await this.handleFailure(run, err));
+            return this.handleFailure(run, err);
         }
     }
 
@@ -126,10 +151,10 @@ export class TelegramUpdateHandler {
 
         const user = await this.resolveUser(run, telegramUser);
 
-        run.language = user.languageCode;
+        run.language = languageOf(user);
 
-        await this.telegramCommandMenus.sync(user);
-        await this.dispatch(run, user, telegramUser.id);
+        await this.telegramCommandMenus.sync(run.bot, user);
+        run.route = await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
     }
 
@@ -138,7 +163,7 @@ export class TelegramUpdateHandler {
         update,
     }: TelegramUpdateRun): Promise<void> {
         const claim = await this.lockService.tryAcquire(
-            `telegram:${bot.id}:update:${update.update_id}`,
+            `telegram:${bot.telegramId}:update:${update.update_id}`,
             updateClaimTtlMilliseconds,
         );
 
@@ -159,14 +184,14 @@ export class TelegramUpdateHandler {
                 ...readProfile(telegramUser, languageCode ?? defaultLanguage),
             });
 
+        run.log = run.log.child({ userId: user._id });
+
         if (isCreated) {
             this.telegramMetrics.recordUserCreated();
+            run.log.info({ isBanned: user.isBanned }, "User created");
         }
 
-        run.log.info(
-            { userId: user._id, isBanned: user.isBanned },
-            "User for update",
-        );
+        run.log.debug({ isBanned: user.isBanned }, "User for update");
 
         const profile = readProfile(
             telegramUser,
@@ -184,9 +209,10 @@ export class TelegramUpdateHandler {
         run: TelegramUpdateRun,
         user: UserEntity,
         userId: number,
-    ): Promise<void> {
-        await this.telegramChats.withUpdate(
+    ): Promise<string> {
+        return this.telegramChats.withUpdate(
             {
+                bot: run.bot,
                 update: run.update,
                 responder: run.responder,
                 userId,
@@ -202,36 +228,29 @@ export class TelegramUpdateHandler {
         err: unknown,
     ): Promise<TelegramUpdateResult> {
         if (err instanceof DuplicateTelegramUpdateError) {
-            run.log.info("Update was already received, skipping");
             return "duplicate";
         }
 
         if (err instanceof TelegramUpdateWithoutUserError) {
-            run.log.warn("No user in update, skipping");
             return "no_user";
         }
 
         if (err instanceof NonPrivateChatError) {
-            run.log.info("Update is not from a private chat, skipping");
             return "ignored";
         }
 
         if (err instanceof BannedTelegramUserError) {
-            run.log.info("User is banned, skipping update");
             await run.responder.answerPendingCallback();
             return "banned";
         }
 
         if (err instanceof UnhandledTelegramUpdateError) {
+            run.refusedRoute = err.refusedRoute;
             await run.responder.answerPendingCallback();
             return "unhandled";
         }
 
         if (err instanceof TelegramApiError && err.errorCode === 403) {
-            run.log.info(
-                { method: err.method, description: err.description },
-                "User blocked the bot, skipping update",
-            );
             return "blocked";
         }
 

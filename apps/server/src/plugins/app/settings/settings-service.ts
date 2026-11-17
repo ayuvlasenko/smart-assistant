@@ -37,7 +37,7 @@ export interface NumberSetting extends SettingBase {
 export interface ChoicesSetting extends SettingBase {
     kind: "choices";
     defaultValue: string[];
-    options: (botId: string) => SettingOption[];
+    options: (botId: string) => Promise<SettingOption[]>;
 }
 
 export type Setting = FlagSetting | NumberSetting | ChoicesSetting;
@@ -55,8 +55,6 @@ export interface SettingsSection {
     settings: Setting[];
 }
 
-const refreshIntervalMilliseconds = 10_000;
-
 export class SettingsService {
     private readonly sections: SettingsSection[] = [];
     private readonly settings = new Map<string, Setting>();
@@ -64,8 +62,6 @@ export class SettingsService {
     private readonly access: AccessControl<SettingsSubjects>;
     private readonly eventEmitter: Emittery<SettingsEvents>;
     private readonly log: FastifyBaseLogger;
-    private values = new Map<string, Map<string, unknown>>();
-    private refreshTimer: NodeJS.Timeout | undefined;
 
     constructor(
         settingsRepository: SettingsRepository,
@@ -101,26 +97,26 @@ export class SettingsService {
         }
     }
 
-    listSections(botId: string): readonly SettingsSection[] {
-        return this.sections.filter(({ name }) =>
-            this.access.isEnabled(botId, name),
-        );
+    listSections(botId: string): Promise<SettingsSection[]> {
+        return this.access.listEnabled(botId, this.sections);
     }
 
     find(name: string): Setting | undefined {
         return this.settings.get(name);
     }
 
-    read<TSetting extends Setting>(
+    async read<TSetting extends Setting>(
         setting: TSetting,
         botId: string,
-    ): SettingValue<TSetting> {
+    ): Promise<SettingValue<TSetting>> {
+        const stored = await this.settingsRepository.findOne(
+            botId,
+            setting.name,
+        );
+
         return (
-            readValue(
-                setting,
-                this.values.get(botId)?.get(setting.name),
-                botId,
-            ) ?? (setting.defaultValue as SettingValue<TSetting>)
+            (await readValue(setting, stored?.value, botId)) ??
+            (setting.defaultValue as SettingValue<TSetting>)
         );
     }
 
@@ -129,9 +125,9 @@ export class SettingsService {
         setting: TSetting,
         value: SettingValue<TSetting>,
     ): Promise<void> {
-        this.assertCanUpdate(actor, setting);
+        await this.assertCanUpdate(actor, setting);
 
-        if (!isValidValue(setting, value, actor.botId)) {
+        if (!(await isValidValue(setting, value, actor.botId))) {
             throw new Error(`Value of setting "${setting.name}" is not valid`);
         }
 
@@ -141,11 +137,11 @@ export class SettingsService {
             value,
             actor._id,
         );
-        await this.apply(actor, setting, value);
+        await this.announce(actor, setting, value);
     }
 
     async toggle(actor: UserEntity, setting: FlagSetting): Promise<void> {
-        this.assertCanUpdate(actor, setting);
+        await this.assertCanUpdate(actor, setting);
 
         const value = await this.settingsRepository.toggleFlag(
             actor.botId,
@@ -154,7 +150,7 @@ export class SettingsService {
             actor._id,
         );
 
-        await this.apply(actor, setting, value);
+        await this.announce(actor, setting, value);
     }
 
     async toggleChoice(
@@ -162,11 +158,11 @@ export class SettingsService {
         setting: ChoicesSetting,
         choice: string,
     ): Promise<void> {
-        this.assertCanUpdate(actor, setting);
+        await this.assertCanUpdate(actor, setting);
 
-        if (
-            !setting.options(actor.botId).some(({ value }) => value === choice)
-        ) {
+        const options = await setting.options(actor.botId);
+
+        if (!options.some(({ value }) => value === choice)) {
             throw new Error(
                 `Choice "${choice}" is not an option of setting "${setting.name}"`,
             );
@@ -180,59 +176,25 @@ export class SettingsService {
             actor._id,
         );
 
-        await this.apply(actor, setting, value);
+        await this.announce(actor, setting, value);
     }
 
-    async refresh(): Promise<void> {
-        const documents = await this.settingsRepository.findAll();
-        const values = new Map<string, Map<string, unknown>>();
-
-        for (const { botId, name, value } of documents) {
-            values.set(
-                botId,
-                (values.get(botId) ?? new Map<string, unknown>()).set(
-                    name,
-                    value,
-                ),
-            );
-        }
-
-        this.values = values;
-    }
-
-    startRefresh(): void {
-        this.refreshTimer = setInterval(() => {
-            this.refresh().catch((err: unknown) => {
-                this.log.error({ err }, "Failed to refresh settings");
-            });
-        }, refreshIntervalMilliseconds);
-        this.refreshTimer.unref();
-    }
-
-    stopRefresh(): void {
-        clearInterval(this.refreshTimer);
-    }
-
-    private assertCanUpdate(actor: UserEntity, setting: Setting): void {
-        this.access.assert(
+    private assertCanUpdate(
+        actor: UserEntity,
+        setting: Setting,
+    ): Promise<void> {
+        return this.access.assert(
             actor,
             "update",
             subject("Setting", { botId: actor.botId, name: setting.name }),
         );
     }
 
-    private async apply(
+    private async announce(
         actor: UserEntity,
         setting: Setting,
         value: unknown,
     ): Promise<void> {
-        this.values.set(
-            actor.botId,
-            (this.values.get(actor.botId) ?? new Map<string, unknown>()).set(
-                setting.name,
-                value,
-            ),
-        );
         this.log.info(
             { setting: setting.name, value, userId: actor._id },
             "Setting changed",
@@ -244,23 +206,23 @@ export class SettingsService {
     }
 }
 
-function isValidValue(
+async function isValidValue(
     setting: Setting,
     value: unknown,
     botId: string,
-): boolean {
-    const known = readValue(setting, value, botId);
+): Promise<boolean> {
+    const known = await readValue(setting, value, botId);
 
     return Array.isArray(known)
         ? known.length === (value as unknown[]).length
         : known !== undefined;
 }
 
-function readValue<TSetting extends Setting>(
+async function readValue<TSetting extends Setting>(
     setting: TSetting,
     value: unknown,
     botId: string,
-): SettingValue<TSetting> | undefined {
+): Promise<SettingValue<TSetting> | undefined> {
     switch (setting.kind) {
         case "flag":
             return (typeof value === "boolean" ? value : undefined) as
@@ -269,7 +231,7 @@ function readValue<TSetting extends Setting>(
             return readNumber(setting, value) as
                 SettingValue<TSetting> | undefined;
         case "choices":
-            return readChoices(setting, value, botId) as
+            return (await readChoices(setting, value, botId)) as
                 SettingValue<TSetting> | undefined;
     }
 }
@@ -286,17 +248,17 @@ function readNumber(
         : undefined;
 }
 
-function readChoices(
+async function readChoices(
     setting: ChoicesSetting,
     value: unknown,
     botId: string,
-): string[] | undefined {
+): Promise<string[] | undefined> {
     if (!Array.isArray(value)) {
         return;
     }
 
     const options = new Set(
-        setting.options(botId).map((option) => option.value),
+        (await setting.options(botId)).map((option) => option.value),
     );
 
     return value.filter(
@@ -320,15 +282,6 @@ export default fp(
         fastify
             .getDecorator<I18nService>("i18nService")
             .addLocales("settings", settingsLocales);
-
-        await settingsService.refresh();
-
-        fastify.addHook("onReady", async () => {
-            settingsService.startRefresh();
-        });
-        fastify.addHook("onClose", async () => {
-            settingsService.stopRefresh();
-        });
 
         fastify.decorate("settingsService", settingsService);
     },

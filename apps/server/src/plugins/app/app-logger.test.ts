@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { requestIdOptions } from "../../request-logging.js";
-import { createLogCollector } from "../../test/log-collector.js";
+import { requestIdOptions } from "../../logger-request.js";
+import { createLoggerCollector } from "../../test/logger-collector.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../external/request-context.js";
@@ -10,7 +10,7 @@ import loggerPlugin, { AppLogger } from "./app-logger.js";
 
 void describe("AppLogger", () => {
     void it("uses the fallback logger with nested child bindings outside request context", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const app = Fastify({
             logger: logs.logger,
             ...requestIdOptions,
@@ -38,7 +38,7 @@ void describe("AppLogger", () => {
     });
 
     void it("uses the request logger with nested child bindings inside request context", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const app = Fastify({
             logger: logs.logger,
             ...requestIdOptions,

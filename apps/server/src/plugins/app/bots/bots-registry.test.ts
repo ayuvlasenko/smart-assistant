@@ -3,11 +3,14 @@ import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import invitesHandlersPlugin from "../invites/invites-handlers.js";
@@ -21,7 +24,9 @@ import pokerRoomsServicePlugin from "../poker/poker-rooms-service.js";
 import settingsHandlersPlugin from "../settings/settings-handlers.js";
 import { isAllowed } from "../telegram/telegram-guard.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
+import { BotEntity } from "./bot-entity.js";
 import { BotTokenCipher } from "./bot-token-cipher.js";
+import { BotData, BotsRepository } from "./bots-repository.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
@@ -58,40 +63,43 @@ void describe("BotsRegistry", () => {
                 env: { BOTS_ENCRYPTION_KEY: key },
             });
 
-        await botsRepository.createIfMissing({
-            _id: "42",
+        const child = await createBot(botsRepository, {
+            telegramId: "42",
             username: "child_bot",
             token: cipher.encrypt("42:child-token"),
         });
-        await botsRepository.createIfMissing({
-            _id: "43",
+        const stopped = await createBot(botsRepository, {
+            telegramId: "43",
             username: "stopped_bot",
             token: cipher.encrypt("43:stopped-token"),
         });
-        await botsRepository.disable("43", new Date());
-        await botsRegistry.refresh();
+        await botsRepository.disable(stopped._id, new Date());
 
         assert.deepEqual(
-            botsRegistry
-                .list()
+            (await botsRegistry.list())
                 .map(({ id }) => id)
                 .sort((a, b) => a.localeCompare(b)),
-            ["42", botsRegistry.rootId].sort((a, b) => a.localeCompare(b)),
+            [child._id, botsRegistry.rootId].sort((a, b) => a.localeCompare(b)),
         );
-        assert.deepEqual(botsRegistry.find(botsRegistry.rootId), {
+        assert.deepEqual(await botsRegistry.find(botsRegistry.rootId), {
             id: botsRegistry.rootId,
+            telegramId: testTelegramBotId,
             token: process.env.TELEGRAM_BOT_TOKEN,
             modules: ["bots"],
+            startModule: undefined,
         });
-        assert.deepEqual(botsRegistry.find("42"), {
-            id: "42",
+        assert.notEqual(child._id, "42");
+        assert.deepEqual(await botsRegistry.find(child._id), {
+            id: child._id,
+            telegramId: "42",
             token: "42:child-token",
             modules: [],
+            startModule: undefined,
         });
     });
 
     void it("skips a bot whose token it can't decrypt and keeps the root bot", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
@@ -103,31 +111,30 @@ void describe("BotsRegistry", () => {
                 },
             });
 
-        await botsRepository.createIfMissing({
-            _id: "42",
+        const child = await createBot(botsRepository, {
+            telegramId: "42",
             username: "child_bot",
             token: new BotTokenCipher(
                 randomBytes(32).toString("base64"),
             ).encrypt("42:child-token"),
         });
-        await botsRegistry.refresh();
 
-        assert.equal(botsRegistry.find("42"), undefined);
-        assert.ok(botsRegistry.find(botsRegistry.rootId));
+        assert.equal(await botsRegistry.find(child._id), undefined);
+        assert.ok(await botsRegistry.find(botsRegistry.rootId));
         assert.ok(
             logs
                 .readEntries()
                 .some(
                     (entry) =>
                         entry.msg === "Bot token can't be decrypted" &&
-                        entry.botId === "42",
+                        entry.botId === child._id,
                 ),
         );
         assert.ok(!JSON.stringify(logs.readEntries()).includes("child-token"));
     });
 
     void it("skips a bot whose stored token belongs to another bot", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
@@ -138,27 +145,26 @@ void describe("BotsRegistry", () => {
                 env: { BOTS_ENCRYPTION_KEY: key },
             });
 
-        await botsRepository.createIfMissing({
-            _id: "42",
+        const child = await createBot(botsRepository, {
+            telegramId: "42",
             username: "child_bot",
             token: new BotTokenCipher(key).encrypt("43:other-token"),
         });
-        await botsRegistry.refresh();
 
-        assert.equal(botsRegistry.find("42"), undefined);
+        assert.equal(await botsRegistry.find(child._id), undefined);
         assert.ok(
             logs
                 .readEntries()
                 .some(
                     (entry) =>
                         entry.msg === "Bot token belongs to another bot" &&
-                        entry.botId === "42",
+                        entry.botId === child._id,
                 ),
         );
         assert.ok(!JSON.stringify(logs.readEntries()).includes("other-token"));
     });
 
-    void it("loads a bot that another pod added after the last refresh", async (t) => {
+    void it("finds a bot that another pod added, by its id and by its Telegram id", async (t) => {
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
@@ -168,15 +174,52 @@ void describe("BotsRegistry", () => {
                 env: { BOTS_ENCRYPTION_KEY: key },
             });
 
-        await botsRepository.createIfMissing({
-            _id: "42",
+        const child = await createBot(botsRepository, {
+            telegramId: "42",
             username: "child_bot",
             token: new BotTokenCipher(key).encrypt("42:child-token"),
         });
 
-        assert.equal(botsRegistry.find("42"), undefined);
-        assert.equal((await botsRegistry.load("42"))?.token, "42:child-token");
-        assert.equal(botsRegistry.find("42")?.token, "42:child-token");
+        assert.equal(
+            (await botsRegistry.findByTelegramId("42"))?.token,
+            "42:child-token",
+        );
+        assert.equal(
+            (await botsRegistry.find(child._id))?.token,
+            "42:child-token",
+        );
+    });
+
+    void it("keeps the root bot and its data when the root token becomes a token of another bot", async (t) => {
+        const logs = createLoggerCollector();
+        const first = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+        });
+        const rootId = first.botsRegistry.rootId;
+        const second = await buildTelegramBotServiceTestApp({
+            databaseName,
+            mongoClient,
+            t,
+            logger: logs.logger,
+            env: { TELEGRAM_BOT_TOKEN: "777000111:other-root-token" },
+        });
+
+        assert.equal(second.botsRegistry.rootId, rootId);
+        assert.equal(
+            (await second.botsRegistry.find(rootId))?.telegramId,
+            "777000111",
+        );
+        assert.equal(await mongo.collection("bots").countDocuments({}), 1);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    ({ msg }) =>
+                        msg === "Root bot moved to another Telegram bot",
+                ),
+        );
     });
 });
 
@@ -222,29 +265,29 @@ void describe("Bot modules", () => {
             ],
         });
         const router = app.getDecorator<TelegramRouter>("telegramRouter");
-        const allowed = () => {
+        const allowed = async () => {
             const admin = buildUserEntity({
                 botId: botsRegistry.rootId,
                 grants: [adminGrant],
             });
+            const names: string[] = [];
 
-            return router
-                .listCommands()
-                .filter(({ guard }) => isAllowed(guard, admin))
-                .map(({ name }) => name)
-                .sort((a, b) => a.localeCompare(b));
+            for (const { name, guard } of router.listCommands()) {
+                if (await isAllowed(guard, admin)) {
+                    names.push(name);
+                }
+            }
+
+            return names.sort((a, b) => a.localeCompare(b));
         };
 
-        assert.deepEqual(allowed(), ["cancel", "invites", "settings"]);
+        assert.deepEqual(await allowed(), ["cancel", "invites", "settings"]);
 
-        const bot = await app
+        await app
             .getDecorator<PokerBot["botsRepository"]>("botsRepository")
             .updateModules(botsRegistry.rootId, ["poker", "ping"]);
 
-        assert.ok(bot);
-        botsRegistry.put(bot);
-
-        assert.deepEqual(allowed(), [
+        assert.deepEqual(await allowed(), [
             "cancel",
             "invites",
             "ping",
@@ -268,11 +311,16 @@ async function allowAdmin(
 }
 
 async function setModules(bot: PokerBot, modules: string[]): Promise<void> {
-    const updated = await bot.botsRepository.updateModules(
-        bot.botsRegistry.rootId,
-        modules,
-    );
+    await bot.botsRepository.updateModules(bot.botsRegistry.rootId, modules);
+}
 
-    assert.ok(updated);
-    bot.botsRegistry.put(updated);
+async function createBot(
+    botsRepository: BotsRepository,
+    data: BotData,
+): Promise<BotEntity> {
+    const bot = await botsRepository.createIfMissing(data);
+
+    assert.ok(bot);
+
+    return bot;
 }

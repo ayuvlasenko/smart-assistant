@@ -18,16 +18,22 @@ interface RateLimitFailure {
 export class RateLimitQueue {
     private readonly waiters = new Map<string, RateLimitWaiter[]>();
     private readonly take: RateLimitTake;
+    private readonly onIdle: () => void;
     private isDispatching = false;
     private isWakeRequested = false;
     private wakeSleep: (() => void) | undefined;
 
-    constructor(classNames: string[], take: RateLimitTake) {
+    constructor(
+        classNames: string[],
+        take: RateLimitTake,
+        onIdle: () => void = () => undefined,
+    ) {
         for (const className of classNames) {
             this.waiters.set(className, []);
         }
 
         this.take = take;
+        this.onIdle = onIdle;
     }
 
     async acquire(className: string, signal?: AbortSignal): Promise<number> {
@@ -103,6 +109,10 @@ export class RateLimitQueue {
             this.failAll(err);
         } finally {
             this.isDispatching = false;
+
+            if (this.waitingClasses().size === 0) {
+                this.onIdle();
+            }
         }
     }
 

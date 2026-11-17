@@ -6,12 +6,17 @@ import {
     AccessService,
     AccessSubjectName,
 } from "../access/access-service.js";
+import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { MetricsService } from "../metrics-service.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
 import { TelegramChats } from "../telegram/telegram-chats.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
+import {
+    TelegramStartEntries,
+    TelegramStartHandler,
+} from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
 import { PokerEvents } from "./poker-events.js";
 import { pokerLocales } from "./poker-locales.js";
@@ -52,6 +57,9 @@ export default fp(
         const events =
             fastify.getDecorator<Emittery<PokerEvents>>("eventEmitter");
         const metrics = fastify.getDecorator<MetricsService>("metrics");
+        const log = fastify
+            .getDecorator<AppLogger>("appLogger")
+            .child({ module: "poker" });
         const roomChanges = metrics.counter({
             name: "poker_room_changes_total",
             help: "Changes of poker rooms by kind",
@@ -117,20 +125,23 @@ export default fp(
         router.scene(roomScene);
         router.scene(pokerScene);
 
-        router.command(
-            "poker",
-            async (ctx) => {
-                await sceneEngine.start(
-                    ctx,
-                    pokerScene,
-                    buildPokerState(ctx.user._id.toHexString()),
-                );
-            },
-            {
+        const openPoker: TelegramStartHandler = async (ctx) => {
+            await sceneEngine.start(
+                ctx,
+                pokerScene,
+                buildPokerState(ctx.user._id.toHexString()),
+            );
+        };
+
+        router.command("poker", openPoker, {
+            guard: access.guard("read", pokerRoom),
+            description: (t) => t("poker:command"),
+        });
+        fastify
+            .getDecorator<TelegramStartEntries>("telegramStartEntries")
+            .register("poker", openPoker, {
                 guard: access.guard("read", pokerRoom),
-                description: (t) => t("poker:command"),
-            },
-        );
+            });
 
         router.deepLink(
             pokerDeepLinkName,
@@ -169,6 +180,18 @@ export default fp(
         events.on("poker.roomChanged", ({ data }) => {
             roomChanges.inc({ change: data.change });
 
+            if (data.change !== "voted") {
+                log.info(
+                    {
+                        botId: data.botId,
+                        roomId: data.roomId,
+                        change: data.change,
+                        participants: data.userIds.length,
+                    },
+                    "Poker room changed",
+                );
+            }
+
             if (data.change === "joined") {
                 roomParticipants.observe(data.userIds.length);
             }
@@ -185,6 +208,7 @@ export default fp(
         name: "poker-handlers",
         dependencies: [
             "access-service",
+            "app-logger",
             "emittery",
             "i18n-service",
             "metrics",
@@ -193,6 +217,7 @@ export default fp(
             "telegram-chats",
             "telegram-router",
             "telegram-scene-engine",
+            "telegram-start-entries",
         ],
     },
 );

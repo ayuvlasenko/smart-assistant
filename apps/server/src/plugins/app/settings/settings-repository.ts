@@ -11,8 +11,8 @@ export class SettingsRepository {
         this.mongo = mongo;
     }
 
-    findAll(): Promise<SettingEntity[]> {
-        return this.collection().find().toArray();
+    findOne(botId: string, name: string): Promise<SettingEntity | null> {
+        return this.collection().findOne({ botId, name });
     }
 
     async save(

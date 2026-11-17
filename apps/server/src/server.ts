@@ -2,18 +2,18 @@ import closeWithGrace from "close-with-grace";
 import Fastify, { FastifyServerOptions } from "fastify";
 import fp from "fastify-plugin";
 import serviceApp, { options } from "./app.js";
-import { requestIdOptions, requestLogSerializers } from "./request-logging.js";
+import {
+    buildLoggerOptions,
+    buildPrettyLoggerOptions,
+} from "./logger-options.js";
+import { requestIdOptions } from "./logger-request.js";
 
-type LoggerOptions = Exclude<
-    FastifyServerOptions["logger"],
-    boolean | undefined
->;
+function getLoggerOptions(): FastifyServerOptions["logger"] {
+    const level = process.env.LOG_LEVEL ?? "info";
 
-function getLoggerOptions(): LoggerOptions {
     if (process.stdout.isTTY) {
         return {
-            level: "info",
-            serializers: requestLogSerializers,
+            ...buildPrettyLoggerOptions(level),
             transport: {
                 target: "pino-pretty",
                 options: {
@@ -24,10 +24,7 @@ function getLoggerOptions(): LoggerOptions {
         };
     }
 
-    return {
-        level: process.env.LOG_LEVEL ?? "silent",
-        serializers: requestLogSerializers,
-    };
+    return buildLoggerOptions(level);
 }
 
 const app = Fastify({

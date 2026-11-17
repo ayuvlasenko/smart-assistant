@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
+import { REQUEST_ID_HEADER } from "../../../logger-request.js";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { telegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
-import { REQUEST_ID_HEADER } from "../../../request-logging.js";
 import { buildTestApp } from "../../../test/helper.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
+    testBotId,
     testTelegramBotId,
     testTelegramWebhookPath,
 } from "../../../test/telegram-fixtures.js";
@@ -89,7 +90,7 @@ void describe("POST /api/telegram/webhook", () => {
     });
 
     void it("skips an update of an unknown bot with a valid secret", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app, telegramApiService } = await buildTestApp({
             logger: logs.logger,
             t,
@@ -142,7 +143,7 @@ void describe("POST /api/telegram/webhook", () => {
     });
 
     void it("returns 200 and logs the error with the request id when update handling throws", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: logs.logger,
             t,
@@ -178,7 +179,7 @@ void describe("POST /api/telegram/webhook", () => {
     });
 
     void it("writes service logs with the request id during a real webhook request", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: logs.logger,
             t,
@@ -201,7 +202,7 @@ void describe("POST /api/telegram/webhook", () => {
         const responseRequestId = response.headers[REQUEST_ID_HEADER];
         const receivedUpdateLog = logs
             .readEntries()
-            .find((entry) => entry.msg === "Received update");
+            .find((entry) => entry.msg === "Update handled");
 
         assert.equal(response.statusCode, 200);
         assert.ok(typeof responseRequestId === "string");
@@ -210,7 +211,7 @@ void describe("POST /api/telegram/webhook", () => {
     });
 
     void it("doesn't write the message text to the logs", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: logs.logger,
             t,
@@ -233,7 +234,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const logOutput = JSON.stringify(logs.readEntries());
 
-        assert.ok(logOutput.includes("Received update"));
+        assert.ok(logOutput.includes("Update handled"));
         assert.ok(!logOutput.includes("secret-invite-token"));
     });
 });
@@ -254,7 +255,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         assert.deepEqual(response.json(), {
             bots: [
                 {
-                    botId: testTelegramBotId,
+                    botId: testBotId,
                     status: "refreshed",
                     webhookUrl: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
@@ -334,7 +335,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         assert.deepEqual(response.json(), {
             bots: [
                 {
-                    botId: testTelegramBotId,
+                    botId: testBotId,
                     status: "failed",
                     error: "Telegram setWebhook failed: bad webhook",
                 },

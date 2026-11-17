@@ -65,7 +65,8 @@ function buildContext<TUpdate extends Update>(
             "telegram:session:test",
         ),
         log,
-        t: new I18nService(i18next.createInstance()).getT("en"),
+        translatorOf: ({ languageCode }) =>
+            new I18nService(i18next.createInstance()).getT(languageCode),
         timeZone: "UTC",
         responder: new TelegramResponder(
             extractTelegramChat(update)?.id,
@@ -82,6 +83,18 @@ void describe("TelegramContext", () => {
         const context = buildContext(t, update);
 
         assert.equal(context.update, update);
+    });
+
+    void it("takes a newer document of its user, and refuses another user", (t) => {
+        const context = buildContext(t, buildTelegramTextMessageUpdate());
+        const refreshed = { ...context.user, grants: ["admin"] };
+
+        context.refreshUser(refreshed);
+
+        assert.equal(context.user, refreshed);
+        assert.throws(() => {
+            context.refreshUser(buildUserEntity());
+        }, /can't change its user/);
     });
 
     void it("narrows update with a single filter", (t) => {

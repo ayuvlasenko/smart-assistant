@@ -11,12 +11,16 @@ import {
     TestContext,
 } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { requestLogSerializers } from "../../../request-logging.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { loggerRequestSerializers } from "../../../logger-request.js";
+import {
+    createLoggerCollector,
+    LoggerEntry,
+} from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramPrivateChat,
+    testBotId,
     testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import {
@@ -161,7 +165,7 @@ void describe("TelegramChats", () => {
     });
 
     void it("delivers to the other participants when one of them fails", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const room = buildRoom([987654456, 987654457, 987654458]);
         const bot = await buildRoomBot(t, room, logs.logger);
         const [ada, bob, carl] = room.participantIds.map((id) =>
@@ -188,6 +192,10 @@ void describe("TelegramChats", () => {
                     (entry) => entry.msg === "Failed to deliver a scene update",
                 ),
         );
+        assert.deepEqual(
+            readDeliveryCounts(logs.readEntries(), "Scene update delivered"),
+            [{ recipients: 3, failed: 1 }],
+        );
     });
 
     void it("redraws only the scenes that watch a published topic", async (t) => {
@@ -202,7 +210,7 @@ void describe("TelegramChats", () => {
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -222,7 +230,7 @@ void describe("TelegramChats", () => {
         await bot.pressButton(bob, "Close");
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), []);
@@ -245,7 +253,7 @@ void describe("TelegramChats", () => {
 
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), []);
@@ -261,7 +269,7 @@ void describe("TelegramChats", () => {
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a", "board:b"]);
+        bot.telegramChats.publish(testBotId, ["board:a", "board:b"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -285,7 +293,7 @@ void describe("TelegramChats", () => {
         await entered.promise;
         boards.a = 1;
         boards.b = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
 
         try {
             await setTimeout(200);
@@ -324,7 +332,7 @@ void describe("TelegramChats", () => {
             );
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -333,7 +341,7 @@ void describe("TelegramChats", () => {
     });
 
     void it("publishes to the other watchers when one of them fails", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const boards: TestBoards = { a: 0, b: 0 };
         const bot = await buildBoardBot(t, boards, { logger: logs.logger });
         const ada = buildTelegramPrivateChat({ id: 987654469 });
@@ -344,7 +352,7 @@ void describe("TelegramChats", () => {
         boards.failingUserId = ada.id;
         bot.telegramApiService.editMessageText.mock.resetCalls();
         boards.a = 1;
-        bot.telegramChats.publish(testTelegramBotId, ["board:a"]);
+        bot.telegramChats.publish(testBotId, ["board:a"]);
         await bot.telegramChats.idle();
 
         assert.deepEqual(readEditedTexts(bot), [
@@ -356,6 +364,10 @@ void describe("TelegramChats", () => {
                 .some(
                     (entry) => entry.msg === "Failed to publish a scene update",
                 ),
+        );
+        assert.deepEqual(
+            readDeliveryCounts(logs.readEntries(), "Scene update published"),
+            [{ recipients: 2, failed: 1 }],
         );
         assert.match(
             await bot.metrics.metrics(),
@@ -383,7 +395,7 @@ async function buildBoardBot(
         logger,
     }: {
         ttl?: number;
-        logger?: ReturnType<typeof createLogCollector>["logger"];
+        logger?: ReturnType<typeof createLoggerCollector>["logger"];
     } = {},
 ): Promise<TelegramSceneBot> {
     const boardView = Type.Union([
@@ -457,7 +469,7 @@ async function buildBoardBot(
         mongoClient,
         t,
         logger: logger
-            ? { ...logger, serializers: requestLogSerializers }
+            ? { ...logger, serializers: loggerRequestSerializers }
             : false,
         registerRoutes: (router, sceneEngine) => {
             router.scene(boardScene);
@@ -482,12 +494,12 @@ function buildRoom(participantIds: number[]): TestRoom {
 async function buildRoomBot(
     t: TestContext,
     room: TestRoom,
-    logger?: ReturnType<typeof createLogCollector>["logger"],
+    logger?: ReturnType<typeof createLoggerCollector>["logger"],
 ): Promise<TelegramSceneBot> {
     const roomEvents = new Emittery<RoomEvents>();
     const roomTargets = ({ id, participantIds }: TestRoom) =>
         participantIds.map((userId) => ({
-            botId: testTelegramBotId,
+            botId: testBotId,
             userId,
             key: id,
         }));
@@ -535,7 +547,7 @@ async function buildRoomBot(
         mongoClient,
         t,
         logger: logger
-            ? { ...logger, serializers: requestLogSerializers }
+            ? { ...logger, serializers: loggerRequestSerializers }
             : false,
         registerRoutes: (router, sceneEngine) => {
             router.scene(roomScene);
@@ -570,6 +582,15 @@ async function readWatchers(
         .findIndexed(testTelegramBotId, telegramSceneTopicIndex(topic));
 
     return matches.map(({ userId }) => userId);
+}
+
+function readDeliveryCounts(
+    entries: LoggerEntry[],
+    message: string,
+): Pick<LoggerEntry, "recipients" | "failed">[] {
+    return entries
+        .filter(({ msg }) => msg === message)
+        .map(({ recipients, failed }) => ({ recipients, failed }));
 }
 
 function readEditedTexts(

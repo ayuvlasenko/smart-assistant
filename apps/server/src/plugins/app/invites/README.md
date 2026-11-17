@@ -44,6 +44,7 @@ sequenceDiagram
         S->>I: find by token, explain the refusal
     end
     H->>U: welcome, access updated, or refusal
+    H->>U: the start module of the bot, after new grants
 ```
 
 The activation is one atomic update: the filter checks the status and that the user is not in `activations` yet, and the same update pushes the user. Two users who race for the last place of an invite cannot both get it. The grants are written in a second update, so a failure between the two leaves the place taken and the user without grants; the user repairs it by opening the link again.
@@ -54,6 +55,8 @@ The activation is one atomic update: the filter checks the status and that the u
 | `alreadyActivated`           | The user is in `activations` and the invite is active or full | The same; the grants are given again                           |
 | `notFound`                   | No invite has the token                                       | Nothing to a banned user, `inviteNotFound` to others           |
 | `expired`, `revoked`, `full` | The invite exists and cannot be used by this user             | `inviteUnavailable`                                            |
+
+After `activated` and `alreadyActivated` the handler gives the context the user with the new grants through `ctx.refreshUser` and opens [the start module](../telegram/README.md#the-start-module) of the bot, so a user who came by a link lands in the feature the bot is for. A bot without a start module, or grants that do not open it, leave only the reply.
 
 A user who is already in the bot can open a link too: the invite adds its grants to the grants the user has. Grants only grow through invites; removing one is a change in MongoDB for now. `alreadyActivated` gives the grants again only while the invite still works, so revoking or letting an invite expire stops its old users from getting their grants back through it.
 
@@ -75,7 +78,7 @@ flowchart TD
 
 Every other bot gets its first admin from an owner link: `InvitesService.createOwnerInvite` creates an invite of that bot with `admin` and `maxUses: 1`, without `createdBy`, see [Adding a bot](../bots/README.md#adding-a-bot). The service checks no actor there, because the actor is an admin of the root bot and access keeps the invites of the new bot away from it; `BotsService` checks `update Bot` first.
 
-A bootstrap invite is an invite without `createdBy`. So the token works once, for the first user, while no admin exists; a changed or removed token, or an admin from any source, closes every older bootstrap invite. A token that comes back before anybody used it reopens its invite; a token that was used stays closed, and the server logs a warning on every start until `INVITE_TOKEN` changes. Nothing makes the check and the insert atomic: two instances that start at the same moment against a database without an admin can both try to insert, and the unique index on `token` stops the second one.
+A bootstrap invite is an invite without `createdBy`. So the token works once, for the first user, while no admin exists; a changed or removed token, or an admin from any source, closes every older bootstrap invite. A token that comes back before anybody used it reopens its invite; a token that was used stays closed, and the server logs a warning on every start until `INVITE_TOKEN` changes. The bootstrap creates the invite with an upsert on `token`, the field of the unique index, so two instances that start at the same moment against a database without an admin create one invite, and the second instance keeps it. A token that an invite of another bot holds stays with that invite, and the server logs the same warning.
 
 ## Scene
 

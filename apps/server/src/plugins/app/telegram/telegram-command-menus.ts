@@ -3,32 +3,40 @@ import { Type } from "@sinclair/typebox";
 import Emittery from "emittery";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
 import {
     defaultLanguage,
     I18nService,
+    Language,
     languages,
     Translate,
 } from "../i18n-service.js";
-import { UserEntity } from "../users/user-entity.js";
+import { buildUserWithoutGrants, UserEntity } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersEvents } from "../users/users-events.js";
-import { TelegramMethodArgs } from "./telegram-api-service.js";
+import { UsersRepository } from "../users/users-repository.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramApiError } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
-import { TelegramCommandInfo, TelegramRouter } from "./telegram-router.js";
+import { TelegramRouter } from "./telegram-router.js";
 
-const telegramChatCommandsCacheTtlMilliseconds = 24 * 60 * 60 * 1000;
-const telegramCommandsGenerationTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
+interface TelegramBotMenu {
+    languageCode?: Language;
+    commands: BotCommand[];
+}
+
+const botMenuHashTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
 
 export class TelegramCommandMenus {
     private readonly log: FastifyBaseLogger;
     private readonly telegramBots: TelegramBots;
     private readonly telegramRouter: TelegramRouter;
+    private readonly usersRepository: UsersRepository;
     private readonly cache: CacheService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
@@ -38,6 +46,7 @@ export class TelegramCommandMenus {
         log: FastifyBaseLogger,
         telegramBots: TelegramBots,
         telegramRouter: TelegramRouter,
+        usersRepository: UsersRepository,
         cache: CacheService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
@@ -46,6 +55,7 @@ export class TelegramCommandMenus {
         this.log = log;
         this.telegramBots = telegramBots;
         this.telegramRouter = telegramRouter;
+        this.usersRepository = usersRepository;
         this.cache = cache;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
@@ -57,9 +67,9 @@ export class TelegramCommandMenus {
             return;
         }
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.listBotsOnStart()) {
             try {
-                await this.setDefaults(bot);
+                await this.syncBot(bot);
             } catch (err) {
                 this.log.error(
                     { err, botId: bot.id },
@@ -70,57 +80,94 @@ export class TelegramCommandMenus {
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
-        await this.setDefaults(bot);
-        await this.cache.set(generationKeyOf(bot), randomUUID(), {
-            ttlMilliseconds: telegramCommandsGenerationTtlMilliseconds,
+        const menus = await this.buildBotMenus(bot);
+
+        await this.cache.delete(botMenuKeyOf(bot));
+
+        for (const { languageCode, commands } of menus) {
+            const result = await bot.api.setMyCommands({
+                commands,
+                ...(languageCode ? { language_code: languageCode } : {}),
+            });
+
+            if (!result.ok) {
+                throw new TelegramApiError("setMyCommands", result);
+            }
+        }
+
+        await this.cache.set(botMenuKeyOf(bot), hashMenus(bot, menus), {
+            ttlMilliseconds: botMenuHashTtlMilliseconds,
         });
+        this.log.info(
+            {
+                botId: bot.id,
+                commands: menus[0]?.commands.map(({ command }) => command),
+            },
+            "Telegram commands set successfully",
+        );
     }
 
-    async sync(user: UserEntity): Promise<void> {
-        const bot = this.telegramBots.find(user.botId);
+    async syncBot(bot: TelegramBot): Promise<void> {
+        const hash = await this.cache.get(botMenuKeyOf(bot), Type.String());
 
-        if (user.isBanned || !bot) {
+        if (hash !== hashMenus(bot, await this.buildBotMenus(bot))) {
+            await this.refresh(bot);
+        }
+    }
+
+    async syncUser(user: UserEntity): Promise<void> {
+        const bot = await this.telegramBots.find(user.botId);
+
+        if (bot) {
+            await this.sync(bot, user);
+        }
+    }
+
+    async sync(bot: TelegramBot, user: UserEntity): Promise<void> {
+        if (user.isBanned) {
             return;
         }
 
-        const commands = describeCommands(
-            this.telegramRouter
-                .listCommands()
-                .filter(({ guard }) => isAllowed(guard, user)),
-            this.i18nService.getT(user.languageCode),
-        );
-        const key = `telegram:${bot.id}:commands:${user.telegramId}`;
+        const [commands, defaultCommands] = await Promise.all([
+            this.describeCommandsOf(
+                user,
+                this.i18nService.getT(languageOf(user)),
+            ),
+            this.describeCommandsOf(
+                buildUserWithoutGrants(user.botId),
+                this.i18nService.getT(user.languageCode),
+            ),
+        ]);
+        const commandMenu = isDeepStrictEqual(commands, defaultCommands)
+            ? undefined
+            : hashMenus(bot, [{ commands }]);
+
+        if (commandMenu === user.commandMenu) {
+            this.telegramMetrics.recordCommandMenuSync("unchanged");
+            return;
+        }
 
         try {
-            const generation = await this.cache.get(
-                generationKeyOf(bot),
-                Type.String(),
+            await this.setChatMenu(
+                bot,
+                Number(user.telegramId),
+                commandMenu ? commands : undefined,
             );
-            const hash = createHash("sha256")
-                .update(JSON.stringify({ generation, commands }))
-                .digest("base64url");
-
-            if ((await this.cache.get(key, Type.String())) === hash) {
-                this.telegramMetrics.recordCommandMenuSync("unchanged");
-                return;
-            }
-
-            await this.set(bot, {
-                commands,
-                scope: { type: "chat", chat_id: Number(user.telegramId) },
-            });
-            await this.cache.set(key, hash, {
-                ttlMilliseconds: telegramChatCommandsCacheTtlMilliseconds,
-            });
-            this.telegramMetrics.recordCommandMenuSync("set");
-
+            await this.usersRepository.setCommandMenu(user._id, commandMenu);
+            this.telegramMetrics.recordCommandMenuSync(
+                commandMenu ? "set" : "removed",
+            );
             this.log.info(
                 {
                     botId: bot.id,
                     userId: user._id,
-                    commands: commands.map(({ command }) => command),
+                    commands: commandMenu
+                        ? commands.map(({ command }) => command)
+                        : undefined,
                 },
-                "Telegram chat commands set successfully",
+                commandMenu
+                    ? "Telegram chat commands set successfully"
+                    : "Telegram chat commands removed",
             );
         } catch (err) {
             this.telegramMetrics.recordCommandMenuSync("failed");
@@ -131,51 +178,80 @@ export class TelegramCommandMenus {
         }
     }
 
-    private async setDefaults(bot: TelegramBot): Promise<void> {
-        const commands = this.telegramRouter
-            .listCommands()
-            .filter(({ guard }) => !guard);
+    private async listBotsOnStart(): Promise<TelegramBot[]> {
+        try {
+            return await this.telegramBots.list();
+        } catch (err) {
+            this.log.error({ err }, "Failed to read the bots on start");
+            return [];
+        }
+    }
 
-        for (const languageCode of [undefined, ...languages]) {
-            await this.set(bot, {
-                commands: describeCommands(
-                    commands,
+    private buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
+        const user = buildUserWithoutGrants(bot.id);
+
+        return Promise.all(
+            [undefined, ...languages].map(async (languageCode) => ({
+                languageCode,
+                commands: await this.describeCommandsOf(
+                    user,
                     this.i18nService.getT(languageCode ?? defaultLanguage),
                 ),
-                ...(languageCode ? { language_code: languageCode } : {}),
-            });
-        }
-
-        this.log.info(
-            { botId: bot.id, commands: commands.map(({ name }) => name) },
-            "Telegram commands set successfully",
+            })),
         );
     }
 
-    private async set(
+    private async describeCommandsOf(
+        user: UserEntity,
+        t: Translate,
+    ): Promise<BotCommand[]> {
+        const commands: BotCommand[] = [];
+
+        for (const route of this.telegramRouter.listCommands()) {
+            if (await isAllowed(route.guard, user)) {
+                commands.push({
+                    command: route.name,
+                    description: route.description(t),
+                });
+            }
+        }
+
+        return commands;
+    }
+
+    private async setChatMenu(
         bot: TelegramBot,
-        ...args: TelegramMethodArgs<"setMyCommands">
+        chatId: number,
+        commands: BotCommand[] | undefined,
     ): Promise<void> {
-        const result = await bot.api.setMyCommands(...args);
+        const scope = { type: "chat", chat_id: chatId } as const;
+
+        if (commands) {
+            const result = await bot.api.setMyCommands({ commands, scope });
+
+            if (!result.ok) {
+                throw new TelegramApiError("setMyCommands", result);
+            }
+
+            return;
+        }
+
+        const result = await bot.api.deleteMyCommands({ scope });
 
         if (!result.ok) {
-            throw new TelegramApiError("setMyCommands", result);
+            throw new TelegramApiError("deleteMyCommands", result);
         }
     }
 }
 
-function describeCommands(
-    commands: TelegramCommandInfo[],
-    t: Translate,
-): BotCommand[] {
-    return commands.map(({ name, description }) => ({
-        command: name,
-        description: description(t),
-    }));
+function hashMenus(bot: TelegramBot, menus: TelegramBotMenu[]): string {
+    return createHash("sha256")
+        .update(JSON.stringify({ telegramId: bot.telegramId, menus }))
+        .digest("base64url");
 }
 
-function generationKeyOf(bot: TelegramBot): string {
-    return `telegram:${bot.id}:commands:generation`;
+function botMenuKeyOf(bot: TelegramBot): string {
+    return `telegram:${bot.telegramId}:commands:menu`;
 }
 
 export default fp(
@@ -186,6 +262,7 @@ export default fp(
                 .child({ module: "telegram" }),
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramRouter>("telegramRouter"),
+            fastify.getDecorator<UsersRepository>("usersRepository"),
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
@@ -197,7 +274,7 @@ export default fp(
         fastify
             .getDecorator<Emittery<UsersEvents>>("eventEmitter")
             .on("users.accessChanged", ({ data }) =>
-                telegramCommandMenus.sync(data.user),
+                telegramCommandMenus.syncUser(data.user),
             );
 
         fastify.addHook("onListen", async () => {
@@ -215,6 +292,7 @@ export default fp(
             "telegram-bots",
             "telegram-metrics",
             "telegram-router",
+            "users-repository",
         ],
     },
 );

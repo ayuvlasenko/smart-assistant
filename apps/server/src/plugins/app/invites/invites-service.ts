@@ -11,7 +11,7 @@ import {
     adminGrant,
 } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
-import { botIdOfToken } from "../bots/bot-entity.js";
+import { BotsRegistry } from "../bots/bots-registry.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
@@ -95,7 +95,7 @@ export class InvitesService {
             expiresAt: draft.expiresAt,
         };
 
-        this.access.assert(actor, "create", subject("Invite", data));
+        await this.access.assert(actor, "create", subject("Invite", data));
 
         if (!grants.length) {
             throw new InviteWithoutGrantsError();
@@ -153,7 +153,7 @@ export class InvitesService {
         return this.invitesRepository.findOne({
             $and: [
                 { _id: inviteId },
-                this.access.accessibleBy(actor, "read", "Invite"),
+                await this.access.accessibleBy(actor, "read", "Invite"),
             ],
         });
     }
@@ -162,7 +162,7 @@ export class InvitesService {
         actor: UserEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteEntity>> {
-        const filter = this.access.accessibleBy(actor, "read", "Invite");
+        const filter = await this.access.accessibleBy(actor, "read", "Invite");
         const [items, total] = await Promise.all([
             this.invitesRepository.findPage({
                 filter,
@@ -181,7 +181,7 @@ export class InvitesService {
         invite: InviteEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteUser>> {
-        this.access.assert(actor, "read", subject("Invite", invite));
+        await this.access.assert(actor, "read", subject("Invite", invite));
 
         const activations = invite.activations
             .toReversed()
@@ -210,7 +210,7 @@ export class InvitesService {
             return null;
         }
 
-        this.access.assert(actor, "update", subject("Invite", invite));
+        await this.access.assert(actor, "update", subject("Invite", invite));
 
         const revoked = await this.invitesRepository.revoke(
             inviteId,
@@ -279,20 +279,24 @@ export class InvitesService {
         token: string,
         now: Date,
     ): Promise<InvitesBootstrap["invite"]> {
+        const isCreated = await this.invitesRepository.createIfMissing({
+            botId,
+            token,
+            grants: [adminGrant],
+            maxUses: 1,
+        });
+
+        if (isCreated) {
+            return "created";
+        }
+
         const invite = await this.invitesRepository.findOneByToken(
             botId,
             token,
         );
 
         if (!invite) {
-            await this.invitesRepository.create({
-                botId,
-                token,
-                grants: [adminGrant],
-                maxUses: 1,
-            });
-
-            return "created";
+            return "unusable";
         }
 
         const isUnusedBootstrapInvite =
@@ -362,7 +366,7 @@ export default fp(
 
         fastify.addHook("onReady", async () => {
             const { invite, revoked } = await invitesService.bootstrap(
-                botIdOfToken(config.TELEGRAM_BOT_TOKEN),
+                fastify.getDecorator<BotsRegistry>("botsRegistry").rootId,
                 config.INVITE_TOKEN,
             );
 
@@ -389,6 +393,7 @@ export default fp(
             "@fastify/env",
             "access-service",
             "app-logger",
+            "bots-registry",
             "emittery",
             "invites-repository",
             "users-repository",

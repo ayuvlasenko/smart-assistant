@@ -31,6 +31,7 @@ import settingsRepositoryPlugin from "../plugins/app/settings/settings-repositor
 import settingsServicePlugin, {
     SettingsService,
 } from "../plugins/app/settings/settings-service.js";
+import userSettingsServicePlugin from "../plugins/app/settings/user-settings-service.js";
 import telegramPlugin, {
     TelegramBotService,
 } from "../plugins/app/telegram/telegram-bot-service.js";
@@ -54,6 +55,7 @@ import telegramSceneEnginePlugin, {
 import telegramSessionStorePlugin, {
     TelegramSessionStoreOptions,
 } from "../plugins/app/telegram/telegram-session-store.js";
+import telegramStartEntriesPlugin from "../plugins/app/telegram/telegram-start-entries.js";
 import telegramSystemHandlersPlugin from "../plugins/app/telegram/telegram-system-handlers.js";
 import telegramUpdateHandlerPlugin, {
     TelegramUpdateHandler,
@@ -158,6 +160,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(accessPlugin);
     app.register(settingsRepositoryPlugin);
     app.register(settingsServicePlugin);
+    app.register(userSettingsServicePlugin);
     app.register(accessDefaultGrantsPlugin);
     app.register(botsRepositoryPlugin);
     app.register(botsRegistryPlugin);
@@ -176,6 +179,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(telegramSceneEnginePlugin);
     app.register(telegramChatsPlugin);
     app.register(telegramRouterPlugin);
+    app.register(telegramStartEntriesPlugin);
     app.register(telegramSystemHandlersPlugin);
     app.register(telegramCommandMenusPlugin);
     app.register(telegramPlugin);
@@ -211,14 +215,7 @@ export async function buildTelegramBotServiceTestApp({
     const valkey = app.getDecorator<Redis>("valkey");
     const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
     const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
-    const testBot = await botsRepository.updateModules(
-        botsRegistry.rootId,
-        modules,
-    );
-
-    if (testBot) {
-        botsRegistry.put(testBot);
-    }
+    await botsRepository.updateModules(botsRegistry.rootId, modules);
 
     t.after(async () => {
         try {
@@ -253,7 +250,12 @@ export async function buildTelegramBotServiceTestApp({
 
 export async function buildTwoBotsTestApp(
     options: BuildTelegramBotServiceTestAppOptions,
-): Promise<TelegramBotServiceTestApp & { child: TelegramApiServiceMock }> {
+): Promise<
+    TelegramBotServiceTestApp & {
+        child: TelegramApiServiceMock;
+        childBotId: string;
+    }
+> {
     const key = randomBytes(32).toString("base64");
     const child = buildTelegramApiServiceMock({ t: options.t });
     const app = await buildTelegramBotServiceTestApp({
@@ -262,7 +264,7 @@ export async function buildTwoBotsTestApp(
         env: { ...options.env, BOTS_ENCRYPTION_KEY: key },
     });
     const bot = await app.botsRepository.createIfMissing({
-        _id: "42",
+        telegramId: "42",
         username: "child_bot",
         token: new BotTokenCipher(key).encrypt("42:child-token"),
     });
@@ -271,9 +273,7 @@ export async function buildTwoBotsTestApp(
         throw new Error("Bot 42 is already stored");
     }
 
-    app.botsRegistry.put(bot);
-
-    return { ...app, child };
+    return { ...app, child, childBotId: bot._id };
 }
 
 function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

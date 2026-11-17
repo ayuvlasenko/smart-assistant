@@ -34,7 +34,7 @@ Most of the code below exists because of these limits of the Bot API:
 - The bot changes a message only by its id. An edit to the same content fails with `message is not modified`, and a text message cannot become a photo.
 - The bot can delete a message only during 48 hours after it was sent. In a private chat this covers the messages of the user too.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
-- The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
+- The command menu is set for the bot, per language and per chat with `setMyCommands`; a chat without a menu of its own shows the menu of the bot. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
 - The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method; a test showed that deletes do not count against the message limit of the chat, see [Rate limits](#rate-limits).
 
 ## Writing bot code
@@ -46,8 +46,9 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 - `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
 - `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
 - `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. Code that already has the username of the bot calls `buildTelegramDeepLinkUrl(username, { name, value })`. See [Deep links](#deep-links).
+- `telegramStartEntries.register(module, handler, { guard })` declares what `/start` opens in a bot whose start module is that module, usually the handler of the main command of the module. See [The start module](#the-start-module).
 - When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
-- Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
+- Send every user-facing text through `ctx.t`. It speaks the language of `languageOf(ctx.user)`, and follows `ctx.refreshUser`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
 
 ### A scene
@@ -234,7 +235,7 @@ Every inline keyboard follows the same layout, so a user finds the same kind of 
 
 ```mermaid
 flowchart TD
-    route["routes/api/telegram<br/>POST /webhook/:botId"] -->|"find the bot"| bots[TelegramBots]
+    route["routes/api/telegram<br/>POST /webhook/:telegramId"] -->|"find the bot"| bots[TelegramBots]
     route --> handler[TelegramUpdateHandler]
     handler -->|"claim update_id"| lock[LockService]
     handler -->|"find or create user"| users[UsersService]
@@ -273,34 +274,34 @@ flowchart TD
 
 **Problem.** One server serves several Telegram bots, and every bot has its own token, webhook and chats. An update does not say which bot it came to. Every bot counts its own `update_id`, and a person has the same Telegram id, and the same id of the private chat, in every bot. So a key built from these ids alone mixes the bots.
 
-**Idea.** The webhook URL of a bot ends with the bot id, and the route takes the bot from the path. Every bot gets its own secret token, derived from one master secret, so the route checks the token before it looks the bot up. Every key of a user or a chat starts with the bot id.
+**Idea.** The webhook URL of a bot ends with the Telegram id of the bot, and the route takes the bot from the path. Every bot gets its own secret token, derived from one master secret, so the route checks the token before it looks the bot up. Every Valkey key of a user or a chat starts with the same Telegram id.
 
 **Data.**
 
 ```text
-https://<DOMAIN>/api/telegram/webhook/<resource>/<botId>   the URL that Telegram calls; the ingress rewrites it
-POST /api/telegram/webhook/<botId>                         to this route
-X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, botId)
+https://<DOMAIN>/api/telegram/webhook/<resource>/<telegramId>   the URL that Telegram calls; the ingress rewrites it
+POST /api/telegram/webhook/<telegramId>                         to this route
+X-Telegram-Bot-Api-Secret-Token                                 base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, telegramId)
 ```
 
-`<botId>` is the number before `:` in the token of the bot. `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
+`<telegramId>` is the number before `:` in the token of the bot. Everything that Telegram or Valkey knows about a bot carries this number: the webhook path and its secret, the keys `telegram:<telegramId>:…` and the rate limit buckets. MongoDB knows a bot by the id of its document, the `botId` of a user, which stays when the bot moves to another Telegram bot, see [The id of a bot](../bots/README.md#the-id-of-a-bot). `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id, its `telegramId` and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
 
 **Walk-through.** Telegram sends an update to a bot.
 
-1. The route reads `botId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
-2. The route finds the bot with `TelegramBots.load`: in the snapshot of the registry, or in MongoDB when another pod added the bot after the last refresh. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
+1. The route reads `telegramId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
+2. The route reads the bot from MongoDB with `TelegramBots.findByTelegramId`. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
 4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
-**Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the bot id in the label `bot`.
+**Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 
-**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The bot id is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
+**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The Telegram id of a bot is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and `resolveTelegramWebhookUrl` appends the Telegram id of the bot to it.
 
 ## An incoming update
 
 ```mermaid
 sequenceDiagram
-    participant R as POST /webhook/:botId
+    participant R as POST /webhook/:telegramId
     participant H as TelegramUpdateHandler
     participant C as TelegramChats
     participant S as TelegramSessionStore
@@ -312,7 +313,7 @@ sequenceDiagram
     H->>H: find or create user, follow name and language
     H->>H: sync the chat command menu
     H->>C: withUpdate(update, user)
-    C->>S: withSession(botId, userId)
+    C->>S: withSession(telegramId, userId)
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
@@ -335,11 +336,13 @@ sequenceDiagram
     H->>H: answer callback, map errors to a reply and a metric
 ```
 
-**Duplicates.** Before anything else, the handler sets `telegram:<botId>:update:<update_id>` with `SET NX` for one hour. Every bot counts its own `update_id`, so the key carries the bot. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
+**Duplicates.** Before anything else, the handler sets `telegram:<telegramId>:update:<update_id>` with `SET NX` for one hour. Every Telegram bot counts its own `update_id`, so the key carries its Telegram id. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
 
 **Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
-**New users.** The user lookup is one upsert by the bot id and the Telegram id through `UsersService.findOrCreateByTelegramId`. One person gets a separate user in every bot, with its own ban, grants and language. A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
+**Logs.** Every update ends with one line, `Update handled`, with the result label of `telegram_updates_total`, the time in `durationMs` and `route`: `command:<name>`, `deepLink:<name>`, `scene` for a button press or an input text, or `route` for an `on` or `when` route. When the bot stays silent because a guard refused the user, `refusedRoute` names the command or the deep link. Every line of the update carries `botId`, `updateId` and `telegramUserId`, and `userId` once the user is loaded, also the lines that a handler writes through `ctx.log`. The request ends with one `request completed` line with the status and `responseTime`, and both lines share `reqId`.
+
+**New users.** The user lookup is one upsert by the bot id and the Telegram id through `UsersService.findOrCreateByTelegramId`. One person gets a separate user in every bot, with its own ban, grants and language. `languageCode` follows the language of the Telegram client on every update; the texts use `languageOf(user)`, which prefers the language the user picked in `/settings`, see [A setting of a user](../settings/README.md#a-setting-of-a-user). A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
 
 ## Session and lock
 
@@ -350,19 +353,19 @@ sequenceDiagram
 **Data.**
 
 ```text
-telegram:<botId>:session:42            hash, every field with its own TTL (HPEXPIRE)
+telegram:<telegramId>:session:42            hash, every field with its own TTL (HPEXPIRE)
     scene:Xk3f9aB1c0dE                 the record of one scene instance, JSON
     focus                              id of the scene whose input waits for text
     blocking                           id of the running blocking scene
-telegram:<botId>:session:42:lock       token of the update that holds the session
-telegram:<botId>:index:<name>          sorted sets, see "Updates for other users"
+telegram:<telegramId>:session:42:lock       token of the update that holds the session
+telegram:<telegramId>:index:<name>          sorted sets, see "Updates for other users"
 ```
 
 A hash keeps all the state of a user under one key, so one Lua call writes it atomically. A field TTL lets every scene expire on its own, without a cleanup job. `HPEXPIRE` needs Valkey 9.
 
 **Walk-through.**
 
-1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. It tries again every 50 ms until it gets the lock. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait.
+1. `TelegramSessionStore.withSession` takes the lock: `SET <session>:lock <token> NX PX 30000`. The handlers of one pod wait for the same lock in a queue in memory, in the order they came, and only the first of them asks Valkey. It asks again every 50 ms while a handler of another pod holds the lock. A wait of more than 1 s logs a warning; `lock_wait_seconds` measures every wait, with the time in the queue.
 2. While the update runs, the lock extends itself every 10 s, so a long update does not lose it. The lock gives the handler an `AbortSignal`, and `TelegramChats` puts it into the scope of the Bot API calls, see [Rate limits](#rate-limits).
 3. `TelegramSession.read` loads a field the first time somebody asks for it and keeps it in memory. A handler that touches one scene reads one field.
 4. `write`, `remove`, `index` and `unindex` only record the change.
@@ -382,16 +385,16 @@ The session is saved also when the handler throws, so the changes made before th
 **Data.** The prefix of the resource is left out.
 
 ```text
-rate-limit:telegram:<botId>:chat:42                    hash: tokens, updatedAt (ms)
-rate-limit:telegram:<botId>:chat:42:deletes            hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global                     hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:class:interactive   hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:class:background    hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:waiting:background  sorted set: pod id → expiry time (ms)
-rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:chat:42                    hash: tokens, updatedAt (ms)
+rate-limit:telegram:<telegramId>:chat:42:deletes            hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global                     hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:class:interactive   hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:class:background    hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:waiting:background  sorted set: pod id → expiry time (ms)
+rate-limit:telegram:<telegramId>:commands                   hash: tokens, updatedAt
 ```
 
-`<botId>` is the number before `:` in the token of the bot, so every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again.
+`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script by its hash and loads the script again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script.
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
@@ -400,19 +403,19 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 | `chatMessages`, `chat:<chat_id>`         | 1 per second | 20    | `send*`, `edit*`                                                                |
 | `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                                                              |
 | `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                                                                |
-| `botCommands`, `commands`                | 5 per second | 5     | `setMyCommands`                                                                 |
+| `botCommands`, `commands`                | 2 per second | 6     | `setMyCommands`, `deleteMyCommands`                                             |
 | none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook`, `deleteWebhook`, `getWebhookInfo` |
 
-The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a test in one private chat, Telegram took 100 `sendMessage` calls before the first `429` and refilled them within a minute, so `chatMessages` lets 20 calls through at once: enough for a screen of several messages or fast paging, and well under that test. We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. Every new user and every change of a menu calls it, so a wave of new users would send it in a burst; `botCommands` spreads the burst, and a `429` pauses the bucket for every pod.
+The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a test in one private chat, Telegram took 100 `sendMessage` calls before the first `429` and refilled them within a minute, so `chatMessages` lets 20 calls through at once: enough for a screen of several messages or fast paging, and well under that test. We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. In a test, 20 calls sent at once passed and every later call got a `429` with a `retry_after` of 6 s, with 30 calls to one menu and with 40 calls to 40 different menus alike, so the limit counts for the bot and not for a menu. `botCommands` lets 6 calls through at once and 2 per second after them, at most 18 in any 6 s, and a `429` pauses the bucket for every pod. The test set the menus of a language; the menu of a chat was not tested.
 
 **Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 
 1. `TelegramChats.withContext` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call outside a session, such as `setMyCommands` before the lock, gets the class `interactive` and its own 60 s timeout signal.
 2. `TelegramApiService.call` reads the scope and asks `telegramRateLimitBuckets` for the buckets of `editMessageText`: the chat bucket, then the global one.
-3. `RateLimiter.acquire` takes a chat token. When the bucket is empty, the script returns the time to the next token, and the call sleeps and tries again. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one.
-4. For the global bucket the call joins the queue of its class in `RateLimitQueue`, one queue per bucket in the pod. A single loop serves the queues. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
+3. `RateLimiter.acquire` puts the call into the queue of the chat bucket. Every bucket has one `RateLimitQueue` in the pod, and only the loop of the queue asks Valkey, so the calls that wait for one bucket cost about one request per token and not one request per waiting call. The script takes a token or returns the time to the next one, and the loop sleeps until then. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one. A queue leaves the memory of the pod when it has served its last call.
+4. The queue of the global bucket has one line per class, and its loop serves both. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
 5. The call sends the request with `AbortSignal.any([signal, timeout])`.
-6. On `429` the call records `retry_after`, empties the first bucket of the method, such as `chatMessages` for an edit or `chatDeletes` for a delete, for `retry_after` seconds, so every call of that chat that takes the bucket waits, and goes back to step 3. A method without buckets just sleeps `retry_after`. There is no retry limit: the signal of the scope ends the wait.
+6. On `429` the call records `retry_after` and empties every bucket of the method for `retry_after` seconds: `chatMessages` and `botMessages` for an edit, `chatDeletes` for a delete. So after a `429` of an edit every send and edit of the bot waits on every pod. Then the call goes back to step 3. Telegram does not say whether a `429` counts for one chat or for the whole bot, and no test of ours sent to a second chat during a `429`, so the call takes the safe reading: a bot that keeps sending after a `429` gets longer bans. A method without buckets just sleeps `retry_after`. There is no retry limit: the signal of the scope ends the wait.
 
 **Edge cases.**
 
@@ -546,7 +549,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 
 ## Message handover
 
-**Problem.** A scene that opens another scene, such as a list that opens an item, leaves its own message in the chat, and the other scene sends a new message below it. The chat grows by one message on every open. A handler cannot move the message to the other scene by itself, because it never keeps a message id.
+**Problem.** A scene that opens another scene, such as a list that opens an item, leaves its own message in the chat, and the other scene sends a new message below it. The chat grows by one message on every open. The engine keeps the message ids and a handler never sees them, see [Screens and messages](#screens-and-messages), so the engine moves the message to the other scene.
 
 **Idea.** `scene.handOver(otherScene, state)` ends the scene and gives its `messages` to the instance of the other scene. The engine draws the other scene into those messages by position, so the list message becomes the item in place.
 
@@ -632,7 +635,7 @@ flowchart TD
 
 ## Updates for other users
 
-**Problem.** Some data belongs to several users at once, such as an invite that every admin can open. Every user who looks at it has their own scene instance. When one user changes the data, the scenes of the other users must redraw. A handler cannot write to their sessions: each session belongs to the holder of its lock.
+**Problem.** Some data belongs to several users at once, such as an invite that every admin can open. Every user who looks at it has their own scene instance. When one user changes the data, the scenes of the other users must redraw. A write to the session of another user without the lock of that session would race with the update of that user, so a handler never writes there.
 
 **Idea.** The change goes through a domain event. The domain plugin then asks `TelegramChats` to run code inside each affected chat, under that user's lock, as if the user had sent an update. The engine renders and saves the scenes there in the usual way.
 
@@ -645,7 +648,7 @@ A topic is a name of the data that a scene shows, chosen by the domain and prefi
 **Data.**
 
 ```text
-telegram:<botId>:index:scene-topic:invites.invite:66f1c2…     sorted set
+telegram:<telegramId>:index:scene-topic:invites.invite:66f1c2…     sorted set
     42:invites:Xk3f9aB1c0dE      score 1760586400000   (expiry of the scene)
     77:invites:Pq81LmZ0aa2K      score 1760590000000
 ```
@@ -711,9 +714,11 @@ sequenceDiagram
 
 Every target names the bot, the user id and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
 
-**Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod.
+**Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod. A pod runs at most 25 deliveries of a bot at once, `telegramDeliveryLimit`, the number of messages the bot may send in a second. A delivery takes a permit from `TelegramDeliveryPermits` before it takes the session lock, and the other deliveries wait without a lock. So a recipient of a large `publish` holds the lock for the time of 25 tokens at most, 1 s at the full rate and 5 s while interactive calls take their share, and not until the whole queue is sent. The permits count in the memory of one pod, and the tokens come from the bucket that all pods share. So when several pods deliver for one bot at the same time, that time grows with their number: up to 4 s and 20 s with the four pods of production.
 
-**Metrics.** `telegram_delivery_recipients{kind}` is the number of users of one `publish` or `deliver`. `telegram_delivery_duration_seconds{kind}` measures the update of one user, together with the wait for the session lock, and `telegram_delivery_recipients_in_flight{kind}` counts the users whose update has started and not finished. A growing duration with many recipients in flight is the sign that the background runs need a limit, see `docs/backlog/background-delivery-waits-for-rate-limit-under-session-lock.md`.
+**Logs.** Every `deliver` and `publish` that has recipients ends with one line, `Scene update delivered` with the scene or `Scene update published` with the bot and the topics. The line carries `recipients`, `failed` and `durationMs`, the time until the last recipient is done. A failed recipient also gets its own error line.
+
+**Metrics.** `telegram_delivery_recipients{kind}` is the number of users of one `publish` or `deliver`. `telegram_delivery_duration_seconds{kind}` measures the update of one user, together with the wait for a permit and for the session lock, and `telegram_delivery_recipients_in_flight{kind}` counts the users whose update has started and not finished, also while it waits for a permit.
 
 ## Deep links
 
@@ -730,11 +735,29 @@ flowchart LR
     route -->|no| welcome["/start command"]
 ```
 
-A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. It reads the username of the bot with `getMe`; `buildTelegramDeepLinkUrl(username, link)` from that file builds the same URL from a known username without a request, as the owner link of the [bots](../bots/README.md) domain does. A payload without a known name falls through to the `/start` command. A banned user gets only the links registered with `allowBanned`.
+A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. It reads the username of the bot with `getMe`; `buildTelegramDeepLinkUrl(username, link)` from that file builds the same URL from a known username without a request, as the owner link of the [bots](../bots/README.md) domain does. A payload without a known name falls through to the `/start` command, which opens [the start module](#the-start-module) of the bot or replies with the welcome text. A banned user gets only the links registered with `allowBanned`.
+
+## The start module
+
+**Problem.** `/start` is the first message of every user, and Telegram sends it for the button `Start`. In a bot with one feature, such as planning poker, a welcome text makes the user look for the command of that feature.
+
+**Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text.
+
+**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` reads the bot from MongoDB on every `/start` and takes its `startModule`.
+
+**Walk-through.**
+
+1. `poker-handlers.ts` calls `telegramStartEntries.register("poker", openPoker, { guard })` with the handler and the guard of `/poker`.
+2. The root admin picks `Planning poker` for a bot in `/bots`.
+3. A user sends `/start`. No deep link matches, so the router runs the `/start` command of `telegram-system-handlers.ts`.
+4. The command calls `telegramStartEntries.open(ctx)`. It finds the entry of the start module of the bot, checks the guard and runs the handler, which starts the `poker` scene.
+5. `open` returns `false` for a bot without a start module and for a user whom the guard refuses. The command then replies with `telegram:welcome`.
+
+**Edge cases.** A deep link wins over the start module: `/start invite_…` runs the invite, and the invite opens the entry itself after it gives the grants. The grants of that update are new, so the handler calls `ctx.refreshUser(user)` first: `ctx.user` and `ctx.t` then belong to the newer document, and the guard of the entry sees the new grants. `refreshUser` throws for a document of another user. Every pod reads the start module from MongoDB, so a new one works at once.
 
 ## Access and the command menu
 
-A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
+A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, and the transport awaits it through `isAllowed`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
 
 | Guard on              | Checked                                            | When the guard refuses                                                              |
 | --------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -746,15 +769,28 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 `isBanned` is not a guard: it is the gate before the router. A banned user gets only the deep links registered with `allowBanned`, such as an invite link.
 
-**The command menu.** The guards of the commands also build the menu of each chat, so a user sees only the commands the user can run.
+**The command menu.** The guards of the commands also build the menus, so a user sees only the commands the user can run.
 
-1. `TelegramCommandMenus.sync` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
-2. It lists the commands whose guard allows the user, in the user's language, and hashes the list together with the menu generation of the bot from `telegram:<botId>:commands:generation`.
-3. When the hash equals `telegram:<botId>:commands:<telegramId>`, it does nothing. Otherwise it calls `setMyCommands` with the chat scope and stores the new hash for one day.
+**Problem.** Telegram lets a bot call `setMyCommands` about 20 times and then makes it wait, see [Rate limits](#rate-limits). A menu of its own for every chat costs one call per new user, so in a wave of new users the bot would answer each of them only after the menu.
 
-So the menu changes after a new grant, a language change, or a deploy that adds a command, and otherwise costs one API call per user at most once a day. The day only bounds the memory of the hashes: a user who comes back after it gets the same menu set again. A failed sync logs an error and does not fail the update. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set` or `failed`.
+**Idea.** The bot has one menu for everybody: the commands of a user who holds no grants of their own, only the [default grants](../access/README.md#default-grants). A chat gets a menu of its own only when the commands of its user differ from the menu of the bot, such as the chat of an admin.
 
-**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the default menu of every bot: the commands without a guard, in every language. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their default menus, writes a new generation for every bot and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. The new generation changes every hash, so each chat gets its menu again on its next update.
+**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<telegramId>:commands:menu` keeps the hash of the menus of the bot for 30 days. The hash of a chat menu includes the `telegramId` of the bot, and the key of the bot menus carries it, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync. `refresh` removes the stored hash before its first call, so a refresh that fails in the middle leaves no hash and the next sync sets every menu again.
+
+**Walk-through.**
+
+1. `TelegramCommandMenus.sync` runs on every update of a user with access, with the bot of the update. `syncUser` finds the bot of a user and runs the same sync on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
+2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
+   So a user who picked another language in `/settings` gets a menu of the chat in that language.
+3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
+4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
+5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
+
+**Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
+
+**Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<telegramId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 65 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. That is longer than the 60 s for which an update may hold its session lock, so an update that holds the lock at the start of the close ends by itself, also when it waits for the rate limiter. The 65 s do not cover an update that has not taken the lock yet. The sync of the command menu runs before the lock, and its call has its own 60 s for the rate limiter; an update in the queue of its chat waits for the update before it. Such an update takes the lock late and can still be cut; its claim then makes the retry of Telegram a duplicate. A pod with no running update closes at once. The cluster kills the pod 75 s after the start of the shutdown.
+
+**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<telegramId>:webhook:set`, and sets the menus of every bot when they changed. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
 
 ## Files
 
@@ -762,6 +798,7 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `telegram-update-handler.ts`                                       | One webhook update from start to end                                   | [An incoming update](#an-incoming-update)                   |
 | `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver`   | [Updates for other users](#updates-for-other-users)         |
+| `telegram-delivery-permits.ts`                                     | How many deliveries of a bot run at once in the pod                    | [Updates for other users](#updates-for-other-users)         |
 | `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                             | [Session and lock](#session-and-lock)                       |
 | `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events            | [Buttons](#buttons)                                         |
 | `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists               | [Screens and messages](#screens-and-messages)               |
@@ -784,6 +821,7 @@ So the menu changes after a new grant, a language change, or a deploy that adds 
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                     | [Inputs](#inputs)                                           |
 | `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                        |                                                             |
 | `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                 | [Blocking scenes](#blocking-scenes)                         |
+| `telegram-start-entries.ts`                                        | What `/start` opens per module                                         | [The start module](#the-start-module)                       |
 | `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs             | [Bots and webhooks](#bots-and-webhooks)                     |
 | `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                 |                                                             |

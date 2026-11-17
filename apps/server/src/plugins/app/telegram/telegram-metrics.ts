@@ -42,7 +42,8 @@ export type TelegramApiResult =
 
 export type TelegramDeliveryKind = "publish" | "deliver";
 
-export type TelegramCommandMenuSync = "unchanged" | "set" | "failed";
+export type TelegramCommandMenuSync =
+    "unchanged" | "set" | "removed" | "failed";
 
 export class TelegramMetrics {
     private readonly updates: Counter<"type" | "result" | "bot">;
@@ -133,7 +134,7 @@ export class TelegramMetrics {
     }
 
     startUpdate(
-        botId: string,
+        telegramId: string,
         update: Update,
     ): (result: TelegramUpdateResult) => void {
         const type = extractTelegramUpdateType(update);
@@ -141,7 +142,7 @@ export class TelegramMetrics {
 
         return (result) => {
             stopTimer();
-            this.updates.inc({ type, result, bot: botId });
+            this.updates.inc({ type, result, bot: telegramId });
         };
     }
 
@@ -154,7 +155,7 @@ export class TelegramMetrics {
     }
 
     startApiRequest(
-        botId: string,
+        telegramId: string,
         method: string,
     ): (result: TelegramApiResult, errorCode?: number) => void {
         const stopTimer = this.apiRequestDuration.startTimer({ method });
@@ -165,7 +166,7 @@ export class TelegramMetrics {
                 method,
                 result,
                 error_code: errorCode === undefined ? "" : String(errorCode),
-                bot: botId,
+                bot: telegramId,
             });
         };
     }

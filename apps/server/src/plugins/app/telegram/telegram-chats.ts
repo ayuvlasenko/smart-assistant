@@ -6,12 +6,15 @@ import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
+import { languageOf } from "../users/user-language.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
+import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
+import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import {
@@ -23,6 +26,7 @@ import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSessionStore } from "./telegram-session-store.js";
 
 export interface TelegramChatOptions {
+    bot: TelegramBot;
     userId: number;
     user: UserEntity;
     log: FastifyBaseLogger;
@@ -54,6 +58,7 @@ export class TelegramChats {
     private readonly i18nService: I18nService;
     private readonly telegramBots: TelegramBots;
     private readonly telegramMetrics: TelegramMetrics;
+    private readonly deliveryPermits: TelegramDeliveryPermits;
     private readonly log: FastifyBaseLogger;
     private readonly config: Pick<Env, "TIME_ZONE">;
 
@@ -64,6 +69,7 @@ export class TelegramChats {
         i18nService: I18nService,
         telegramBots: TelegramBots,
         telegramMetrics: TelegramMetrics,
+        deliveryPermits: TelegramDeliveryPermits,
         log: FastifyBaseLogger,
         config: Pick<Env, "TIME_ZONE">,
     ) {
@@ -79,6 +85,7 @@ export class TelegramChats {
         this.i18nService = i18nService;
         this.telegramBots = telegramBots;
         this.telegramMetrics = telegramMetrics;
+        this.deliveryPermits = deliveryPermits;
         this.log = log;
         this.config = config;
     }
@@ -113,13 +120,31 @@ export class TelegramChats {
         targets: TelegramSceneTarget[],
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
+        const startedAt = performance.now();
+
         this.telegramMetrics.recordDeliveryRecipients(
             "deliver",
             targets.length,
         );
 
+        const bots = new Map<string, Promise<TelegramBot | undefined>>();
         const results = await Promise.allSettled(
-            targets.map((target) => this.deliverTo(scene, target, handle)),
+            targets.map((target) => {
+                const bot =
+                    bots.get(target.botId) ??
+                    this.telegramBots.find(target.botId);
+
+                bots.set(target.botId, bot);
+
+                return this.deliverTo(scene, bot, target, handle);
+            }),
+        );
+
+        this.logDelivery(
+            "Scene update delivered",
+            { scene: scene.name },
+            results,
+            startedAt,
         );
 
         results.forEach((result, index) => {
@@ -143,6 +168,7 @@ export class TelegramChats {
 
     private async deliverTo(
         scene: TelegramScene,
+        bot: Promise<TelegramBot | undefined>,
         target: TelegramSceneTarget,
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
@@ -151,7 +177,7 @@ export class TelegramChats {
 
         try {
             await this.withUser(
-                target.botId,
+                await bot,
                 target.userId,
                 { scene: scene.name },
                 (ctx) =>
@@ -168,8 +194,11 @@ export class TelegramChats {
     }
 
     private async publishAll(botId: string, topics: string[]): Promise<void> {
+        const startedAt = performance.now();
+
         try {
-            const watchers = [...(await this.findWatchers(botId, topics))];
+            const bot = await this.telegramBots.find(botId);
+            const watchers = [...(await this.findWatchers(bot, topics))];
 
             this.telegramMetrics.recordDeliveryRecipients(
                 "publish",
@@ -178,8 +207,15 @@ export class TelegramChats {
 
             const results = await Promise.allSettled(
                 watchers.map(([userId, scenes]) =>
-                    this.redrawFor(botId, userId, scenes, topics),
+                    this.redrawFor(bot, userId, scenes, topics),
                 ),
+            );
+
+            this.logDelivery(
+                "Scene update published",
+                { botId, topics },
+                results,
+                startedAt,
             );
 
             for (const [index, result] of results.entries()) {
@@ -204,18 +240,20 @@ export class TelegramChats {
     }
 
     private async findWatchers(
-        botId: string,
+        bot: TelegramBot | undefined,
         topics: string[],
     ): Promise<Map<number, TelegramSceneRef[]>> {
         const entries = new Map<number, Set<string>>();
-        const matches = await Promise.all(
-            topics.map((topic) =>
-                this.sessionStore.findIndexed(
-                    botId,
-                    telegramSceneTopicIndex(topic),
-                ),
-            ),
-        );
+        const matches = bot
+            ? await Promise.all(
+                  topics.map((topic) =>
+                      this.sessionStore.findIndexed(
+                          bot.telegramId,
+                          telegramSceneTopicIndex(topic),
+                      ),
+                  ),
+              )
+            : [];
 
         for (const { userId, entry } of matches.flat()) {
             entries.set(userId, (entries.get(userId) ?? new Set()).add(entry));
@@ -232,7 +270,7 @@ export class TelegramChats {
     }
 
     private async redrawFor(
-        botId: string,
+        bot: TelegramBot | undefined,
         userId: number,
         scenes: TelegramSceneRef[],
         topics: string[],
@@ -241,7 +279,7 @@ export class TelegramChats {
             this.telegramMetrics.startRecipientDelivery("publish");
 
         try {
-            await this.withUser(botId, userId, { topics }, async (ctx) => {
+            await this.withUser(bot, userId, { topics }, async (ctx) => {
                 for (const { sceneId } of scenes) {
                     await this.sceneEngine.redraw(ctx, sceneId, topics);
                 }
@@ -274,22 +312,43 @@ export class TelegramChats {
         );
     }
 
+    private logDelivery(
+        message: string,
+        fields: Record<string, unknown>,
+        results: PromiseSettledResult<void>[],
+        startedAt: number,
+    ): void {
+        if (!results.length) {
+            return;
+        }
+
+        this.log.info(
+            {
+                ...fields,
+                recipients: results.length,
+                failed: results.filter(({ status }) => status === "rejected")
+                    .length,
+                durationMs: Math.round(performance.now() - startedAt),
+            },
+            message,
+        );
+    }
+
     private track(delivery: Promise<void>): void {
         this.pendingDeliveries.add(delivery);
         void delivery.finally(() => this.pendingDeliveries.delete(delivery));
     }
 
     private async withUser(
-        botId: string,
+        bot: TelegramBot | undefined,
         userId: number,
         bindings: Record<string, unknown>,
         handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
     ): Promise<void> {
-        const bot = this.telegramBots.find(botId);
         const user =
             bot &&
             (await this.usersRepository.findOneByTelegramId(
-                botId,
+                bot.id,
                 String(userId),
             ));
 
@@ -298,37 +357,38 @@ export class TelegramChats {
         }
 
         const log = this.log.child({
-            botId,
+            botId: bot.id,
             telegramUserId: userId,
             ...bindings,
         });
 
-        await this.withChat(bot, { userId, user, log }, handle);
+        await this.withChat({ bot, userId, user, log }, handle);
     }
 
     private withChat<T>(
-        bot: TelegramBot,
         chat: TelegramChatOptions,
         handle: (ctx: TelegramContext<undefined>) => Promise<T>,
     ): Promise<T> {
         const responder = new TelegramResponder(
             chat.userId,
             undefined,
-            bot.api,
+            chat.bot.api,
             chat.log,
         );
 
-        return this.withContext(chat, undefined, responder, handle);
+        return this.deliveryPermits.run(chat.bot.id, () =>
+            this.withContext(chat, undefined, responder, handle),
+        );
     }
 
     private withContext<TUpdate extends Update | undefined, T>(
-        { userId, user, log }: TelegramChatOptions,
+        { bot, userId, user, log }: TelegramChatOptions,
         update: TUpdate,
         responder: TelegramResponder,
         handle: (ctx: TelegramContext<TUpdate>) => Promise<T>,
     ): Promise<T> {
         return this.sessionStore.withSession(
-            user.botId,
+            bot.telegramId,
             userId,
             (session, signal) => {
                 const ctx = new TelegramContext({
@@ -336,7 +396,8 @@ export class TelegramChats {
                     user,
                     session,
                     log,
-                    t: this.i18nService.getT(user.languageCode),
+                    translatorOf: (current) =>
+                        this.i18nService.getT(languageOf(current)),
                     timeZone: user.timeZone ?? this.config.TIME_ZONE,
                     responder,
                 });
@@ -364,6 +425,7 @@ export default fp(
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
+            new TelegramDeliveryPermits(telegramDeliveryLimit),
             appLogger.child({ module: "telegram" }),
             fastify.getDecorator<Env>("config"),
         );

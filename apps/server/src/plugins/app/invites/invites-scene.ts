@@ -94,14 +94,18 @@ export function createInvitesScene(
                 params: invitesScreens.sections,
                 guard: canCreate,
                 render: async (ctx, scene, { page }) => [
-                    renderInviteFormSections(view(ctx, scene), page),
+                    await renderInviteFormSections(view(ctx, scene), page),
                 ],
             },
             section: {
                 params: invitesScreens.section,
                 guard: canCreate,
                 render: async (ctx, scene, { section, page }) => [
-                    renderInviteFormSection(view(ctx, scene), section, page),
+                    await renderInviteFormSection(
+                        view(ctx, scene),
+                        section,
+                        page,
+                    ),
                 ],
             },
             validFor: {

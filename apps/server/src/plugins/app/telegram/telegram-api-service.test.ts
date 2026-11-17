@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { buildCacheServiceTestApp } from "../../../test/cache-service-helper.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { MetricsService } from "../metrics-service.js";
 import {
     telegramApiScope,
@@ -37,7 +37,7 @@ void describe("TelegramApiService", () => {
     });
 
     void it("records and logs rejected requests", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { metrics, telegramApiService } = await buildApiService(
             t,
             [{ ok: false, error_code: 403, description: "Forbidden" }],
@@ -126,6 +126,25 @@ void describe("TelegramApiService", () => {
         assert.equal((await pausedSend).ok, true);
     });
 
+    void it("makes another chat wait while a 429 pauses the messages of the bot", async (t) => {
+        const { telegramApiService } = await buildApiService(t, [
+            rateLimitedResponse,
+            { ok: true, result: true },
+            { ok: true, result: true },
+        ]);
+        const pausedSend = telegramApiService.sendMessage({
+            chat_id: 1,
+            text: "hello",
+        });
+        await setTimeout(100);
+        const startedAt = performance.now();
+
+        await telegramApiService.sendMessage({ chat_id: 2, text: "hello" });
+
+        assert.ok(performance.now() - startedAt >= 700);
+        assert.equal((await pausedSend).ok, true);
+    });
+
     void it("records the rate limiter wait of setMyCommands", async (t) => {
         const { metrics, telegramApiService } = await buildApiService(t, [
             { ok: true, result: true },
@@ -140,9 +159,11 @@ void describe("TelegramApiService", () => {
     });
 
     void it("waits for retry_after and repeats a request that got a 429", async (t) => {
+        const logs = createLoggerCollector();
         const { fetch, metrics, telegramApiService } = await buildApiService(
             t,
             [rateLimitedResponse, { ok: true, result: true }],
+            logs,
         );
         const startedAt = performance.now();
 
@@ -154,6 +175,13 @@ void describe("TelegramApiService", () => {
         assert.equal(result.ok, true);
         assert.equal(fetch.mock.callCount(), 2);
         assert.ok(performance.now() - startedAt >= 900);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    ({ msg }) => msg === "Telegram rate limit buckets paused",
+                ),
+        );
 
         const output = await metrics.metrics();
 
@@ -237,7 +265,7 @@ function mockFetchUntilAbort(t: TestContext): void {
 async function buildApiService(
     t: TestContext,
     responseBodies: object[],
-    logs = createLogCollector(),
+    logs = createLoggerCollector(),
 ) {
     const fetch = t.mock.method(globalThis, "fetch", async () => {
         const responseBody = responseBodies.shift() ?? responseBodies.at(-1);

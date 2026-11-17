@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramRouter } from "./telegram-router.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
+import { TelegramStartEntries } from "./telegram-start-entries.js";
 
 export default fp(
     async function (fastify: FastifyInstance) {
@@ -10,8 +11,14 @@ export default fp(
             "telegramSceneEngine",
         );
 
+        const startEntries = fastify.getDecorator<TelegramStartEntries>(
+            "telegramStartEntries",
+        );
+
         router.command("start", async (ctx) => {
-            await ctx.reply(ctx.t("telegram:welcome"));
+            if (!(await startEntries.open(ctx))) {
+                await ctx.reply(ctx.t("telegram:welcome"));
+            }
         });
 
         router.command(
@@ -26,6 +33,10 @@ export default fp(
     },
     {
         name: "telegram-system-handlers",
-        dependencies: ["telegram-router", "telegram-scene-engine"],
+        dependencies: [
+            "telegram-router",
+            "telegram-scene-engine",
+            "telegram-start-entries",
+        ],
     },
 );
