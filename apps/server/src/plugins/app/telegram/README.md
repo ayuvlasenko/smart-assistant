@@ -549,7 +549,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 
 ## Message handover
 
-**Problem.** A scene that opens another scene, such as a list that opens an item, leaves its own message in the chat, and the other scene sends a new message below it. The chat grows by one message on every open. A handler cannot move the message to the other scene by itself, because it never keeps a message id.
+**Problem.** A scene that opens another scene, such as a list that opens an item, leaves its own message in the chat, and the other scene sends a new message below it. The chat grows by one message on every open. The engine keeps the message ids and a handler never sees them, see [Screens and messages](#screens-and-messages), so the engine moves the message to the other scene.
 
 **Idea.** `scene.handOver(otherScene, state)` ends the scene and gives its `messages` to the instance of the other scene. The engine draws the other scene into those messages by position, so the list message becomes the item in place.
 
@@ -635,7 +635,7 @@ flowchart TD
 
 ## Updates for other users
 
-**Problem.** Some data belongs to several users at once, such as an invite that every admin can open. Every user who looks at it has their own scene instance. When one user changes the data, the scenes of the other users must redraw. A handler cannot write to their sessions: each session belongs to the holder of its lock.
+**Problem.** Some data belongs to several users at once, such as an invite that every admin can open. Every user who looks at it has their own scene instance. When one user changes the data, the scenes of the other users must redraw. A write to the session of another user without the lock of that session would race with the update of that user, so a handler never writes there.
 
 **Idea.** The change goes through a domain event. The domain plugin then asks `TelegramChats` to run code inside each affected chat, under that user's lock, as if the user had sent an update. The engine renders and saves the scenes there in the usual way.
 

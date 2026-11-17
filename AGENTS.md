@@ -38,6 +38,8 @@ After the first push of a pull request, wait for the CI `deploy` job with `gh pr
 
 Keep a README in line with the code you change. A README explains how a mechanism works and why; this file keeps only the rules. Follow the `write-docs` skill in `.agents/skills/` when you write or restructure documentation.
 
+Call something a constraint only when an external system or a measurement sets it, and name the source. A property of our own code is a choice: write what was chosen and what it costs, never that other code must follow from it.
+
 ## Architecture
 
 - The Telegram bot uses `@grammyjs/types` for types and plain `fetch` for Bot API calls. Do not add a bot framework or any other Telegram library; the update routing and scenes are implemented in the project.
