@@ -6,6 +6,7 @@ import {
     AccessService,
     AccessSubjectName,
 } from "../access/access-service.js";
+import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { MetricsService } from "../metrics-service.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
@@ -52,6 +53,9 @@ export default fp(
         const events =
             fastify.getDecorator<Emittery<PokerEvents>>("eventEmitter");
         const metrics = fastify.getDecorator<MetricsService>("metrics");
+        const log = fastify
+            .getDecorator<AppLogger>("appLogger")
+            .child({ module: "poker" });
         const roomChanges = metrics.counter({
             name: "poker_room_changes_total",
             help: "Changes of poker rooms by kind",
@@ -169,6 +173,18 @@ export default fp(
         events.on("poker.roomChanged", ({ data }) => {
             roomChanges.inc({ change: data.change });
 
+            if (data.change !== "voted") {
+                log.info(
+                    {
+                        botId: data.botId,
+                        roomId: data.roomId,
+                        change: data.change,
+                        participants: data.userIds.length,
+                    },
+                    "Poker room changed",
+                );
+            }
+
             if (data.change === "joined") {
                 roomParticipants.observe(data.userIds.length);
             }
@@ -185,6 +201,7 @@ export default fp(
         name: "poker-handlers",
         dependencies: [
             "access-service",
+            "app-logger",
             "emittery",
             "i18n-service",
             "metrics",

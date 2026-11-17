@@ -180,11 +180,13 @@ export class TelegramUpdateHandler {
                 ...readProfile(telegramUser, languageCode ?? defaultLanguage),
             });
 
+        run.log = run.log.child({ userId: user._id });
+
         if (isCreated) {
             this.telegramMetrics.recordUserCreated();
+            run.log.info({ isBanned: user.isBanned }, "User created");
         }
 
-        run.log = run.log.child({ userId: user._id });
         run.log.debug({ isBanned: user.isBanned }, "User for update");
 
         const profile = readProfile(

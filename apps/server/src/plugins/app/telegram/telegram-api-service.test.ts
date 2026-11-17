@@ -159,9 +159,11 @@ void describe("TelegramApiService", () => {
     });
 
     void it("waits for retry_after and repeats a request that got a 429", async (t) => {
+        const logs = createLogCollector();
         const { fetch, metrics, telegramApiService } = await buildApiService(
             t,
             [rateLimitedResponse, { ok: true, result: true }],
+            logs,
         );
         const startedAt = performance.now();
 
@@ -173,6 +175,13 @@ void describe("TelegramApiService", () => {
         assert.equal(result.ok, true);
         assert.equal(fetch.mock.callCount(), 2);
         assert.ok(performance.now() - startedAt >= 900);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(
+                    ({ msg }) => msg === "Telegram rate limit buckets paused",
+                ),
+        );
 
         const output = await metrics.metrics();
 

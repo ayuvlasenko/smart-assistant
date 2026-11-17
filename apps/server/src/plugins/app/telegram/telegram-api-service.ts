@@ -49,6 +49,7 @@ export const telegramApiScope = new AsyncLocalStorage<TelegramApiScope>();
 const defaultRequestTimeoutMilliseconds = 10_000;
 const unscopedCallTimeoutMilliseconds = 60_000;
 const defaultRetryAfterSeconds = 1;
+const slowWaitMilliseconds = 1_000;
 
 export class TelegramApiService {
     private readonly baseUrl: string;
@@ -208,6 +209,16 @@ export class TelegramApiService {
                 waitMilliseconds / 1000,
             );
         }
+
+        if (
+            priority === "interactive" &&
+            waitMilliseconds >= slowWaitMilliseconds
+        ) {
+            this.log.warn(
+                { method, waitSeconds: waitMilliseconds / 1000 },
+                "Telegram rate limit wait was slow",
+            );
+        }
     }
 
     private async send<TMethod extends TelegramMethod>(
@@ -273,6 +284,14 @@ export class TelegramApiService {
         this.telegramMetrics.recordRetryAfter(method, retryAfterSeconds);
 
         if (buckets.length > 0) {
+            this.log.warn(
+                {
+                    method,
+                    retryAfter: retryAfterSeconds,
+                    buckets: buckets.map(({ key }) => key),
+                },
+                "Telegram rate limit buckets paused",
+            );
             await Promise.all(
                 buckets.map((bucket) =>
                     this.rateLimiter.pause(bucket, delayMilliseconds),

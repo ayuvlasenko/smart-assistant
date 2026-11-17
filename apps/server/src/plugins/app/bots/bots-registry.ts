@@ -92,6 +92,15 @@ export class BotsRegistry {
     async start(): Promise<void> {
         await this.botsRepository.ensure(this.rootId);
         await this.refresh();
+        this.log.info(
+            {
+                bots: [...this.bots.values()].map(({ id, modules }) => ({
+                    botId: id,
+                    modules,
+                })),
+            },
+            "Bots loaded",
+        );
     }
 
     async refresh(): Promise<void> {

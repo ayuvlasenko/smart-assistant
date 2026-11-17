@@ -1,7 +1,8 @@
 import Emittery from "emittery";
-import { FastifyInstance } from "fastify";
+import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
+import { AppLogger } from "../app-logger.js";
 import { I18nService } from "../i18n-service.js";
 import { FlagSetting, SettingsService } from "../settings/settings-service.js";
 import { UserEntity, UserProfile } from "./user-entity.js";
@@ -21,15 +22,18 @@ export class UsersService {
     private readonly usersRepository: UsersRepository;
     private readonly settingsService: SettingsService;
     private readonly eventEmitter: Emittery<UsersEvents>;
+    private readonly log: FastifyBaseLogger;
 
     constructor(
         usersRepository: UsersRepository,
         settingsService: SettingsService,
         eventEmitter: Emittery<UsersEvents>,
+        log: FastifyBaseLogger,
     ) {
         this.usersRepository = usersRepository;
         this.settingsService = settingsService;
         this.eventEmitter = eventEmitter;
+        this.log = log;
     }
 
     findOrCreateByTelegramId(
@@ -44,6 +48,10 @@ export class UsersService {
     async grantAccess(userId: ObjectId, grants: string[]): Promise<UserEntity> {
         const user = await this.usersRepository.grantAccess(userId, grants);
 
+        this.log.info(
+            { botId: user.botId, userId, grants },
+            "User access granted",
+        );
         await this.eventEmitter.emit("users.accessChanged", { user });
 
         return user;
@@ -70,12 +78,16 @@ export default fp(
                 fastify.getDecorator<UsersRepository>("usersRepository"),
                 settingsService,
                 fastify.getDecorator<Emittery<UsersEvents>>("eventEmitter"),
+                fastify
+                    .getDecorator<AppLogger>("appLogger")
+                    .child({ module: "users" }),
             ),
         );
     },
     {
         name: "users-service",
         dependencies: [
+            "app-logger",
             "emittery",
             "i18n-service",
             "settings-service",
