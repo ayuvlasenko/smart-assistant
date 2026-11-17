@@ -274,7 +274,7 @@ flowchart TD
 
 **Problem.** One server serves several Telegram bots, and every bot has its own token, webhook and chats. An update does not say which bot it came to. Every bot counts its own `update_id`, and a person has the same Telegram id, and the same id of the private chat, in every bot. So a key built from these ids alone mixes the bots.
 
-**Idea.** The webhook URL of a bot ends with the bot id, and the route takes the bot from the path. Every bot gets its own secret token, derived from one master secret, so the route checks the token before it looks the bot up. Every key of a user or a chat starts with the bot id.
+**Idea.** The webhook URL of a bot ends with the Telegram id of the bot, and the route takes the bot from the path. Every bot gets its own secret token, derived from one master secret, so the route checks the token before it looks the bot up. Every Valkey key of a user or a chat starts with the same Telegram id.
 
 **Data.**
 
@@ -295,7 +295,7 @@ X-Telegram-Bot-Api-Secret-Token                                 base64url of HMA
 
 **Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 
-**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The Telegram id of a bot is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
+**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The Telegram id of a bot is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and `resolveTelegramWebhookUrl` appends the Telegram id of the bot to it.
 
 ## An incoming update
 
@@ -714,7 +714,7 @@ sequenceDiagram
 
 Every target names the bot, the user id and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
 
-**Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod. A pod runs at most 25 deliveries of a bot at once, `telegramDeliveryLimit`, the number of messages the bot may send in a second. A delivery takes a permit from `TelegramDeliveryPermits` before it takes the session lock, and the other deliveries wait without a lock. So a recipient of a large `publish` holds the lock for the time of 25 tokens at most, 1 s at the full rate and 5 s while interactive calls take their share, and not until the whole queue is sent.
+**Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod. A pod runs at most 25 deliveries of a bot at once, `telegramDeliveryLimit`, the number of messages the bot may send in a second. A delivery takes a permit from `TelegramDeliveryPermits` before it takes the session lock, and the other deliveries wait without a lock. So a recipient of a large `publish` holds the lock for the time of 25 tokens at most, 1 s at the full rate and 5 s while interactive calls take their share, and not until the whole queue is sent. The permits count in the memory of one pod, and the tokens come from the bucket that all pods share. So when several pods deliver for one bot at the same time, that time grows with their number: up to 4 s and 20 s with the four pods of production.
 
 **Logs.** Every `deliver` and `publish` that has recipients ends with one line, `Scene update delivered` with the scene or `Scene update published` with the bot and the topics. The line carries `recipients`, `failed` and `durationMs`, the time until the last recipient is done. A failed recipient also gets its own error line.
 

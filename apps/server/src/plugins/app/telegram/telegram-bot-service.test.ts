@@ -59,7 +59,7 @@ void describe("TelegramBotService", () => {
         );
     });
 
-    void it("appends the bot id to the explicit webhook URL override", () => {
+    void it("appends the Telegram id to the explicit webhook URL override", () => {
         const webhookUrl = resolveTelegramWebhookUrl(
             {
                 DOMAIN: "https://smart-assistant.bambom.org",

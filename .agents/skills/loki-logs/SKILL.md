@@ -49,7 +49,7 @@ Loki indexes only the labels, so a query starts with them and filters everything
 | Field                                           | Where                                | Meaning                                                                                          |
 | ----------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `reqId`                                         | every line of one HTTP request       | Joins `request completed`, `Update handled` and every line between them                          |
-| `botId`, `updateId`, `telegramUserId`, `userId` | the lines of the update handler      | The bot, the `update_id` of Telegram, the Telegram id and the id of the user document            |
+| `botId`, `updateId`, `telegramUserId`, `userId` | the lines of the update handler      | The id of the bot document (`root` or an ObjectId, not the number in its token), the `update_id` of Telegram, the Telegram id and the id of the user document            |
 | `result`, `route`, `refusedRoute`, `durationMs` | `Update handled`, one per update     | How the update ended, what handled it, and the command or deep link whose guard refused the user |
 | `scene`, `sceneId`, `button`, `input`           | the lines of a scene                 | The scene, its instance, and the button or the input                                             |
 | `req.url`, `res.statusCode`, `responseTime`     | `request completed`, one per request | The request, its status and its time in milliseconds                                             |
@@ -88,4 +88,4 @@ Start from the final line of an update or a request, take its `reqId`, and read 
 
 A line never holds message text, callback data or a token: the project forbids it, and the logger masks what slips through. So the text a user sent is not in the logs, and looking for it wastes the search. When a question needs a fact that no line carries, say so and propose the log line to add; `AGENTS.md` has the rule for writing one.
 
-The logs of the last minutes are also in `kubectl logs -n smart-assistant deploy/server-main`. Use Loki for a search and for anything older than the pod.
+The logs of the last minutes are also in `kubectl logs -n smart-assistant -l app=server,resourceName=main --prefix --since=10m --tail=-1`, from every pod of production. `kubectl logs deploy/server-main` reads one pod only, and another pod may have handled the update. Use Loki for a search and for anything older than the pods.
