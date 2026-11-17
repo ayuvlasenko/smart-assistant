@@ -5,6 +5,7 @@ export interface LoggerEntry {
     failed?: number;
     handler?: string;
     level?: number | string;
+    method?: string;
     module?: string;
     msg?: string;
     pid?: number;
@@ -16,6 +17,9 @@ export interface LoggerEntry {
     route?: string;
     updateId?: number;
     userId?: string;
+    err?: {
+        message?: string;
+    };
     req?: {
         remoteAddress?: string;
         remotePort?: number;

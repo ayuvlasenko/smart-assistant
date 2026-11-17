@@ -82,8 +82,13 @@ void describe("TelegramApiService", () => {
         );
     });
 
-    void it("records network failures", async (t) => {
-        const { metrics, telegramApiService } = await buildApiService(t, []);
+    void it("records and logs network failures with the method", async (t) => {
+        const logs = createLoggerCollector();
+        const { metrics, telegramApiService } = await buildApiService(
+            t,
+            [],
+            logs,
+        );
 
         await assert.rejects(() => telegramApiService.getMe(), {
             message: "network down",
@@ -92,6 +97,14 @@ void describe("TelegramApiService", () => {
             await metrics.metrics(),
             /^telegram_api_requests_total\{method="getMe",result="network_error",error_code="",bot="123"\} 1$/m,
         );
+
+        const entry = logs
+            .readEntries()
+            .find(({ msg }) => msg === "Telegram API request got no answer");
+
+        assert.equal(entry?.method, "getMe");
+        assert.equal(entry.result, "network_error");
+        assert.equal(entry.err?.message, "network down");
     });
 
     void it("records the rate limiter wait of a limited method", async (t) => {

@@ -421,6 +421,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 
 - The signal aborts a wait and a request with its reason, such as `LockHoldTimeoutError`. The call leaves its queue, and the update ends as `lock_hold_timeout`. A delivery counts as `delivery_failed`.
 - A network error or a timeout of the request is not repeated: a repeated `sendMessage` can send the message twice.
+- A request that ends without an answer of Telegram, by a network error, a timeout or the signal, logs `Telegram API request got no answer` with `method`, the `result` label of `telegram_api_requests_total` and the error. The call then throws that error.
 - When Valkey fails, the call fails, and so do the session and the lock.
 - With several pods the global limit and the shares stay exact, because the buckets and the `waiting:*` sets are shared. A pod only picks which of its own calls to release.
 - A call that joins while the loop waits for Valkey wakes the loop, so the next take includes its class at once.

@@ -251,7 +251,13 @@ export class TelegramApiService {
                 TelegramMethodResult<TMethod>
             >;
         } catch (err) {
-            stopRequest(signal.aborted ? "aborted" : "network_error");
+            const failure = signal.aborted ? "aborted" : "network_error";
+
+            stopRequest(failure);
+            this.log.warn(
+                { method, result: failure, err },
+                "Telegram API request got no answer",
+            );
             throw err;
         }
 
