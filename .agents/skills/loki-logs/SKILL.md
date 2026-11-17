@@ -77,6 +77,7 @@ Failed requests                         S | json | res_statusCode >= 400
 Slow requests                           S | json | msg="request completed" | responseTime > 1000
 Slow updates                            S | json | msg="Update handled" | durationMs > 2000
 Rate limit pauses                       S | json | msg="Telegram rate limit buckets paused"
+Updates sent to other users             S | json | msg=~"Scene update (delivered|published)"
 What one bot did                        S | json | botId="<id>"
 Lines per message, and which exist      sum by (msg) (count_over_time(S | json [24h]))    with --instant
 ```

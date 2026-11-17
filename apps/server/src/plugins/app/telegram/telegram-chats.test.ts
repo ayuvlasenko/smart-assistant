@@ -12,7 +12,7 @@ import {
 } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { requestLogSerializers } from "../../../request-logging.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLogCollector, LogEntry } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
@@ -188,6 +188,10 @@ void describe("TelegramChats", () => {
                     (entry) => entry.msg === "Failed to deliver a scene update",
                 ),
         );
+        assert.deepEqual(
+            readDeliveryCounts(logs.readEntries(), "Scene update delivered"),
+            [{ recipients: 3, failed: 1 }],
+        );
     });
 
     void it("redraws only the scenes that watch a published topic", async (t) => {
@@ -356,6 +360,10 @@ void describe("TelegramChats", () => {
                 .some(
                     (entry) => entry.msg === "Failed to publish a scene update",
                 ),
+        );
+        assert.deepEqual(
+            readDeliveryCounts(logs.readEntries(), "Scene update published"),
+            [{ recipients: 2, failed: 1 }],
         );
         assert.match(
             await bot.metrics.metrics(),
@@ -570,6 +578,15 @@ async function readWatchers(
         .findIndexed(testBotId, telegramSceneTopicIndex(topic));
 
     return matches.map(({ userId }) => userId);
+}
+
+function readDeliveryCounts(
+    entries: LogEntry[],
+    message: string,
+): Pick<LogEntry, "recipients" | "failed">[] {
+    return entries
+        .filter(({ msg }) => msg === message)
+        .map(({ recipients, failed }) => ({ recipients, failed }));
 }
 
 function readEditedTexts(

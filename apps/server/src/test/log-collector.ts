@@ -2,11 +2,13 @@ import { Writable } from "node:stream";
 
 export interface LogEntry {
     botId?: string;
+    failed?: number;
     handler?: string;
     level?: number | string;
     module?: string;
     msg?: string;
     pid?: number;
+    recipients?: number;
     refusedRoute?: string;
     reqId?: string;
     responseTime?: number;

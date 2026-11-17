@@ -119,6 +119,8 @@ export class TelegramChats {
         targets: TelegramSceneTarget[],
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
+        const startedAt = performance.now();
+
         this.telegramMetrics.recordDeliveryRecipients(
             "deliver",
             targets.length,
@@ -126,6 +128,13 @@ export class TelegramChats {
 
         const results = await Promise.allSettled(
             targets.map((target) => this.deliverTo(scene, target, handle)),
+        );
+
+        this.logDelivery(
+            "Scene update delivered",
+            { scene: scene.name },
+            results,
+            startedAt,
         );
 
         results.forEach((result, index) => {
@@ -174,6 +183,8 @@ export class TelegramChats {
     }
 
     private async publishAll(botId: string, topics: string[]): Promise<void> {
+        const startedAt = performance.now();
+
         try {
             const watchers = [...(await this.findWatchers(botId, topics))];
 
@@ -186,6 +197,13 @@ export class TelegramChats {
                 watchers.map(([userId, scenes]) =>
                     this.redrawFor(botId, userId, scenes, topics),
                 ),
+            );
+
+            this.logDelivery(
+                "Scene update published",
+                { botId, topics },
+                results,
+                startedAt,
             );
 
             for (const [index, result] of results.entries()) {
@@ -277,6 +295,28 @@ export class TelegramChats {
                 scenes: scenes.map(({ sceneName }) => sceneName),
             },
             "Failed to publish a scene update",
+        );
+    }
+
+    private logDelivery(
+        message: string,
+        fields: Record<string, unknown>,
+        results: PromiseSettledResult<void>[],
+        startedAt: number,
+    ): void {
+        if (!results.length) {
+            return;
+        }
+
+        this.log.info(
+            {
+                ...fields,
+                recipients: results.length,
+                failed: results.filter(({ status }) => status === "rejected")
+                    .length,
+                durationMs: Math.round(performance.now() - startedAt),
+            },
+            message,
         );
     }
 
