@@ -23,7 +23,6 @@ export default defineConfig([
         },
         rules: {
             "local/file-layout": "warn",
-            "max-lines": ["warn", { max: 400, skipComments: true }],
         },
     },
 ]);
