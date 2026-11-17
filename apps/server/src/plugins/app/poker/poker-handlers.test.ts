@@ -394,6 +394,11 @@ void describe("Poker rooms", () => {
             await autoRevealLine(),
             `${en.autoRevealLabel}: ${en.autoRevealAll}`,
         );
+        assert.deepEqual(await readCallbackTexts(bot, member), [
+            en.fewerVotesButton,
+            en.autoRevealOffButton,
+            en.backButton,
+        ]);
         assert.equal(
             await step(en.fewerVotesButton),
             `${en.autoRevealLabel}: everyone but 1 (2 of 3 votes)`,
@@ -406,10 +411,11 @@ void describe("Poker rooms", () => {
             await step(en.fewerVotesButton),
             `${en.autoRevealLabel}: ${en.autoRevealOff}`,
         );
-        assert.equal(
-            await step(en.fewerVotesButton),
-            `${en.autoRevealLabel}: ${en.autoRevealOff}`,
-        );
+        assert.deepEqual(await readCallbackTexts(bot, member), [
+            en.moreVotesButton,
+            en.autoRevealOnButton,
+            en.backButton,
+        ]);
         assert.equal(
             await step(en.moreVotesButton),
             `${en.autoRevealLabel}: everyone but 2 (1 of 3 votes)`,
@@ -439,6 +445,30 @@ void describe("Poker rooms", () => {
             (await readRoomMessage(bot, member)).includes("Round 1 · revealed"),
         );
         assert.deepEqual((await readRoom()).autoReveal, { missingVotes: 1 });
+    });
+
+    void it("turns auto reveal off and back on for everyone with one press", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655146 });
+        const member = buildTelegramPrivateChat({ id: 987655147 });
+
+        await createRoomThroughForm(bot, creator, { autoReveal: true });
+        await joinRoom(bot, member);
+        await bot.pressButton(member, en.moreButton);
+        await bot.pressButton(member, en.autoRevealButton);
+        await bot.pressButton(member, en.fewerVotesButton);
+        await bot.pressButton(member, en.autoRevealOffButton);
+
+        assert.equal((await readRoom()).autoReveal, null);
+
+        await bot.pressButton(member, en.autoRevealOnButton);
+
+        assert.deepEqual((await readRoom()).autoReveal, { missingVotes: 0 });
+        assert.ok(
+            (await readRoomMessage(bot, member)).includes(
+                `${en.autoRevealLabel}: ${en.autoRevealAll}`,
+            ),
+        );
     });
 
     void it("switches the viewer between voting and watching from the menu and returns to the round", async (t) => {

@@ -24,6 +24,7 @@ import { TelegramApiError } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramRouter } from "./telegram-router.js";
+import { TelegramStartEntries } from "./telegram-start-entries.js";
 
 interface TelegramBotMenu {
     languageCode?: Language;
@@ -36,6 +37,7 @@ export class TelegramCommandMenus {
     private readonly log: FastifyBaseLogger;
     private readonly telegramBots: TelegramBots;
     private readonly telegramRouter: TelegramRouter;
+    private readonly telegramStartEntries: TelegramStartEntries;
     private readonly usersRepository: UsersRepository;
     private readonly cache: CacheService;
     private readonly i18nService: I18nService;
@@ -46,6 +48,7 @@ export class TelegramCommandMenus {
         log: FastifyBaseLogger,
         telegramBots: TelegramBots,
         telegramRouter: TelegramRouter,
+        telegramStartEntries: TelegramStartEntries,
         usersRepository: UsersRepository,
         cache: CacheService,
         i18nService: I18nService,
@@ -55,6 +58,7 @@ export class TelegramCommandMenus {
         this.log = log;
         this.telegramBots = telegramBots;
         this.telegramRouter = telegramRouter;
+        this.telegramStartEntries = telegramStartEntries;
         this.usersRepository = usersRepository;
         this.cache = cache;
         this.i18nService = i18nService;
@@ -130,10 +134,12 @@ export class TelegramCommandMenus {
 
         const [commands, defaultCommands] = await Promise.all([
             this.describeCommandsOf(
+                bot,
                 user,
                 this.i18nService.getT(languageOf(user)),
             ),
             this.describeCommandsOf(
+                bot,
                 buildUserWithoutGrants(user.botId),
                 this.i18nService.getT(user.languageCode),
             ),
@@ -194,6 +200,7 @@ export class TelegramCommandMenus {
             [undefined, ...languages].map(async (languageCode) => ({
                 languageCode,
                 commands: await this.describeCommandsOf(
+                    bot,
                     user,
                     this.i18nService.getT(languageCode ?? defaultLanguage),
                 ),
@@ -202,10 +209,14 @@ export class TelegramCommandMenus {
     }
 
     private async describeCommandsOf(
+        bot: TelegramBot,
         user: UserEntity,
         t: Translate,
     ): Promise<BotCommand[]> {
-        const commands: BotCommand[] = [];
+        const startEntry = await this.telegramStartEntries.find(bot, user);
+        const commands: BotCommand[] = startEntry
+            ? [{ command: "start", description: startEntry.description(t) }]
+            : [];
 
         for (const route of this.telegramRouter.listCommands()) {
             if (await isAllowed(route.guard, user)) {
@@ -262,6 +273,7 @@ export default fp(
                 .child({ module: "telegram" }),
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramRouter>("telegramRouter"),
+            fastify.getDecorator<TelegramStartEntries>("telegramStartEntries"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<I18nService>("i18nService"),
@@ -292,6 +304,7 @@ export default fp(
             "telegram-bots",
             "telegram-metrics",
             "telegram-router",
+            "telegram-start-entries",
             "users-repository",
         ],
     },

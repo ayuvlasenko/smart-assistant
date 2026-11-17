@@ -46,7 +46,7 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 - `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
 - `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
 - `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. Code that already has the username of the bot calls `buildTelegramDeepLinkUrl(username, { name, value })`. See [Deep links](#deep-links).
-- `telegramStartEntries.register(module, handler, { guard })` declares what `/start` opens in a bot whose start module is that module, usually the handler of the main command of the module. See [The start module](#the-start-module).
+- `telegramStartEntries.register(module, handler, { description, guard })` declares what `/start` opens in a bot whose start module is that module, usually the handler of the main command of the module. The command menu shows `description` next to `/start`. See [The start module](#the-start-module).
 - When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
 - Send every user-facing text through `ctx.t`. It speaks the language of `languageOf(ctx.user)`, and follows `ctx.refreshUser`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
@@ -741,13 +741,13 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 **Problem.** `/start` is the first message of every user, and Telegram sends it for the button `Start`. In a bot with one feature, such as planning poker, a welcome text makes the user look for the command of that feature.
 
-**Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text.
+**Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text. The [command menu](#access-and-the-command-menu) then shows `/start` with the description of the entry, so the menu names what `/start` opens.
 
 **Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` reads the bot from MongoDB on every `/start` and takes its `startModule`.
 
 **Walk-through.**
 
-1. `poker-handlers.ts` calls `telegramStartEntries.register("poker", openPoker, { guard })` with the handler and the guard of `/poker`.
+1. `poker-handlers.ts` calls `telegramStartEntries.register("poker", openPoker, { description, guard })` with the handler, the description and the guard of `/poker`.
 2. The root admin picks `Planning poker` for a bot in `/bots`.
 3. A user sends `/start`. No deep link matches, so the router runs the `/start` command of `telegram-system-handlers.ts`.
 4. The command calls `telegramStartEntries.open(ctx)`. It finds the entry of the start module of the bot, checks the guard and runs the handler, which starts the `poker` scene.
@@ -780,11 +780,11 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 **Walk-through.**
 
 1. `TelegramCommandMenus.sync` runs on every update of a user with access, with the bot of the update. `syncUser` finds the bot of a user and runs the same sync on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
-2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
+2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. `/start` comes first when the bot has a start module and `TelegramStartEntries.find` returns its entry for the user. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
    So a user who picked another language in `/settings` gets a menu of the chat in that language.
 3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
 4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
-5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
+5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules or the start module of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
 
 **Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 

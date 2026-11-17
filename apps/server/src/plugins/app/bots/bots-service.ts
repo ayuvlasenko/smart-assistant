@@ -211,6 +211,7 @@ export class BotsService {
         );
 
         if (bot) {
+            await this.botsConnector.refreshCommands(botId);
             this.log.info(
                 { botId, startModule: bot.startModule, userId: actor._id },
                 "Bot start module changed",

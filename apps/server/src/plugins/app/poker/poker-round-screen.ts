@@ -1,4 +1,5 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
+import { isDeepStrictEqual } from "node:util";
 import { Translate } from "../i18n-service.js";
 import { escapeTelegramHtml } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
@@ -248,19 +249,29 @@ function readAutoRevealKeyboard({
     room,
 }: PokerRoomView): InlineKeyboardButton[][] {
     const { t } = ctx;
+    const steps = [
+        { label: t("poker:fewerVotesButton"), step: -1 as const },
+        { label: t("poker:moreVotesButton"), step: 1 as const },
+    ].flatMap(({ label, step }) => {
+        const autoReveal = stepPokerAutoReveal(room, step);
+
+        return isDeepStrictEqual(autoReveal, room.autoReveal)
+            ? []
+            : [scene.button(label, "autoReveal", autoReveal)];
+    });
 
     return [
+        steps,
         [
-            scene.button(
-                t("poker:fewerVotesButton"),
-                "autoReveal",
-                stepPokerAutoReveal(room, -1),
-            ),
-            scene.button(
-                t("poker:moreVotesButton"),
-                "autoReveal",
-                stepPokerAutoReveal(room, 1),
-            ),
+            room.autoReveal
+                ? scene.button(
+                      t("poker:autoRevealOffButton"),
+                      "autoReveal",
+                      null,
+                  )
+                : scene.button(t("poker:autoRevealOnButton"), "autoReveal", {
+                      missingVotes: 0,
+                  }),
         ],
         [scene.backButton(t("poker:backButton"))],
     ];

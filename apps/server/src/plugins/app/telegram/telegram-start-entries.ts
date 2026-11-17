@@ -1,20 +1,24 @@
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { TelegramBots } from "./telegram-bots.js";
+import { UserEntity } from "../users/user-entity.js";
+import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramCommandMessageUpdate } from "./telegram-filters.js";
 import { isAllowed, TelegramGuard } from "./telegram-guard.js";
+import { TelegramCommandDescription } from "./telegram-router.js";
 
 export type TelegramStartHandler = (
     ctx: TelegramContext<TelegramCommandMessageUpdate>,
 ) => Promise<unknown>;
 
 export interface TelegramStartEntryOptions {
+    description: TelegramCommandDescription;
     guard?: TelegramGuard;
 }
 
-interface TelegramStartEntry {
+export interface TelegramStartEntry {
     handler: TelegramStartHandler;
+    description: TelegramCommandDescription;
     guard?: TelegramGuard;
 }
 
@@ -29,7 +33,7 @@ export class TelegramStartEntries {
     register(
         module: string,
         handler: TelegramStartHandler,
-        options: TelegramStartEntryOptions = {},
+        { description, guard }: TelegramStartEntryOptions,
     ): void {
         if (this.entries.has(module)) {
             throw new Error(
@@ -37,22 +41,34 @@ export class TelegramStartEntries {
             );
         }
 
-        this.entries.set(module, { handler, guard: options.guard });
+        this.entries.set(module, { handler, description, guard });
     }
 
     listModules(): string[] {
         return [...this.entries.keys()];
     }
 
+    async find(
+        bot: TelegramBot,
+        user: UserEntity,
+    ): Promise<TelegramStartEntry | undefined> {
+        const entry =
+            bot.startModule === undefined
+                ? undefined
+                : this.entries.get(bot.startModule);
+
+        return entry && (await isAllowed(entry.guard, user))
+            ? entry
+            : undefined;
+    }
+
     async open(
         ctx: TelegramContext<TelegramCommandMessageUpdate>,
     ): Promise<boolean> {
         const bot = await this.telegramBots.find(ctx.user.botId);
-        const module = bot?.startModule;
-        const entry =
-            module === undefined ? undefined : this.entries.get(module);
+        const entry = bot && (await this.find(bot, ctx.user));
 
-        if (!entry || !(await isAllowed(entry.guard, ctx.user))) {
+        if (!entry) {
             return false;
         }
 
