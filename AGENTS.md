@@ -20,7 +20,7 @@ pnpm --filter <workspace> add <package>
 Run a single test file:
 
 ```bash
-pnpm --filter server exec node --env-file=.env.test --import tsx --test src/path/to/file.test.ts
+pnpm --filter server exec node --import tsx --import ./src/test/load-test-env.ts --test src/path/to/file.test.ts
 ```
 
 Manage MongoDB migrations with `pnpm --filter server migrate:create|migrate:up|migrate:down|migrate:status`. `lockTtl` in `apps/server/migrate-mongo-config.js` equals `migration.activeDeadlineSeconds` in `deploy/migration/values.yaml`, 300 s: change both together, or a slow migration loses its lock while it still runs.
@@ -103,7 +103,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 ## Infrastructure
 
 - Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
-- `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values.
+- `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values. The tests load `apps/server/.env.test` over them, so a variable in that file never comes from the root `.env`.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
