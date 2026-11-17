@@ -279,20 +279,24 @@ export class InvitesService {
         token: string,
         now: Date,
     ): Promise<InvitesBootstrap["invite"]> {
+        const isCreated = await this.invitesRepository.createIfMissing({
+            botId,
+            token,
+            grants: [adminGrant],
+            maxUses: 1,
+        });
+
+        if (isCreated) {
+            return "created";
+        }
+
         const invite = await this.invitesRepository.findOneByToken(
             botId,
             token,
         );
 
         if (!invite) {
-            await this.invitesRepository.create({
-                botId,
-                token,
-                grants: [adminGrant],
-                maxUses: 1,
-            });
-
-            return "created";
+            return "unusable";
         }
 
         const isUnusedBootstrapInvite =

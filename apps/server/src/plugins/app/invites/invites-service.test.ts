@@ -533,6 +533,40 @@ void describe("InvitesService bootstrap", () => {
         );
     });
 
+    void it("creates one invite when two pods start with the same new token", async (t) => {
+        const bot = await buildBot(t);
+        const results = await Promise.all([
+            bot.invitesService.bootstrap(testBotId, "token-a"),
+            bot.invitesService.bootstrap(testBotId, "token-a"),
+        ]);
+
+        assert.deepEqual(
+            results
+                .map(({ invite }) => invite)
+                .sort((a, b) => a.localeCompare(b)),
+            ["created", "kept"],
+        );
+        assert.equal(await mongo.collection("invites").countDocuments({}), 1);
+    });
+
+    void it("reports a token that an invite of another bot holds as unusable", async (t) => {
+        const bot = await buildBot(t);
+
+        await bot.invitesRepository.create({
+            botId: "another-bot",
+            token: "token-a",
+            grants: [pingGrant],
+        });
+
+        assert.deepEqual(
+            await bot.invitesService.bootstrap(testBotId, "token-a"),
+            {
+                invite: "unusable",
+                revoked: 0,
+            },
+        );
+    });
+
     void it("revokes every bootstrap invite once an admin exists or the token is gone, and keeps the invites of admins", async (t) => {
         const bot = await buildBot(t);
         const admin = await createUser(bot, "987654743", [adminGrant]);

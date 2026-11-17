@@ -25,24 +25,22 @@ export class InvitesRepository {
         data: InviteData,
         session?: ClientSession,
     ): Promise<InviteEntity> {
-        const now = new Date();
-        const invite: InviteEntity = {
-            _id: new ObjectId(),
-            botId: data.botId,
-            token: data.token,
-            grants: data.grants,
-            ...(data.createdBy ? { createdBy: data.createdBy } : {}),
-            ...(data.maxUses === undefined ? {} : { maxUses: data.maxUses }),
-            ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
-            activations: [],
-            version: 0,
-            createdAt: now,
-            updatedAt: now,
-        };
+        const invite = buildInvite(data);
 
         await this.collection().insertOne(invite, { session });
 
         return invite;
+    }
+
+    async createIfMissing(data: InviteData): Promise<boolean> {
+        const { token, ...fields } = buildInvite(data);
+        const result = await this.collection().updateOne(
+            { token },
+            { $setOnInsert: fields },
+            { upsert: true },
+        );
+
+        return result.upsertedCount > 0;
     }
 
     findOneById(
@@ -175,6 +173,24 @@ export class InvitesRepository {
     private collection() {
         return this.mongo.db.collection<InviteEntity>("invites");
     }
+}
+
+function buildInvite(data: InviteData): InviteEntity {
+    const now = new Date();
+
+    return {
+        _id: new ObjectId(),
+        botId: data.botId,
+        token: data.token,
+        grants: data.grants,
+        ...(data.createdBy ? { createdBy: data.createdBy } : {}),
+        ...(data.maxUses === undefined ? {} : { maxUses: data.maxUses }),
+        ...(data.expiresAt ? { expiresAt: data.expiresAt } : {}),
+        activations: [],
+        version: 0,
+        createdAt: now,
+        updatedAt: now,
+    };
 }
 
 function isActiveExpression(now: Date): Document {
