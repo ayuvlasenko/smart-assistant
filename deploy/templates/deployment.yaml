@@ -6,7 +6,7 @@ metadata:
   labels:
     app: server
 spec:
-  replicas: {{ .Values.server.replicas }}
+  replicas: {{ ternary .Values.server.replicas.production .Values.server.replicas.preview (eq .Values.resourceName "main") }}
   revisionHistoryLimit: {{ .Values.server.revisionHistoryLimit }}
   progressDeadlineSeconds: {{ .Values.server.progressDeadlineSeconds }}
   selector:
