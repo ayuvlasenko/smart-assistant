@@ -5,7 +5,7 @@ import { TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
 import { Env } from "../env.js";
-import { requestIdOptions } from "../request-logging.js";
+import { requestIdOptions } from "../logger-request.js";
 import { createTestDatabaseName } from "./mongo.js";
 import {
     buildTelegramApiServiceMock,

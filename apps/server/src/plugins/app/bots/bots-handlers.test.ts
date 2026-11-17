@@ -12,7 +12,7 @@ import {
 } from "node:test";
 import { Env } from "../../../env.js";
 import { BotsBot, buildBotsBot } from "../../../test/bots-bot.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramApiServiceMock,
@@ -72,7 +72,7 @@ after(async () => {
 
 void describe("/bots", () => {
     void it("adds a bot from its token, deletes the token message and shows a link for its owner", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const bot = await buildBot(t, { logger: logs.logger });
         const admin = buildTelegramPrivateChat({ id: 987657001 });
 

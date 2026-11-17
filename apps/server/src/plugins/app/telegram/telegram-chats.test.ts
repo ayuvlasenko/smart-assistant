@@ -11,8 +11,11 @@ import {
     TestContext,
 } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { requestLogSerializers } from "../../../request-logging.js";
-import { createLogCollector, LogEntry } from "../../../test/log-collector.js";
+import { loggerRequestSerializers } from "../../../logger-request.js";
+import {
+    createLoggerCollector,
+    LoggerEntry,
+} from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
@@ -162,7 +165,7 @@ void describe("TelegramChats", () => {
     });
 
     void it("delivers to the other participants when one of them fails", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const room = buildRoom([987654456, 987654457, 987654458]);
         const bot = await buildRoomBot(t, room, logs.logger);
         const [ada, bob, carl] = room.participantIds.map((id) =>
@@ -338,7 +341,7 @@ void describe("TelegramChats", () => {
     });
 
     void it("publishes to the other watchers when one of them fails", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const boards: TestBoards = { a: 0, b: 0 };
         const bot = await buildBoardBot(t, boards, { logger: logs.logger });
         const ada = buildTelegramPrivateChat({ id: 987654469 });
@@ -392,7 +395,7 @@ async function buildBoardBot(
         logger,
     }: {
         ttl?: number;
-        logger?: ReturnType<typeof createLogCollector>["logger"];
+        logger?: ReturnType<typeof createLoggerCollector>["logger"];
     } = {},
 ): Promise<TelegramSceneBot> {
     const boardView = Type.Union([
@@ -466,7 +469,7 @@ async function buildBoardBot(
         mongoClient,
         t,
         logger: logger
-            ? { ...logger, serializers: requestLogSerializers }
+            ? { ...logger, serializers: loggerRequestSerializers }
             : false,
         registerRoutes: (router, sceneEngine) => {
             router.scene(boardScene);
@@ -491,7 +494,7 @@ function buildRoom(participantIds: number[]): TestRoom {
 async function buildRoomBot(
     t: TestContext,
     room: TestRoom,
-    logger?: ReturnType<typeof createLogCollector>["logger"],
+    logger?: ReturnType<typeof createLoggerCollector>["logger"],
 ): Promise<TelegramSceneBot> {
     const roomEvents = new Emittery<RoomEvents>();
     const roomTargets = ({ id, participantIds }: TestRoom) =>
@@ -544,7 +547,7 @@ async function buildRoomBot(
         mongoClient,
         t,
         logger: logger
-            ? { ...logger, serializers: requestLogSerializers }
+            ? { ...logger, serializers: loggerRequestSerializers }
             : false,
         registerRoutes: (router, sceneEngine) => {
             router.scene(roomScene);
@@ -582,9 +585,9 @@ async function readWatchers(
 }
 
 function readDeliveryCounts(
-    entries: LogEntry[],
+    entries: LoggerEntry[],
     message: string,
-): Pick<LogEntry, "recipients" | "failed">[] {
+): Pick<LoggerEntry, "recipients" | "failed">[] {
     return entries
         .filter(({ msg }) => msg === message)
         .map(({ recipients, failed }) => ({ recipients, failed }));

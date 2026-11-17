@@ -1,7 +1,7 @@
 import { FastifyServerOptions } from "fastify";
 import { hostname } from "node:os";
-import { LogNormalizer } from "./log-normalizer.js";
-import { requestLogSerializers } from "./request-logging.js";
+import { LoggerNormalizer } from "./logger-normalizer.js";
+import { loggerRequestSerializers } from "./logger-request.js";
 
 type LoggerOptions = Exclude<
     FastifyServerOptions["logger"],
@@ -23,7 +23,7 @@ export function buildLoggerOptions(level: string): LoggerOptions {
         base: { hostname: hostname() },
         formatters: {
             level: (label) => ({ level: label }),
-            log: normalizeLogRecord,
+            log: normalizeRecord,
         },
     };
 }
@@ -31,15 +31,15 @@ export function buildLoggerOptions(level: string): LoggerOptions {
 export function buildPrettyLoggerOptions(level: string): LoggerOptions {
     return {
         level,
-        formatters: { log: normalizeLogRecord },
-        serializers: { ...requestLogSerializers, err: keepNormalizedError },
+        formatters: { log: normalizeRecord },
+        serializers: { ...loggerRequestSerializers, err: keepNormalizedError },
     };
 }
 
-function normalizeLogRecord(
+function normalizeRecord(
     record: Record<string, unknown>,
 ): Record<string, unknown> {
-    return new LogNormalizer(serializedKeys).normalize(record);
+    return new LoggerNormalizer(serializedKeys).normalize(record);
 }
 
 function keepNormalizedError(error: object): SerializedError {

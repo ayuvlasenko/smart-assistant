@@ -6,7 +6,7 @@ import {
     buildLoggerOptions,
     buildPrettyLoggerOptions,
 } from "./logger-options.js";
-import { requestIdOptions } from "./request-logging.js";
+import { requestIdOptions } from "./logger-request.js";
 
 function getLoggerOptions(): FastifyServerOptions["logger"] {
     const level = process.env.LOG_LEVEL ?? "info";

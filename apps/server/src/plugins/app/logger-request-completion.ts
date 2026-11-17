@@ -20,6 +20,6 @@ export default fp(
         });
     },
     {
-        name: "http-request-log",
+        name: "logger-request-completion",
     },
 );

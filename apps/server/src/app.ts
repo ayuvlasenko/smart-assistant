@@ -9,9 +9,9 @@ import {
 import { ObjectId } from "mongodb";
 import { STATUS_CODES } from "node:http";
 import path from "node:path";
+import { requestIdOptions } from "./logger-request.js";
 import { TelegramApiClient } from "./plugins/app/telegram/telegram-api-service.js";
 import { TelegramApiFactory } from "./plugins/app/telegram/telegram-bots.js";
-import { requestIdOptions } from "./request-logging.js";
 
 const testFilePattern = /\.(?:test|spec)\.(?:js|ts)$/;
 const internalServerErrorMessage = "Internal Server Error";

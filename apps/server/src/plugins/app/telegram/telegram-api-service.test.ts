@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { buildCacheServiceTestApp } from "../../../test/cache-service-helper.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { MetricsService } from "../metrics-service.js";
 import {
     telegramApiScope,
@@ -37,7 +37,7 @@ void describe("TelegramApiService", () => {
     });
 
     void it("records and logs rejected requests", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { metrics, telegramApiService } = await buildApiService(
             t,
             [{ ok: false, error_code: 403, description: "Forbidden" }],
@@ -159,7 +159,7 @@ void describe("TelegramApiService", () => {
     });
 
     void it("waits for retry_after and repeats a request that got a 429", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { fetch, metrics, telegramApiService } = await buildApiService(
             t,
             [rateLimitedResponse, { ok: true, result: true }],
@@ -265,7 +265,7 @@ function mockFetchUntilAbort(t: TestContext): void {
 async function buildApiService(
     t: TestContext,
     responseBodies: object[],
-    logs = createLogCollector(),
+    logs = createLoggerCollector(),
 ) {
     const fetch = t.mock.method(globalThis, "fetch", async () => {
         const responseBody = responseBodies.shift() ?? responseBodies.at(-1);

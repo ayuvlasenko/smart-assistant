@@ -1,6 +1,6 @@
 import { Writable } from "node:stream";
 
-export interface LogEntry {
+export interface LoggerEntry {
     botId?: string;
     failed?: number;
     handler?: string;
@@ -26,7 +26,7 @@ export interface LogEntry {
     };
 }
 
-export function createLogCollector() {
+export function createLoggerCollector() {
     const lines: string[] = [];
     const listeners = new Set<() => void>();
 
@@ -35,13 +35,13 @@ export function createLogCollector() {
             .join("")
             .split("\n")
             .filter(Boolean)
-            .map((line) => JSON.parse(line) as LogEntry);
+            .map((line) => JSON.parse(line) as LoggerEntry);
 
     const waitForEntry = (
-        predicate: (entry: LogEntry) => boolean,
+        predicate: (entry: LoggerEntry) => boolean,
         timeoutMs = 2000,
     ) =>
-        new Promise<LogEntry>((resolve, reject) => {
+        new Promise<LoggerEntry>((resolve, reject) => {
             const check = () => {
                 const entry = readEntries().find(predicate);
 

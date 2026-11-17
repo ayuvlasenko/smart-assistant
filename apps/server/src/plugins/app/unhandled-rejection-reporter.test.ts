@@ -1,13 +1,13 @@
 import Fastify from "fastify";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createLogCollector } from "../../test/log-collector.js";
+import { createLoggerCollector } from "../../test/logger-collector.js";
 import { MetricsService } from "./metrics-service.js";
 import { UnhandledRejectionReporter } from "./unhandled-rejection-reporter.js";
 
 void describe("UnhandledRejectionReporter", () => {
     void it("logs and counts an unhandled rejection", async () => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const metrics = new MetricsService();
         const reporter = new UnhandledRejectionReporter(
             Fastify({ logger: logs.logger }).log,

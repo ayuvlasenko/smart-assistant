@@ -2,8 +2,8 @@ import { Type } from "@sinclair/typebox";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { requestLogSerializers } from "../../../request-logging.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { loggerRequestSerializers } from "../../../logger-request.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramApiServiceMock,
@@ -93,7 +93,7 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("logs the user of an update with the update id", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
@@ -123,7 +123,7 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("logs the command that handled an update and the command whose guard refused one", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
@@ -611,13 +611,13 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("replies with an error once when a command fails and the session is lost", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const chat = buildTelegramPrivateChat({ id: 987654399 });
         const bot: TelegramSceneBot = await buildTelegramSceneBot({
             databaseName,
             mongoClient,
             t,
-            logger: { ...logs.logger, serializers: requestLogSerializers },
+            logger: { ...logs.logger, serializers: loggerRequestSerializers },
             registerRoutes: (router, sceneEngine) => {
                 const pickScene = defineScene({
                     name: "pick",

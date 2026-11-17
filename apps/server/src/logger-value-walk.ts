@@ -1,21 +1,18 @@
 import { Agent } from "node:http";
 import { Stream } from "node:stream";
 
-export interface LogValueLimits {
+export interface LoggerValueLimits {
     maxDepth: number;
     maxEntries: number;
     maxNodes: number;
     maxStringLength: number;
 }
 
-type LogRecord = Record<string, unknown>;
+export const truncatedKey = "[truncated]";
 
 const redactedValue = "[REDACTED]";
 const circularValue = "[Circular]";
 const truncatedValue = "[Truncated]";
-const truncatedKey = "[truncated]";
-const failedValue = "[log record could not be normalized]";
-const maxRecordSize = 65_536;
 
 const secretKeyEndings = [
     "token",
@@ -34,70 +31,13 @@ const secretKeyEndings = [
 
 const botTokenPattern = /\d{6,12}:[\w-]{30,128}/g;
 
-const limitTiers: LogValueLimits[] = [
-    {
-        maxDepth: 10,
-        maxEntries: 100,
-        maxNodes: 20_000,
-        maxStringLength: 10_000,
-    },
-    { maxDepth: 5, maxEntries: 20, maxNodes: 2_000, maxStringLength: 1_000 },
-    { maxDepth: 3, maxEntries: 5, maxNodes: 200, maxStringLength: 200 },
-];
-
-export class LogNormalizer {
-    private readonly rawKeys: ReadonlySet<string>;
-
-    constructor(rawKeys: readonly string[] = []) {
-        this.rawKeys = new Set(rawKeys);
-    }
-
-    normalize(record: LogRecord): LogRecord {
-        try {
-            return this.shrink(record);
-        } catch {
-            return { [truncatedKey]: failedValue };
-        }
-    }
-
-    private shrink(record: LogRecord): LogRecord {
-        let normalized: LogRecord = {};
-
-        for (const limits of limitTiers) {
-            const walk = new LogValueWalk(limits);
-
-            normalized = this.normalizeWith(walk, record);
-
-            if (walk.size <= maxRecordSize) {
-                break;
-            }
-        }
-
-        return normalized;
-    }
-
-    private normalizeWith(walk: LogValueWalk, record: LogRecord): LogRecord {
-        const normalized: LogRecord = {};
-
-        for (const [key, value] of Object.entries(record)) {
-            if (this.rawKeys.has(key)) {
-                normalized[key] = value;
-            } else if (value !== undefined) {
-                normalized[key] = walk.visitEntry(key, value, 0);
-            }
-        }
-
-        return normalized;
-    }
-}
-
-class LogValueWalk {
+export class LoggerValueWalk {
     size = 0;
     private visitedNodes = 0;
     private readonly ancestors = new Set<object>();
-    private readonly limits: LogValueLimits;
+    private readonly limits: LoggerValueLimits;
 
-    constructor(limits: LogValueLimits) {
+    constructor(limits: LoggerValueLimits) {
         this.limits = limits;
     }
 
@@ -209,9 +149,9 @@ class LogValueWalk {
     private visitEntries(
         entries: [string, unknown][],
         depth: number,
-    ): LogRecord {
+    ): Record<string, unknown> {
         const present = entries.filter(([, item]) => item !== undefined);
-        const visited: LogRecord = {};
+        const visited: Record<string, unknown> = {};
 
         for (const [key, item] of present.slice(0, this.limits.maxEntries)) {
             visited[key] = this.visitEntry(key, item, depth + 1);

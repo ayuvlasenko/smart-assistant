@@ -3,7 +3,7 @@ import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
@@ -101,7 +101,7 @@ void describe("BotsRegistry", () => {
     });
 
     void it("skips a bot whose token it can't decrypt and keeps the root bot", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
                 databaseName,
@@ -137,7 +137,7 @@ void describe("BotsRegistry", () => {
     });
 
     void it("skips a bot whose stored token belongs to another bot", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
@@ -193,7 +193,7 @@ void describe("BotsRegistry", () => {
     });
 
     void it("keeps the root bot and its data when the root token becomes a token of another bot", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const first = await buildTelegramBotServiceTestApp({
             databaseName,
             mongoClient,

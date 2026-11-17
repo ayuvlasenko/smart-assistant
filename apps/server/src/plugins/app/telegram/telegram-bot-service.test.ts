@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { buildTestApp } from "../../../test/helper.js";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
@@ -127,7 +127,7 @@ void describe("TelegramBotService", () => {
     });
 
     void it("removes the guard and logs the bot when Telegram rejects webhook setup", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const telegramApiService = buildTelegramApiServiceMock({
             t,
             setWebhookResponse: {
@@ -317,7 +317,7 @@ void describe("TelegramBotService", () => {
 
 void describe("telegram plugin on listen", () => {
     void it("sets the webhook once on production", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app, telegramApiService } = await buildTestApp({
             t,
             environment: "production",
@@ -340,7 +340,7 @@ void describe("telegram plugin on listen", () => {
     });
 
     void it("reports the skipped webhook on preview", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             t,
             environment: "preview",

@@ -1,7 +1,7 @@
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
-import { createLogCollector } from "../../../test/log-collector.js";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
@@ -70,7 +70,7 @@ void describe("TelegramCommandMenus on start", () => {
     });
 
     void it("sets the menus of the other bots when one bot fails", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const failing = buildTelegramApiServiceMock({ t });
 
         failing.setMyCommands.mock.mockImplementation(async () => ({
@@ -341,7 +341,7 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 
     void it("logs a rejected chat menu, keeps going and tries again next time", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const telegramApiService = buildTelegramApiServiceMock({ t });
         const { telegramCommandMenus } = await buildTelegramBotServiceTestApp({
             ...buildMenuAppOptions(t),

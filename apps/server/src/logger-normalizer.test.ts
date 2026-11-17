@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import { Agent } from "node:http";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
-import { LogNormalizer } from "./log-normalizer.js";
+import { LoggerNormalizer } from "./logger-normalizer.js";
 import { buildLoggerOptions } from "./logger-options.js";
-import { createLogCollector } from "./test/log-collector.js";
+import { createLoggerCollector } from "./test/logger-collector.js";
 
 const botToken = "123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-bs";
 
-void describe("LogNormalizer", () => {
+void describe("LoggerNormalizer", () => {
     void it("hides a value under a key that names a secret, at any depth", () => {
-        const record = new LogNormalizer().normalize({
+        const record = new LoggerNormalizer().normalize({
             botId: "42",
             token: "plain",
             request: {
@@ -33,11 +33,11 @@ void describe("LogNormalizer", () => {
     void it("keeps a value under a key in which the secret word is only a part", () => {
         const record = { tokens: 3, tokenCount: 2, routingKey: "poker" };
 
-        assert.deepEqual(new LogNormalizer().normalize(record), record);
+        assert.deepEqual(new LoggerNormalizer().normalize(record), record);
     });
 
     void it("masks a bot token inside a string", () => {
-        const record = new LogNormalizer().normalize({
+        const record = new LoggerNormalizer().normalize({
             url: `https://api.telegram.org/bot${botToken}/getMe`,
         });
 
@@ -51,7 +51,7 @@ void describe("LogNormalizer", () => {
         const error = Object.assign(new Error("request failed", { cause }), {
             method: "getMe",
         });
-        const record = new LogNormalizer().normalize({ replyErr: error });
+        const record = new LoggerNormalizer().normalize({ replyErr: error });
         const serialized = record.replyErr as Record<string, unknown>;
 
         assert.equal(serialized.type, "Error");
@@ -65,7 +65,7 @@ void describe("LogNormalizer", () => {
     });
 
     void it("masks a bot token in the message and the stack of an error", () => {
-        const record = new LogNormalizer().normalize({
+        const record = new LoggerNormalizer().normalize({
             err: new Error(`failed https://api.telegram.org/bot${botToken}/`),
         });
 
@@ -78,7 +78,7 @@ void describe("LogNormalizer", () => {
         cycle.self = cycle;
 
         assert.deepEqual(
-            new LogNormalizer().normalize({
+            new LoggerNormalizer().normalize({
                 body: Buffer.from("hello"),
                 stream: new PassThrough(),
                 agent: new Agent(),
@@ -98,7 +98,7 @@ void describe("LogNormalizer", () => {
     });
 
     void it("cuts a long string and a long list and says how much it cut", () => {
-        const record = new LogNormalizer().normalize({
+        const record = new LoggerNormalizer().normalize({
             text: "a".repeat(10_010),
             items: Array.from({ length: 103 }, (_, index) => index),
         });
@@ -115,7 +115,7 @@ void describe("LogNormalizer", () => {
     });
 
     void it("shrinks a record that is too large and keeps every key of its top level", () => {
-        const record = new LogNormalizer().normalize({
+        const record = new LoggerNormalizer().normalize({
             botId: "42",
             response: Array.from({ length: 40 }, () => ({
                 text: "b".repeat(3_000),
@@ -132,13 +132,15 @@ void describe("LogNormalizer", () => {
 
     void it("leaves the keys of a serializer as they are", () => {
         const request = { raw: { token: "abc" } };
-        const record = new LogNormalizer(["req"]).normalize({ req: request });
+        const record = new LoggerNormalizer(["req"]).normalize({
+            req: request,
+        });
 
         assert.equal(record.req, request);
     });
 
     void it("keeps a secret out of a real log line", async () => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const app = Fastify({
             logger: {
                 ...buildLoggerOptions("info"),

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildLoggerOptions } from "../logger-options.js";
-import { REQUEST_ID_HEADER } from "../request-logging.js";
+import { REQUEST_ID_HEADER } from "../logger-request.js";
 import { buildTestApp } from "../test/helper.js";
-import { createLogCollector } from "../test/log-collector.js";
+import { createLoggerCollector } from "../test/logger-collector.js";
 
 const uuidV4Pattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -33,7 +33,7 @@ void describe("GET /", () => {
     });
 
     void it("serializes forwarded client address in request logs", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: {
                 ...buildLoggerOptions("info"),
@@ -61,7 +61,7 @@ void describe("GET /", () => {
     });
 
     void it("writes one line per request, with the name of the level, the status and the time", async (t) => {
-        const logs = createLogCollector();
+        const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: {
                 ...buildLoggerOptions("info"),
