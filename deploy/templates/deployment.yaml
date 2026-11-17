@@ -6,7 +6,9 @@ metadata:
   labels:
     app: server
 spec:
-  replicas: {{ ternary .Values.server.replicas.production .Values.server.replicas.preview (eq .Values.resourceName "main") }}
+  {{- if ne .Values.resourceName "main" }}
+  replicas: {{ .Values.server.replicas.preview }}
+  {{- end }}
   revisionHistoryLimit: {{ .Values.server.revisionHistoryLimit }}
   progressDeadlineSeconds: {{ .Values.server.progressDeadlineSeconds }}
   selector:
@@ -20,6 +22,16 @@ spec:
         resourceName: {{ .Values.resourceName }}
     spec:
       terminationGracePeriodSeconds: {{ .Values.server.shutdown.terminationGracePeriodSeconds }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: server
+              resourceName: {{ .Values.resourceName }}
+          matchLabelKeys:
+            - pod-template-hash
       containers:
         - name: server
           image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"

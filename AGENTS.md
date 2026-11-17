@@ -107,6 +107,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values. The tests load `apps/server/.env.test` over them, so a variable in that file never comes from the root `.env`.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
+- Production runs 2 to 4 pods under the autoscaler of `deploy/templates/hpa.yaml`, set in `server.replicas` of `deploy/values.yaml`; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.

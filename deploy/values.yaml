@@ -5,8 +5,11 @@ server:
     pullPolicy: IfNotPresent
   port: 3020
   replicas:
-    production: 1
     preview: 1
+    production:
+      min: 2
+      max: 4
+      cpuUtilization: 70
   revisionHistoryLimit: 1
   progressDeadlineSeconds: 300
   probes:
