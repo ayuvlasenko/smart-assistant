@@ -265,6 +265,40 @@ void describe("/bots", () => {
         );
     });
 
+    void it("puts /start into the command menu of a bot when it opens a module", async (t) => {
+        const bot = await buildBot(t, {
+            plugins: [
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const actor = await allowAdmin(
+            bot,
+            buildTelegramPrivateChat({ id: 987657023 }),
+        );
+        const childId = await addChild(bot, actor);
+        const defaultGrants = bot.settingsService.find("access.defaultGrants");
+
+        assert.ok(defaultGrants);
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+        await bot.settingsService.write(
+            buildUserEntity({ botId: childId, grants: [adminGrant] }),
+            defaultGrants,
+            [pokerJoinGrant],
+        );
+        await bot.botsService.setStartModule(actor, childId, "poker");
+
+        assert.deepEqual(
+            bot.childApis
+                .get("42")
+                ?.setMyCommands.mock.calls.at(-1)
+                ?.arguments[0].commands.map(({ command }) => command),
+            ["start", "cancel", "poker"],
+        );
+    });
+
     void it("stops a bot after a second press, removes its webhook and serves it no more", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987657005 });

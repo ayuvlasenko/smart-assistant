@@ -140,6 +140,7 @@ export default fp(
         fastify
             .getDecorator<TelegramStartEntries>("telegramStartEntries")
             .register("poker", openPoker, {
+                description: (t) => t("poker:command"),
                 guard: access.guard("read", pokerRoom),
             });
 

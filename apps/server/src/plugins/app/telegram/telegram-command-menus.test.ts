@@ -1,3 +1,5 @@
+import { FastifyPluginAsync } from "fastify";
+import fp from "fastify-plugin";
 import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -12,7 +14,9 @@ import {
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { Language } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
+import { TelegramGuard } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
+import { TelegramStartEntries } from "./telegram-start-entries.js";
 
 let databaseName!: string;
 let mongoClient!: MongoClient;
@@ -301,6 +305,66 @@ void describe("TelegramCommandMenus chat menus", () => {
         assert.equal((await readUser(user)).commandMenu, undefined);
     });
 
+    void it("puts /start first in the menus of a bot once it has a start module", async (t) => {
+        const { botsRegistry, botsRepository, telegramCommandMenus, ...app } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                plugins: [registerStartEntry("ping")],
+            });
+        const readFirstCommands = () =>
+            app.telegramApiService.setMyCommands.mock.calls.map((call) => [
+                call.arguments[0].language_code,
+                call.arguments[0].commands[0],
+            ]);
+
+        await telegramCommandMenus.setOnStart();
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+        await telegramCommandMenus.setOnStart();
+
+        assert.deepEqual(readFirstCommands().slice(4), [
+            [
+                undefined,
+                { command: "start", description: telegramLocales.en.welcome },
+            ],
+            ...(["en", "uk", "ru"] as const).map((language) => [
+                language,
+                {
+                    command: "start",
+                    description: telegramLocales[language].welcome,
+                },
+            ]),
+        ]);
+    });
+
+    void it("keeps /start out of the menu when the guard of the start entry refuses the user", async (t) => {
+        const { botsRegistry, botsRepository, telegramCommandMenus, ...app } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                plugins: [
+                    registerStartEntry("ping", (user) =>
+                        user.grants.includes("vip"),
+                    ),
+                ],
+            });
+        const user = await insertUser({
+            telegramId: "987654611",
+            grants: ["vip"],
+        });
+        const readCommands = () =>
+            app.telegramApiService.setMyCommands.mock.calls.map((call) =>
+                call.arguments[0].commands.map(({ command }) => command),
+            );
+
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+        await telegramCommandMenus.setOnStart();
+        await telegramCommandMenus.syncUser(user);
+
+        assert.deepEqual(readCommands(), [
+            ...Array.from({ length: 4 }, () => ["cancel", "help"]),
+            ["start", "cancel", "help", "secret"],
+        ]);
+    });
+
     void it("doesn't set chat commands for banned users", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
@@ -412,6 +476,23 @@ function buildMenuAppOptions(
             });
         },
     };
+}
+
+function registerStartEntry(
+    module: string,
+    guard?: TelegramGuard,
+): FastifyPluginAsync {
+    return fp(
+        async (fastify) => {
+            fastify
+                .getDecorator<TelegramStartEntries>("telegramStartEntries")
+                .register(module, async () => undefined, {
+                    description: (translate) => translate("telegram:welcome"),
+                    guard,
+                });
+        },
+        { dependencies: ["telegram-start-entries"] },
+    );
 }
 
 function buildExpectedCommands(language: Language) {
