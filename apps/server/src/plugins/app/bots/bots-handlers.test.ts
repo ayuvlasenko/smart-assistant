@@ -182,7 +182,7 @@ void describe("/bots", () => {
         await bot.pressButton(admin, en.modulesButton);
         await bot.pressButton(admin, `⬜ ${pingLocales.en.section}`);
 
-        assert.deepEqual(bot.botsRegistry.modulesOf(childId), ["ping"]);
+        assert.deepEqual(await bot.botsRegistry.modulesOf(childId), ["ping"]);
         assert.ok(
             (await bot.readButtonLabels(admin.id)).includes(
                 `✅ ${pingLocales.en.section}`,
@@ -191,7 +191,7 @@ void describe("/bots", () => {
 
         await bot.pressButton(admin, `✅ ${pingLocales.en.section}`);
 
-        assert.deepEqual(bot.botsRegistry.modulesOf(childId), []);
+        assert.deepEqual(await bot.botsRegistry.modulesOf(childId), []);
     });
 
     void it("picks what /start opens in one bot only, and forgets a module that is turned off", async (t) => {
@@ -222,7 +222,10 @@ void describe("/bots", () => {
 
         await bot.pressButton(admin, `⚪ ${pokerTitle}`);
 
-        assert.equal(bot.telegramBots.find(childId)?.startModule, "poker");
+        assert.equal(
+            (await bot.telegramBots.find(childId))?.startModule,
+            "poker",
+        );
         assert.ok(
             (await bot.readButtonLabels(admin.id)).includes(`🔘 ${pokerTitle}`),
         );
@@ -250,7 +253,10 @@ void describe("/bots", () => {
 
         await bot.botsService.toggleModule(actor, childId, "poker");
 
-        assert.equal(bot.telegramBots.find(childId)?.startModule, undefined);
+        assert.equal(
+            (await bot.telegramBots.find(childId))?.startModule,
+            undefined,
+        );
         assert.equal(
             (await bot.botsService.setStartModule(actor, childId, "poker"))
                 ?.startModule,
@@ -269,11 +275,11 @@ void describe("/bots", () => {
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.stopButton);
 
-        assert.ok(bot.telegramBots.find(childId));
+        assert.ok(await bot.telegramBots.find(childId));
 
         await bot.pressButton(admin, en.confirmStopButton);
 
-        assert.equal(bot.telegramBots.find(childId), undefined);
+        assert.equal(await bot.telegramBots.find(childId), undefined);
         assert.equal(
             bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
             1,
@@ -432,7 +438,7 @@ void describe("/bots", () => {
 
         assert.equal(moved?.telegramId, "44");
         assert.equal(moved.username, "child_44_bot");
-        assert.equal(bot.botsRegistry.find(childId)?.telegramId, "44");
+        assert.equal((await bot.botsRegistry.find(childId))?.telegramId, "44");
         assert.deepEqual(user?.grants, [adminGrant]);
         assert.equal(
             bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
@@ -463,9 +469,9 @@ void describe("/bots", () => {
                 await bot.telegramBotService.resolveDeepLinkUrl(childId, link)
             ).includes("child_44_bot"),
         );
-        assert.equal(await bot.telegramBots.loadByTelegramId("42"), undefined);
+        assert.equal(await bot.telegramBots.findByTelegramId("42"), undefined);
         assert.equal(
-            (await bot.telegramBots.loadByTelegramId("44"))?.id,
+            (await bot.telegramBots.findByTelegramId("44"))?.id,
             childId,
         );
     });
@@ -529,8 +535,8 @@ void describe("/bots", () => {
         const adminOf = (botId: string) =>
             buildUserEntity({ botId, grants: [adminGrant] });
 
-        assert.equal(access.can(adminOf(testBotId), "read", "Bot"), true);
-        assert.equal(access.can(adminOf("42"), "read", "Bot"), false);
+        assert.equal(await access.can(adminOf(testBotId), "read", "Bot"), true);
+        assert.equal(await access.can(adminOf("42"), "read", "Bot"), false);
     });
 });
 
@@ -595,7 +601,7 @@ async function sendTo(
     const [command = ""] = text.split(" ");
 
     await bot.telegramUpdateHandler.handle(
-        bot.telegramBots.get(botId),
+        await bot.telegramBots.get(botId),
         buildTelegramTextMessageUpdate({
             update_id: updateId,
             message: {

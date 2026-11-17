@@ -126,7 +126,7 @@ export class PokerRoomsService {
             ],
         };
 
-        this.access.assert(actor, "create", subject("PokerRoom", data));
+        await this.access.assert(actor, "create", subject("PokerRoom", data));
 
         const room = await this.pokerRoomsRepository.create(data, now);
 
@@ -146,7 +146,7 @@ export class PokerRoomsService {
                 return { status: "notFound" };
             }
 
-            this.access.assert(actor, "use", subject("PokerRoom", room));
+            await this.access.assert(actor, "use", subject("PokerRoom", room));
 
             if (findPokerParticipant(room, actor._id)) {
                 return { status: "alreadyJoined", room };
@@ -158,7 +158,7 @@ export class PokerRoomsService {
                 return { status: "closed" };
             }
 
-            const maxParticipants = this.settingsService.read(
+            const maxParticipants = await this.settingsService.read(
                 pokerMaxParticipantsSetting,
                 room.botId,
             );
@@ -191,11 +191,14 @@ export class PokerRoomsService {
         );
     }
 
-    find(actor: UserEntity, roomId: ObjectId): Promise<PokerRoomEntity | null> {
+    async find(
+        actor: UserEntity,
+        roomId: ObjectId,
+    ): Promise<PokerRoomEntity | null> {
         return this.pokerRoomsRepository.findOne({
             $and: [
                 { _id: roomId },
-                this.access.accessibleBy(actor, "read", "PokerRoom"),
+                await this.access.accessibleBy(actor, "read", "PokerRoom"),
             ],
         });
     }
@@ -207,7 +210,7 @@ export class PokerRoomsService {
         const query = {
             filter: {
                 $and: [
-                    this.access.accessibleBy(actor, "read", "PokerRoom"),
+                    await this.access.accessibleBy(actor, "read", "PokerRoom"),
                     status === "open"
                         ? { "participants.userId": actor._id }
                         : { createdBy: actor._id },
@@ -321,7 +324,7 @@ export class PokerRoomsService {
         actor: UserEntity,
         room: PokerRoomEntity,
     ): Promise<PokerRoomEntity | null> {
-        this.access.assert(actor, "update", subject("PokerRoom", room));
+        await this.access.assert(actor, "update", subject("PokerRoom", room));
 
         return this.change(actor, room, "closed", (current, now) => ({
             closedAt: now,
@@ -342,7 +345,11 @@ export class PokerRoomsService {
                 return null;
             }
 
-            this.access.assert(actor, "use", subject("PokerRoom", current));
+            await this.access.assert(
+                actor,
+                "use",
+                subject("PokerRoom", current),
+            );
 
             const now = new Date();
             const patch =

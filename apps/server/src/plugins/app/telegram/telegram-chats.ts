@@ -127,8 +127,17 @@ export class TelegramChats {
             targets.length,
         );
 
+        const bots = new Map<string, Promise<TelegramBot | undefined>>();
         const results = await Promise.allSettled(
-            targets.map((target) => this.deliverTo(scene, target, handle)),
+            targets.map((target) => {
+                const bot =
+                    bots.get(target.botId) ??
+                    this.telegramBots.find(target.botId);
+
+                bots.set(target.botId, bot);
+
+                return this.deliverTo(scene, bot, target, handle);
+            }),
         );
 
         this.logDelivery(
@@ -159,6 +168,7 @@ export class TelegramChats {
 
     private async deliverTo(
         scene: TelegramScene,
+        bot: Promise<TelegramBot | undefined>,
         target: TelegramSceneTarget,
         handle: ErasedDeliveryHandler | undefined,
     ): Promise<void> {
@@ -167,7 +177,7 @@ export class TelegramChats {
 
         try {
             await this.withUser(
-                target.botId,
+                await bot,
                 target.userId,
                 { scene: scene.name },
                 (ctx) =>
@@ -187,7 +197,8 @@ export class TelegramChats {
         const startedAt = performance.now();
 
         try {
-            const watchers = [...(await this.findWatchers(botId, topics))];
+            const bot = await this.telegramBots.find(botId);
+            const watchers = [...(await this.findWatchers(bot, topics))];
 
             this.telegramMetrics.recordDeliveryRecipients(
                 "publish",
@@ -196,7 +207,7 @@ export class TelegramChats {
 
             const results = await Promise.allSettled(
                 watchers.map(([userId, scenes]) =>
-                    this.redrawFor(botId, userId, scenes, topics),
+                    this.redrawFor(bot, userId, scenes, topics),
                 ),
             );
 
@@ -229,11 +240,10 @@ export class TelegramChats {
     }
 
     private async findWatchers(
-        botId: string,
+        bot: TelegramBot | undefined,
         topics: string[],
     ): Promise<Map<number, TelegramSceneRef[]>> {
         const entries = new Map<number, Set<string>>();
-        const bot = this.telegramBots.find(botId);
         const matches = bot
             ? await Promise.all(
                   topics.map((topic) =>
@@ -260,7 +270,7 @@ export class TelegramChats {
     }
 
     private async redrawFor(
-        botId: string,
+        bot: TelegramBot | undefined,
         userId: number,
         scenes: TelegramSceneRef[],
         topics: string[],
@@ -269,7 +279,7 @@ export class TelegramChats {
             this.telegramMetrics.startRecipientDelivery("publish");
 
         try {
-            await this.withUser(botId, userId, { topics }, async (ctx) => {
+            await this.withUser(bot, userId, { topics }, async (ctx) => {
                 for (const { sceneId } of scenes) {
                     await this.sceneEngine.redraw(ctx, sceneId, topics);
                 }
@@ -330,16 +340,15 @@ export class TelegramChats {
     }
 
     private async withUser(
-        botId: string,
+        bot: TelegramBot | undefined,
         userId: number,
         bindings: Record<string, unknown>,
         handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
     ): Promise<void> {
-        const bot = this.telegramBots.find(botId);
         const user =
             bot &&
             (await this.usersRepository.findOneByTelegramId(
-                botId,
+                bot.id,
                 String(userId),
             ));
 
@@ -348,7 +357,7 @@ export class TelegramChats {
         }
 
         const log = this.log.child({
-            botId,
+            botId: bot.id,
             telegramUserId: userId,
             ...bindings,
         });

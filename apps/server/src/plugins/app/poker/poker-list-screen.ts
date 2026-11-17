@@ -12,13 +12,13 @@ import { PokerView } from "./poker-schemas.js";
 
 const roomsPageSize = 5;
 
-export function renderPokerList(
+export async function renderPokerList(
     view: PokerView,
     page: number,
 ): Promise<TelegramMessageContent> {
     const { ctx, scene, access } = view;
     const { t } = ctx;
-    const canCreate = access.can(ctx.user, "create", "PokerRoom");
+    const canCreate = await access.can(ctx.user, "create", "PokerRoom");
 
     return renderRooms(view, "open", page, [
         canCreate

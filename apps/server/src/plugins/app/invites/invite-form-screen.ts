@@ -39,14 +39,14 @@ export function renderInviteForm(view: InvitesView): TelegramMessageContent {
     ]);
 }
 
-export function renderInviteFormSections(
+export async function renderInviteFormSections(
     view: InvitesView,
     page: number,
-): TelegramMessageContent {
+): Promise<TelegramMessageContent> {
     const { ctx, scene, access } = view;
     const { t } = ctx;
     const sections = pageOf(
-        listGrantableSections(access, ctx.user),
+        await listGrantableSections(access, ctx.user),
         page,
         sectionsPageSize,
     );
@@ -76,16 +76,15 @@ export function renderInviteFormSections(
     );
 }
 
-export function renderInviteFormSection(
+export async function renderInviteFormSection(
     view: InvitesView,
     sectionName: string,
     page: number,
-): TelegramMessageContent {
+): Promise<TelegramMessageContent> {
     const { ctx, scene, access } = view;
     const { t } = ctx;
-    const section = listGrantableSections(access, ctx.user).find(
-        ({ name }) => name === sectionName,
-    );
+    const sections = await listGrantableSections(access, ctx.user);
+    const section = sections.find(({ name }) => name === sectionName);
 
     if (!section) {
         return renderInviteFormSections(view, 0);
@@ -170,15 +169,16 @@ function formatValidFor(t: Translate, days: number | null): string {
     return days === null ? t("invites:never") : String(days);
 }
 
-function listGrantableSections(
+async function listGrantableSections(
     access: AccessControl<InvitesSubjects>,
     user: UserEntity,
-): AccessSection[] {
-    return access.listSections().flatMap((section) => {
-        if (!access.isEnabled(user.botId, section.name)) {
-            return [];
-        }
+): Promise<AccessSection[]> {
+    const sections = await access.listEnabled(
+        user.botId,
+        access.listSections(),
+    );
 
+    return sections.flatMap((section) => {
         const grants = section.grants.filter((grant) =>
             access.holds(user, grant.name),
         );

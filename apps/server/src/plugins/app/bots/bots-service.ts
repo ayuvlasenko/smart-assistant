@@ -72,7 +72,7 @@ export class BotsService {
         return botId === this.botsRegistry.rootId;
     }
 
-    isServed(botId: string): boolean {
+    isServed(botId: string): Promise<boolean> {
         return this.botsConnector.isServed(botId);
     }
 
@@ -91,29 +91,29 @@ export class BotsService {
         );
     }
 
-    list(actor: UserEntity): Promise<BotEntity[]> {
-        this.access.assert(actor, "read", "Bot");
+    async list(actor: UserEntity): Promise<BotEntity[]> {
+        await this.access.assert(actor, "read", "Bot");
 
         return this.botsRepository.findAll();
     }
 
-    find(actor: UserEntity, botId: string): Promise<BotEntity | null> {
-        this.access.assert(actor, "read", "Bot");
+    async find(actor: UserEntity, botId: string): Promise<BotEntity | null> {
+        await this.access.assert(actor, "read", "Bot");
 
         return this.botsRepository.findOneById(botId);
     }
 
-    readWebhook(
+    async readWebhook(
         actor: UserEntity,
         botId: string,
     ): Promise<WebhookInfo | undefined> {
-        this.access.assert(actor, "read", "Bot");
+        await this.access.assert(actor, "read", "Bot");
 
         return this.botsConnector.readWebhook(botId);
     }
 
     async add(actor: UserEntity, token: string): Promise<BotAddResult> {
-        this.access.assert(actor, "create", "Bot");
+        await this.access.assert(actor, "create", "Bot");
 
         if (!this.botsRegistry.canStoreTokens) {
             return { status: "keyMissing" };
@@ -135,8 +135,6 @@ export class BotsService {
         if (!bot) {
             return this.alreadyAdded(profile.telegramId);
         }
-
-        this.botsRegistry.put(bot);
         await this.botsConnector.connect(bot._id);
 
         const ownerInvite = await this.invitesService.createOwnerInvite(
@@ -153,9 +151,9 @@ export class BotsService {
         actor: UserEntity,
         botId: string,
     ): Promise<InviteEntity | null> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
 
-        if (this.isRoot(botId) || !this.isServed(botId)) {
+        if (this.isRoot(botId) || !(await this.isServed(botId))) {
             return null;
         }
 
@@ -167,7 +165,7 @@ export class BotsService {
         botId: string,
         module: string,
     ): Promise<BotEntity | null> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
 
         if (!this.listModules().some(({ name }) => name === module)) {
             throw new Error(`Module "${module}" is not registered`);
@@ -178,8 +176,6 @@ export class BotsService {
         if (!bot) {
             return null;
         }
-
-        this.botsRegistry.put(bot);
         await this.botsConnector.refreshCommands(botId);
         this.log.info(
             { botId, modules: bot.modules, userId: actor._id },
@@ -195,7 +191,7 @@ export class BotsService {
         botId: string,
         module: string | null,
     ): Promise<BotEntity | null> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
 
         const current = await this.botsRepository.findOneById(botId);
 
@@ -215,7 +211,6 @@ export class BotsService {
         );
 
         if (bot) {
-            this.botsRegistry.put(bot);
             this.log.info(
                 { botId, startModule: bot.startModule, userId: actor._id },
                 "Bot start module changed",
@@ -231,7 +226,7 @@ export class BotsService {
         botId: string,
         token: string,
     ): Promise<BotTokenResult> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
         if (!this.botsRegistry.canStoreTokens) {
@@ -260,8 +255,6 @@ export class BotsService {
         if (!bot) {
             return { status: "otherBot" };
         }
-
-        this.botsRegistry.put(bot);
         await this.botsConnector.connect(botId);
         this.log.info({ botId, userId: actor._id }, "Bot token replaced");
         await this.emitChanged(botId);
@@ -274,7 +267,7 @@ export class BotsService {
         botId: string,
         token: string,
     ): Promise<BotMoveResult> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
         if (!this.botsRegistry.canStoreTokens) {
@@ -296,6 +289,7 @@ export class BotsService {
             return this.alreadyAdded(profile.telegramId);
         }
 
+        const previous = await this.botsConnector.find(botId);
         const bot = await this.takeTelegramBot(botId, profile, token);
 
         if (bot === "taken") {
@@ -306,8 +300,10 @@ export class BotsService {
             return { status: "invalidToken" };
         }
 
-        await this.botsConnector.disconnect(botId);
-        this.botsRegistry.put(bot);
+        if (previous) {
+            await this.botsConnector.deleteWebhook(previous);
+        }
+
         await this.botsConnector.connect(botId);
         this.log.info(
             {
@@ -324,13 +320,13 @@ export class BotsService {
     }
 
     async reconnect(actor: UserEntity, botId: string): Promise<void> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
         await this.botsConnector.connect(botId);
         await this.emitChanged(botId);
     }
 
     async stop(actor: UserEntity, botId: string): Promise<BotEntity | null> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
         await this.botsConnector.disconnect(botId);
@@ -338,7 +334,6 @@ export class BotsService {
         const bot = await this.botsRepository.disable(botId, new Date());
 
         if (bot) {
-            this.botsRegistry.put(bot);
             this.log.info({ botId, userId: actor._id }, "Bot stopped");
             await this.emitChanged(botId);
         }
@@ -347,12 +342,11 @@ export class BotsService {
     }
 
     async start(actor: UserEntity, botId: string): Promise<BotEntity | null> {
-        this.access.assert(actor, "update", "Bot");
+        await this.access.assert(actor, "update", "Bot");
 
         const bot = await this.botsRepository.enable(botId);
 
         if (bot) {
-            this.botsRegistry.put(bot);
             await this.botsConnector.connect(botId);
             this.log.info({ botId, userId: actor._id }, "Bot started");
             await this.emitChanged(botId);

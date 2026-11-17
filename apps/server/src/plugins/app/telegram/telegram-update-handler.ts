@@ -153,7 +153,7 @@ export class TelegramUpdateHandler {
 
         run.language = languageOf(user);
 
-        await this.telegramCommandMenus.sync(user);
+        await this.telegramCommandMenus.sync(run.bot, user);
         run.route = await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
     }

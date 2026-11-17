@@ -67,7 +67,7 @@ export class TelegramCommandMenus {
             return;
         }
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.listBotsOnStart()) {
             try {
                 await this.syncBot(bot);
             } catch (err) {
@@ -80,7 +80,7 @@ export class TelegramCommandMenus {
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
-        const menus = this.buildBotMenus(bot);
+        const menus = await this.buildBotMenus(bot);
 
         await this.cache.delete(botMenuKeyOf(bot));
 
@@ -110,29 +110,35 @@ export class TelegramCommandMenus {
     async syncBot(bot: TelegramBot): Promise<void> {
         const hash = await this.cache.get(botMenuKeyOf(bot), Type.String());
 
-        if (hash !== hashMenus(bot, this.buildBotMenus(bot))) {
+        if (hash !== hashMenus(bot, await this.buildBotMenus(bot))) {
             await this.refresh(bot);
         }
     }
 
-    async sync(user: UserEntity): Promise<void> {
-        const bot = this.telegramBots.find(user.botId);
+    async syncUser(user: UserEntity): Promise<void> {
+        const bot = await this.telegramBots.find(user.botId);
 
-        if (user.isBanned || !bot) {
+        if (bot) {
+            await this.sync(bot, user);
+        }
+    }
+
+    async sync(bot: TelegramBot, user: UserEntity): Promise<void> {
+        if (user.isBanned) {
             return;
         }
 
-        const commands = this.describeCommandsOf(
-            user,
-            this.i18nService.getT(languageOf(user)),
-        );
-        const commandMenu = isDeepStrictEqual(
-            commands,
+        const [commands, defaultCommands] = await Promise.all([
+            this.describeCommandsOf(
+                user,
+                this.i18nService.getT(languageOf(user)),
+            ),
             this.describeCommandsOf(
                 buildUserWithoutGrants(user.botId),
                 this.i18nService.getT(user.languageCode),
             ),
-        )
+        ]);
+        const commandMenu = isDeepStrictEqual(commands, defaultCommands)
             ? undefined
             : hashMenus(bot, [{ commands }]);
 
@@ -172,26 +178,45 @@ export class TelegramCommandMenus {
         }
     }
 
-    private buildBotMenus(bot: TelegramBot): TelegramBotMenu[] {
-        const user = buildUserWithoutGrants(bot.id);
-
-        return [undefined, ...languages].map((languageCode) => ({
-            languageCode,
-            commands: this.describeCommandsOf(
-                user,
-                this.i18nService.getT(languageCode ?? defaultLanguage),
-            ),
-        }));
+    private async listBotsOnStart(): Promise<TelegramBot[]> {
+        try {
+            return await this.telegramBots.list();
+        } catch (err) {
+            this.log.error({ err }, "Failed to read the bots on start");
+            return [];
+        }
     }
 
-    private describeCommandsOf(user: UserEntity, t: Translate): BotCommand[] {
-        return this.telegramRouter
-            .listCommands()
-            .filter(({ guard }) => isAllowed(guard, user))
-            .map(({ name, description }) => ({
-                command: name,
-                description: description(t),
-            }));
+    private buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
+        const user = buildUserWithoutGrants(bot.id);
+
+        return Promise.all(
+            [undefined, ...languages].map(async (languageCode) => ({
+                languageCode,
+                commands: await this.describeCommandsOf(
+                    user,
+                    this.i18nService.getT(languageCode ?? defaultLanguage),
+                ),
+            })),
+        );
+    }
+
+    private async describeCommandsOf(
+        user: UserEntity,
+        t: Translate,
+    ): Promise<BotCommand[]> {
+        const commands: BotCommand[] = [];
+
+        for (const route of this.telegramRouter.listCommands()) {
+            if (await isAllowed(route.guard, user)) {
+                commands.push({
+                    command: route.name,
+                    description: route.description(t),
+                });
+            }
+        }
+
+        return commands;
     }
 
     private async setChatMenu(
@@ -249,7 +274,7 @@ export default fp(
         fastify
             .getDecorator<Emittery<UsersEvents>>("eventEmitter")
             .on("users.accessChanged", ({ data }) =>
-                telegramCommandMenus.sync(data.user),
+                telegramCommandMenus.syncUser(data.user),
             );
 
         fastify.addHook("onListen", async () => {

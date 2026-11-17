@@ -95,7 +95,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
-            const bot = await telegramBots.loadByTelegramId(
+            const bot = await telegramBots.findByTelegramId(
                 request.params.telegramId,
             );
 

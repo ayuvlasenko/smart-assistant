@@ -21,15 +21,11 @@ export interface RegisteredBot {
 
 export const botsModule = "bots";
 
-const refreshIntervalMilliseconds = 10_000;
-
 export class BotsRegistry {
     private readonly rootToken: string;
     private readonly botsRepository: BotsRepository;
     private readonly cipher: BotTokenCipher | undefined;
     private readonly log: FastifyBaseLogger;
-    private bots = new Map<string, RegisteredBot>();
-    private refreshTimer: NodeJS.Timeout | undefined;
     private startedRootId: string | undefined;
 
     constructor(
@@ -56,16 +52,28 @@ export class BotsRegistry {
         return this.cipher !== undefined;
     }
 
-    find(botId: string): RegisteredBot | undefined {
-        return this.bots.get(botId);
+    async find(botId: string): Promise<RegisteredBot | undefined> {
+        const bot = await this.botsRepository.findOneById(botId);
+
+        return bot ? this.register(bot) : undefined;
     }
 
-    list(): RegisteredBot[] {
-        return [...this.bots.values()];
+    async findByTelegramId(
+        telegramId: string,
+    ): Promise<RegisteredBot | undefined> {
+        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
+
+        return bot ? this.register(bot) : undefined;
     }
 
-    modulesOf(botId: string): readonly string[] {
-        return this.find(botId)?.modules ?? [];
+    async list(): Promise<RegisteredBot[]> {
+        const bots = await this.botsRepository.findAll();
+
+        return bots.flatMap((bot) => this.register(bot) ?? []);
+    }
+
+    async modulesOf(botId: string): Promise<readonly string[]> {
+        return (await this.find(botId))?.modules ?? [];
     }
 
     encrypt(token: string): EncryptedBotToken {
@@ -74,38 +82,6 @@ export class BotsRegistry {
         }
 
         return this.cipher.encrypt(token);
-    }
-
-    findByTelegramId(telegramId: string): RegisteredBot | undefined {
-        return this.list().find((bot) => bot.telegramId === telegramId);
-    }
-
-    async loadByTelegramId(
-        telegramId: string,
-    ): Promise<RegisteredBot | undefined> {
-        const known = this.findByTelegramId(telegramId);
-
-        if (known) {
-            return known;
-        }
-
-        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
-
-        if (bot) {
-            this.put(bot);
-        }
-
-        return this.findByTelegramId(telegramId);
-    }
-
-    put(bot: BotEntity): void {
-        const registered = this.register(bot);
-
-        if (registered) {
-            this.bots.set(bot._id, registered);
-        } else {
-            this.bots.delete(bot._id);
-        }
     }
 
     async start(): Promise<void> {
@@ -127,43 +103,15 @@ export class BotsRegistry {
             );
         }
 
-        await this.refresh();
         this.log.info(
             {
-                bots: [...this.bots.values()].map(({ id, modules }) => ({
+                bots: (await this.list()).map(({ id, modules }) => ({
                     botId: id,
                     modules,
                 })),
             },
             "Bots loaded",
         );
-    }
-
-    async refresh(): Promise<void> {
-        const bots = new Map<string, RegisteredBot>();
-
-        for (const bot of await this.botsRepository.findAll()) {
-            const registered = this.register(bot);
-
-            if (registered) {
-                bots.set(bot._id, registered);
-            }
-        }
-
-        this.bots = bots;
-    }
-
-    startRefresh(): void {
-        this.refreshTimer = setInterval(() => {
-            this.refresh().catch((err: unknown) => {
-                this.log.error({ err }, "Failed to refresh bots");
-            });
-        }, refreshIntervalMilliseconds);
-        this.refreshTimer.unref();
-    }
-
-    stopRefresh(): void {
-        clearInterval(this.refreshTimer);
     }
 
     private register(bot: BotEntity): RegisteredBot | undefined {
@@ -242,13 +190,6 @@ export default fp(
         fastify
             .getDecorator<AccessService>("accessService")
             .useModules((botId) => registry.modulesOf(botId));
-        fastify.addHook("onReady", async () => {
-            registry.startRefresh();
-        });
-        fastify.addHook("onClose", async () => {
-            registry.stopRefresh();
-        });
-
         fastify.decorate("botsRegistry", registry);
     },
     {

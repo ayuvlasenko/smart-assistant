@@ -3,7 +3,7 @@ import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { AppLogger } from "../app-logger.js";
 import { TelegramBotService } from "../telegram/telegram-bot-service.js";
-import { TelegramBots } from "../telegram/telegram-bots.js";
+import { TelegramBot, TelegramBots } from "../telegram/telegram-bots.js";
 import { TelegramCommandMenus } from "../telegram/telegram-command-menus.js";
 import { isBotToken } from "./bot-entity.js";
 
@@ -30,8 +30,8 @@ export class BotsConnector {
         this.log = log;
     }
 
-    isServed(botId: string): boolean {
-        return this.telegramBots.find(botId) !== undefined;
+    async isServed(botId: string): Promise<boolean> {
+        return (await this.telegramBots.find(botId)) !== undefined;
     }
 
     async readProfile(token: string): Promise<BotProfile | undefined> {
@@ -50,7 +50,7 @@ export class BotsConnector {
     }
 
     async readWebhook(botId: string): Promise<WebhookInfo | undefined> {
-        const bot = this.telegramBots.find(botId);
+        const bot = await this.telegramBots.find(botId);
 
         if (!bot) {
             return undefined;
@@ -68,7 +68,7 @@ export class BotsConnector {
     }
 
     async connect(botId: string): Promise<void> {
-        const bot = this.telegramBots.find(botId);
+        const bot = await this.telegramBots.find(botId);
 
         if (!bot) {
             return;
@@ -85,25 +85,31 @@ export class BotsConnector {
         }
     }
 
+    find(botId: string): Promise<TelegramBot | undefined> {
+        return this.telegramBots.find(botId);
+    }
+
     async disconnect(botId: string): Promise<void> {
-        const bot = this.telegramBots.find(botId);
+        const bot = await this.telegramBots.find(botId);
 
-        if (!bot) {
-            return;
+        if (bot) {
+            await this.deleteWebhook(bot);
         }
+    }
 
+    async deleteWebhook(bot: TelegramBot): Promise<void> {
         try {
             await this.telegramBotService.deleteWebhook(bot);
         } catch (err) {
             this.log.warn(
-                { err, botId },
+                { err, botId: bot.id },
                 "Failed to delete the webhook of a bot",
             );
         }
     }
 
     async refreshCommands(botId: string): Promise<void> {
-        const bot = this.telegramBots.find(botId);
+        const bot = await this.telegramBots.find(botId);
 
         if (!bot) {
             return;

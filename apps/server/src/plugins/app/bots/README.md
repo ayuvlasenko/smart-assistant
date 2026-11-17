@@ -47,7 +47,7 @@ The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the 
 1. The admin presses `➕ Add bot` and sends the token. The step checks its form with `isBotToken`, and the engine deletes the message.
 2. `BotsService.add` reads the profile of the bot through `BotsConnector`, which calls `getMe` with the token. Telegram returns the id and the username of the bot, or refuses the token.
 3. The repository inserts the bot with `createIfMissing`, an upsert by `telegramId`, so a second admin who sends a token of the same Telegram bot gets `alreadyAdded` and the screen of that bot.
-4. The registry takes the bot at once; the other pods take it on their next refresh or on its first update.
+4. No pod keeps a copy of the bots, so every pod finds the new bot in MongoDB on its first update.
 5. The service sets the webhook and the default menu of the bot, then creates the owner link: an invite of the new bot with `admin` and `maxUses: 1`, see [Invites](../invites/README.md#bootstrap).
 6. The scene shows the link. The owner opens it in the new bot and becomes its admin; from then on the owner manages invites, settings and the users of that bot alone.
 
@@ -63,23 +63,23 @@ The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the 
 
 1. The admin presses `🔀 Move`, presses it again to confirm, and sends the token of the other Telegram bot.
 2. `BotsService.move` calls `getMe` with the token. A token of the same Telegram bot gets `sameBot`, and a Telegram bot that another document has gets `alreadyAdded` and the screen of that bot.
-3. `updateToken` stores the new `telegramId`, the token and the username. When another document took the Telegram bot after step 2, the unique index `telegramId_unique` refuses the write: the repository throws `BotTelegramIdTakenError`, the move answers `alreadyAdded`, and the bot keeps its Telegram bot and its webhook.
-4. The service removes the webhook of the old Telegram bot with `deleteWebhook`, so the old bot sends no more updates. The registry of the pod still holds the old token for this call.
-5. The registry takes the bot, and the service sets the webhook and the default menu of the new Telegram bot.
+3. The service reads the bot with its old token. Then `updateToken` stores the new `telegramId`, the token and the username. When another document took the Telegram bot after step 2, the unique index `telegramId_unique` refuses the write: the repository throws `BotTelegramIdTakenError`, the move answers `alreadyAdded`, and the bot keeps its Telegram bot and its webhook.
+4. The service removes the webhook of the old Telegram bot with `deleteWebhook` and the token it read in step 3, so the old bot sends no more updates.
+5. The service sets the webhook and the default menu of the new Telegram bot.
 
-**Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The scenes of a user stay under the old Telegram id and expire there, because their message ids belong to the chat with the old bot; the user starts again in the new one. The command menus are set again for the new Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu). The other pods use the old token until their next refresh, up to 10 seconds; an update of the new Telegram bot that reaches such a pod makes it read the bot from MongoDB. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the path of its own Telegram id, which no bot has any more, so the server skips them.
+**Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The scenes of a user stay under the old Telegram id and expire there, because their message ids belong to the chat with the old bot; the user starts again in the new one. The command menus are set again for the new Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu). Every pod reads the bot from MongoDB on each update, so all of them use the new token at once. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the path of its own Telegram id, which no bot has any more, so the server skips them.
 
 The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of a Telegram bot that no document has, `BotsRepository.ensureRoot` writes its number to the root document on start, and the registry logs `Root bot moved to another Telegram bot`. The server does not have the old token, so the webhook of the old Telegram bot stays until its owner removes it; its updates name the old Telegram id and are skipped. Production sets the webhook of the new Telegram bot on the same start, because the claim `telegram:<telegramId>:webhook:set` belongs to the Telegram bot. A server with another root token that starts against the same database moves the root bot too, so keep one root token per database. When the token belongs to a Telegram bot that a document already has, that document becomes the root bot, and the old root document stays without a token and is not served.
 
 ## Stopping a bot
 
-`⏸ Stop` asks for a second press, removes the webhook with `deleteWebhook` and sets `disabledAt`. The registry drops the bot, so a late update gets `200` and is skipped, and a delivery to its users is skipped. The data of the bot stays. `▶️ Start` clears `disabledAt` and sets the webhook again. The root bot can't be stopped: its token lives in the server secret.
+`⏸ Stop` asks for a second press, removes the webhook with `deleteWebhook` and sets `disabledAt`. The registry does not return a bot with `disabledAt`, so a late update gets `200` and is skipped, and a delivery to its users is skipped. The data of the bot stays. `▶️ Start` clears `disabledAt` and sets the webhook again. The root bot can't be stopped: its token lives in the server secret.
 
 ## The registry
 
-**Problem.** Every update and every delivery needs the token of its bot, and an access check needs the modules of a bot without a call to MongoDB, because a guard is synchronous. A value in the memory of one pod would differ between the pods.
+**Problem.** Every update and every delivery needs the token of its bot, and an access check needs its modules. An admin changes a bot on one pod, and a copy of the bots in the memory of a pod differs from the copies of the other pods until the pod reads the bots again.
 
-**Idea.** Every pod keeps a snapshot of the active bots with their decrypted tokens and modules, and reads it again every 10 seconds, like the [settings](../settings/README.md#values-on-every-pod).
+**Idea.** No pod keeps a copy of the bots. `BotsRegistry` reads a bot from MongoDB on every call, by its id or by its Telegram id, and decrypts its token, so every pod uses a change at once. Like the [settings](../settings/README.md#reading-and-writing-a-value), its methods return a promise.
 
 **Data.** One document per bot in `bots`, see [The id of a bot](#the-id-of-a-bot):
 
@@ -102,12 +102,12 @@ The root record has `isRoot` and the `telegramId` of `TELEGRAM_BOT_TOKEN`, and n
 
 **Walk-through.**
 
-1. On start, `BotsRegistry.start` calls `ensureRoot` with the number of `TELEGRAM_BOT_TOKEN`. It marks the document with that `telegramId` as the root bot, or writes the number to the root document, or creates the root document with no modules. Then the registry reads every bot.
-2. It takes the token of the root bot from `TELEGRAM_BOT_TOKEN` and adds `bots` to its modules. It decrypts the token of every other bot.
-3. Every 10 seconds it reads all bots again and replaces the snapshot.
-4. An update for a bot that is not in the snapshot yet, such as a bot created on another pod a second ago, calls `loadByTelegramId` with the Telegram id from the webhook path, which reads that bot from MongoDB.
+1. On start, `BotsRegistry.start` calls `ensureRoot` with the number of `TELEGRAM_BOT_TOKEN`. It marks the document with that `telegramId` as the root bot, or writes the number to the root document, or creates the root document with no modules. Then the registry reads every bot once and logs `Bots loaded`.
+2. An update calls `findByTelegramId` with the Telegram id from the webhook path, and a delivery calls `find` with the bot id. Each reads one document.
+3. For the root bot the registry takes the token from `TELEGRAM_BOT_TOKEN` and adds `bots` to the modules. For every other bot it decrypts the stored token.
+4. `TelegramBots` keeps one Bot API client per bot and makes a new one when the token of the bot changes, so the rate limit queues of a bot live as long as its token.
 
-**Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. A decrypted token whose number differs from the `telegramId` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
+**Edge cases.** A stopped bot, one with `disabledAt`, is not returned: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id on every read and skips the bot. A decrypted token whose number differs from the `telegramId` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. Every read is one query, and when MongoDB does not answer, the update fails: there is no older copy to fall back to. A failed read of the bots on start logs `Failed to read the bots on start`, and the pod sets no webhook and no menu then.
 
 ## Modules
 
@@ -124,7 +124,7 @@ A bot runs the core and the modules in its `modules`. A module is a feature doma
 | `bot-entity.ts`                                      | The bot document, the subject `Bot`, the Telegram id of a token            | [The id of a bot](#the-id-of-a-bot) |
 | `bot-token-cipher.ts`                                | The encryption of a stored token                                           | [The registry](#the-registry)       |
 | `bots-repository.ts`                                 | The `bots` collection                                                      | [The registry](#the-registry)       |
-| `bots-registry.ts`                                   | The snapshot of the active bots, their tokens and their modules            | [The registry](#the-registry)       |
+| `bots-registry.ts`                                   | Reading the active bots, their tokens and their modules                    | [The registry](#the-registry)       |
 | `bots-service.ts`                                    | Adding, moving, stopping and starting a bot, its modules and its token     | [Adding a bot](#adding-a-bot)       |
 | `bots-connector.ts`                                  | The calls of a bot to Telegram: `getMe`, the webhook and the menus         | [Adding a bot](#adding-a-bot)       |
 | `bots-scene.ts`, `bots-screen.ts`, `bots-schemas.ts` | The `/bots` scene and its screens                                          | [Managing bots](#managing-bots)     |

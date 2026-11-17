@@ -257,7 +257,7 @@ export class TelegramRouter {
 
         if (
             !deepLink?.route.allowBanned ||
-            !isAllowed(deepLink.route.guard, ctx.user)
+            !(await isAllowed(deepLink.route.guard, ctx.user))
         ) {
             throw new BannedTelegramUserError();
         }
@@ -275,7 +275,7 @@ export class TelegramRouter {
         if (deepLink) {
             return {
                 name: deepLinkNameOf(deepLink),
-                route: isAllowed(deepLink.route.guard, ctx.user)
+                route: (await isAllowed(deepLink.route.guard, ctx.user))
                     ? deepLinkRouteOf(deepLink)
                     : undefined,
             };
@@ -285,13 +285,13 @@ export class TelegramRouter {
         const commandRoute = command && this.commandRoutes.get(command.name);
         const commandName = commandRoute && `command:${command.name}`;
 
-        if (commandRoute && isAllowed(commandRoute.guard, ctx.user)) {
+        if (commandRoute && (await isAllowed(commandRoute.guard, ctx.user))) {
             return { name: commandName, route: commandRoute };
         }
 
         for (const route of this.matchRoutes) {
             if (
-                isAllowed(route.guard, ctx.user) &&
+                (await isAllowed(route.guard, ctx.user)) &&
                 (await route.matches(ctx))
             ) {
                 return { route };

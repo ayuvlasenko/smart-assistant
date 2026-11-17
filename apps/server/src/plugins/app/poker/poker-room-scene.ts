@@ -350,6 +350,10 @@ async function buildView(
             ctx.user._id,
         ),
         roomUrl: await resolveRoomUrl(ctx.user.botId, room.token),
-        canClose: access.can(ctx.user, "update", subject("PokerRoom", room)),
+        canClose: await access.can(
+            ctx.user,
+            "update",
+            subject("PokerRoom", room),
+        ),
     };
 }

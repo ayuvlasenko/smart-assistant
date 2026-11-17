@@ -215,14 +215,7 @@ export async function buildTelegramBotServiceTestApp({
     const valkey = app.getDecorator<Redis>("valkey");
     const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
     const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
-    const testBot = await botsRepository.updateModules(
-        botsRegistry.rootId,
-        modules,
-    );
-
-    if (testBot) {
-        botsRegistry.put(testBot);
-    }
+    await botsRepository.updateModules(botsRegistry.rootId, modules);
 
     t.after(async () => {
         try {
@@ -279,8 +272,6 @@ export async function buildTwoBotsTestApp(
     if (!bot) {
         throw new Error("Bot 42 is already stored");
     }
-
-    app.botsRegistry.put(bot);
 
     return { ...app, child, childBotId: bot._id };
 }

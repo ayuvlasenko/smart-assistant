@@ -157,7 +157,9 @@ void describe("TelegramCommandMenus chat menus", () => {
             5,
         );
 
-        await assert.rejects(telegramCommandMenus.refresh(telegramBots.root));
+        await assert.rejects(
+            telegramCommandMenus.refresh(await telegramBots.root()),
+        );
         await telegramCommandMenus.setOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 10);
@@ -168,7 +170,7 @@ void describe("TelegramCommandMenus chat menus", () => {
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
         const user = await insertUser({ telegramId: "987654602" });
 
-        await telegramCommandMenus.sync(user);
+        await telegramCommandMenus.syncUser(user);
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
         assert.equal(telegramApiService.deleteMyCommands.mock.callCount(), 0);
@@ -183,9 +185,9 @@ void describe("TelegramCommandMenus chat menus", () => {
             grants: ["vip"],
         });
 
-        await telegramCommandMenus.sync(user);
-        await telegramCommandMenus.sync(await readUser(user));
-        await telegramCommandMenus.sync({
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser(await readUser(user));
+        await telegramCommandMenus.syncUser({
             ...(await readUser(user)),
             grants: [],
         });
@@ -207,7 +209,7 @@ void describe("TelegramCommandMenus chat menus", () => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await telegramCommandMenus.sync(
+        await telegramCommandMenus.syncUser(
             await insertUser({
                 telegramId: "987654601",
                 languageCode: "uk",
@@ -244,9 +246,9 @@ void describe("TelegramCommandMenus chat menus", () => {
             grants: ["vip"],
         });
 
-        await telegramCommandMenus.sync(user);
-        await telegramCommandMenus.sync(await readUser(user));
-        await telegramCommandMenus.sync({
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser(await readUser(user));
+        await telegramCommandMenus.syncUser({
             ...(await readUser(user)),
             languageCode: "ru",
         });
@@ -270,8 +272,8 @@ void describe("TelegramCommandMenus chat menus", () => {
             grants: ["vip"],
         });
 
-        await telegramCommandMenus.sync(user);
-        await telegramCommandMenus.sync({
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser({
             ...(await readUser(user)),
             grants: [],
         });
@@ -293,7 +295,7 @@ void describe("TelegramCommandMenus chat menus", () => {
             commandMenu: "unknown",
         });
 
-        await telegramCommandMenus.sync(user);
+        await telegramCommandMenus.syncUser(user);
 
         assert.equal(telegramApiService.deleteMyCommands.mock.callCount(), 1);
         assert.equal((await readUser(user)).commandMenu, undefined);
@@ -303,7 +305,7 @@ void describe("TelegramCommandMenus chat menus", () => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await telegramCommandMenus.sync(
+        await telegramCommandMenus.syncUser(
             await insertUser({
                 telegramId: "987654604",
                 isBanned: true,
@@ -329,10 +331,10 @@ void describe("TelegramCommandMenus chat menus", () => {
                 (call) => call.arguments[0].scope?.type ?? "default",
             );
 
-        await telegramCommandMenus.sync(user);
+        await telegramCommandMenus.syncUser(user);
         await telegramBotService.refreshWebhooks();
         await telegramBotService.refreshWebhooks();
-        await telegramCommandMenus.sync(await readUser(user));
+        await telegramCommandMenus.syncUser(await readUser(user));
 
         assert.deepEqual(readScopes(), [
             "chat",
@@ -361,8 +363,8 @@ void describe("TelegramCommandMenus chat menus", () => {
             }),
         );
 
-        await telegramCommandMenus.sync(user);
-        await telegramCommandMenus.sync(await readUser(user));
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser(await readUser(user));
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 2);
         assert.ok(

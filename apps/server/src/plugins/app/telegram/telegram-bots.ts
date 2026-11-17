@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import fp from "fastify-plugin";
+import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { BotsRegistry, RegisteredBot } from "../bots/bots-registry.js";
 import { RateLimiter } from "../rate-limiter.js";
@@ -19,6 +20,7 @@ export interface TelegramBotsPluginOptions extends FastifyPluginOptions {
 export interface TelegramBot {
     id: string;
     telegramId: string;
+    modules: readonly string[];
     startModule?: string;
     api: TelegramApiClient;
 }
@@ -38,18 +40,18 @@ export class TelegramBots {
         this.createApi = createApi;
     }
 
-    get root(): TelegramBot {
+    root(): Promise<TelegramBot> {
         return this.get(this.registry.rootId);
     }
 
-    find(botId: string): TelegramBot | undefined {
-        const bot = this.registry.find(botId);
+    async find(botId: string): Promise<TelegramBot | undefined> {
+        const bot = await this.registry.find(botId);
 
         return bot ? this.toTelegramBot(bot) : undefined;
     }
 
-    get(botId: string): TelegramBot {
-        const bot = this.find(botId);
+    async get(botId: string): Promise<TelegramBot> {
+        const bot = await this.find(botId);
 
         if (!bot) {
             throw new Error(`Telegram bot ${botId} is not registered`);
@@ -58,16 +60,18 @@ export class TelegramBots {
         return bot;
     }
 
-    async loadByTelegramId(
+    async findByTelegramId(
         telegramId: string,
     ): Promise<TelegramBot | undefined> {
-        const bot = await this.registry.loadByTelegramId(telegramId);
+        const bot = await this.registry.findByTelegramId(telegramId);
 
         return bot ? this.toTelegramBot(bot) : undefined;
     }
 
-    list(): TelegramBot[] {
-        return this.registry.list().map((bot) => this.toTelegramBot(bot));
+    async list(): Promise<TelegramBot[]> {
+        const bots = await this.registry.list();
+
+        return bots.map((bot) => this.toTelegramBot(bot));
     }
 
     connect(token: string): TelegramApiClient {
@@ -85,6 +89,7 @@ export class TelegramBots {
         return {
             id: bot.id,
             telegramId: bot.telegramId,
+            modules: bot.modules,
             startModule: bot.startModule,
             api: client.api,
         };
@@ -94,6 +99,8 @@ export class TelegramBots {
 export default fp(
     async function (fastify: FastifyInstance, opts: TelegramBotsPluginOptions) {
         const registry = fastify.getDecorator<BotsRegistry>("botsRegistry");
+        const rootToken =
+            fastify.getDecorator<Env>("config").TELEGRAM_BOT_TOKEN;
         const log = fastify
             .getDecorator<AppLogger>("appLogger")
             .child({ module: "telegram-api" });
@@ -101,10 +108,7 @@ export default fp(
             fastify.getDecorator<TelegramMetrics>("telegramMetrics");
         const rateLimiter = fastify.getDecorator<RateLimiter>("rateLimiter");
         const createApi: TelegramApiFactory = (token) => {
-            if (
-                opts.telegramApiService &&
-                token === registry.find(registry.rootId)?.token
-            ) {
+            if (opts.telegramApiService && token === rootToken) {
                 return opts.telegramApiService;
             }
 
@@ -119,6 +123,7 @@ export default fp(
     {
         name: "telegram-bots",
         dependencies: [
+            "@fastify/env",
             "app-logger",
             "bots-registry",
             "rate-limiter",

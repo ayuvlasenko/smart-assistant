@@ -82,7 +82,7 @@ export class TelegramScenePresses {
     ): Promise<void> {
         const action = `${instance.scene.name}:input`;
 
-        if (!this.inputs.canUse(instance, ctx.user)) {
+        if (!(await this.inputs.canUse(instance, ctx.user))) {
             return this.rejectForbidden(ctx, action);
         }
 
@@ -115,8 +115,8 @@ export class TelegramScenePresses {
         }
 
         if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !this.screens.canShow(instance, ctx.user, screen)
+            !(await isAllowed(instance.scene.guard, ctx.user)) ||
+            !(await this.screens.canShow(instance, ctx.user, screen))
         ) {
             return this.rejectForbidden(ctx, action);
         }
@@ -129,7 +129,7 @@ export class TelegramScenePresses {
         ctx: TelegramContext<Update>,
         instance: TelegramSceneInstance,
     ): Promise<void> {
-        if (!isAllowed(instance.scene.guard, ctx.user)) {
+        if (!(await isAllowed(instance.scene.guard, ctx.user))) {
             return this.rejectForbidden(ctx, `${instance.scene.name}:back`);
         }
 
@@ -151,8 +151,8 @@ export class TelegramScenePresses {
         }
 
         if (
-            !isAllowed(instance.scene.guard, ctx.user) ||
-            !isAllowed(definition.guard, ctx.user)
+            !(await isAllowed(instance.scene.guard, ctx.user)) ||
+            !(await isAllowed(definition.guard, ctx.user))
         ) {
             return this.rejectForbidden(ctx, action);
         }

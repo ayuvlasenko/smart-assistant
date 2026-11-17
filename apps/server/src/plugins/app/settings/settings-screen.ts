@@ -10,10 +10,12 @@ import {
 } from "./settings-service.js";
 import { readUserChoice, UserSetting } from "./user-settings-service.js";
 
-export function renderOwnSettings(view: SettingsView): TelegramMessageContent {
+export async function renderOwnSettings(
+    view: SettingsView,
+): Promise<TelegramMessageContent> {
     const { ctx, scene, userSettingsService, canChangeBot } = view;
     const { t } = ctx;
-    const sections = userSettingsService.listSections(ctx.user.botId);
+    const sections = await userSettingsService.listSections(ctx.user.botId);
 
     return buildSettingsMessage(
         [
@@ -70,10 +72,30 @@ export function renderOwnSettingChoice(
     );
 }
 
-export function renderBotSettings(view: SettingsView): TelegramMessageContent {
+export async function renderBotSettings(
+    view: SettingsView,
+): Promise<TelegramMessageContent> {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
-    const sections = settingsService.listSections(ctx.user.botId);
+    const sections = await settingsService.listSections(ctx.user.botId);
+    const values = new Map(
+        await Promise.all(
+            sections
+                .flatMap(({ settings }) => settings)
+                .map(
+                    async (setting) =>
+                        [
+                            setting.name,
+                            await formatValue(
+                                t,
+                                setting,
+                                settingsService,
+                                ctx.user.botId,
+                            ),
+                        ] as const,
+                ),
+        ),
+    );
     const buttons = sections
         .flatMap(({ settings }) => settings)
         .map((setting) => [
@@ -92,7 +114,7 @@ export function renderBotSettings(view: SettingsView): TelegramMessageContent {
                 formatBold(section.title(t)),
                 ...section.settings.map((setting) =>
                     escapeTelegramHtml(
-                        `${setting.title(t)}: ${formatValue(t, setting, settingsService, ctx.user.botId)}`,
+                        `${setting.title(t)}: ${values.get(setting.name) ?? ""}`,
                     ),
                 ),
             ]),
@@ -101,26 +123,27 @@ export function renderBotSettings(view: SettingsView): TelegramMessageContent {
     );
 }
 
-export function renderSettingsChoices(
+export async function renderSettingsChoices(
     view: SettingsView,
     setting: ChoicesSetting,
-): TelegramMessageContent {
+): Promise<TelegramMessageContent> {
     const { ctx, scene, settingsService } = view;
     const { t } = ctx;
-    const selected = settingsService.read(setting, ctx.user.botId);
+    const [selected, options] = await Promise.all([
+        settingsService.read(setting, ctx.user.botId),
+        setting.options(ctx.user.botId),
+    ]);
 
     return buildSettingsMessage(
         [formatBold(t("settings:botTitle")), "", formatBold(setting.title(t))],
         [
-            ...setting
-                .options(ctx.user.botId)
-                .map((option) => [
-                    scene.button(
-                        `${selected.includes(option.value) ? "✅" : "⬜"} ${option.title(t)}`,
-                        "choose",
-                        option.value,
-                    ),
-                ]),
+            ...options.map((option) => [
+                scene.button(
+                    `${selected.includes(option.value) ? "✅" : "⬜"} ${option.title(t)}`,
+                    "choose",
+                    option.value,
+                ),
+            ]),
             [scene.backButton(t("settings:backButton"))],
         ],
     );
@@ -155,39 +178,38 @@ function formatOwnValue(
     return option ? option.title(t) : chosen;
 }
 
-function formatValue(
+async function formatValue(
     t: Translate,
     setting: Setting,
     settingsService: SettingsService,
     botId: string,
-): string {
+): Promise<string> {
     switch (setting.kind) {
         case "flag":
             return t(
-                settingsService.read(setting, botId)
+                (await settingsService.read(setting, botId))
                     ? "settings:on"
                     : "settings:off",
             );
         case "number":
-            return `${settingsService.read(setting, botId)} (${setting.min}–${setting.max})`;
+            return `${await settingsService.read(setting, botId)} (${setting.min}–${setting.max})`;
         case "choices":
             return formatChoices(
                 t,
                 setting,
-                settingsService.read(setting, botId),
+                await settingsService.read(setting, botId),
                 botId,
             );
     }
 }
 
-function formatChoices(
+async function formatChoices(
     t: Translate,
     setting: ChoicesSetting,
     selected: string[],
     botId: string,
-): string {
-    const titles = setting
-        .options(botId)
+): Promise<string> {
+    const titles = (await setting.options(botId))
         .filter(({ value }) => selected.includes(value))
         .map(({ title }) => title(t));
 

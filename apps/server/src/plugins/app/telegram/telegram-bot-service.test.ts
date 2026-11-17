@@ -294,9 +294,11 @@ void describe("TelegramBotService", () => {
             ttlMilliseconds: 3_600_000,
         });
 
-        const firstUrl = await telegramBotService.setWebhook(telegramBots.root);
+        const firstUrl = await telegramBotService.setWebhook(
+            await telegramBots.root(),
+        );
         const secondUrl = await telegramBotService.setWebhook(
-            telegramBots.root,
+            await telegramBots.root(),
         );
 
         assert.equal(

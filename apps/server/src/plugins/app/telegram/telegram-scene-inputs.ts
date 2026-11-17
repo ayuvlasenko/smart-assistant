@@ -45,14 +45,17 @@ export class TelegramSceneInputs {
         this.buttons = buttons;
     }
 
-    canUse(instance: TelegramSceneInstance, user: UserEntity): boolean {
+    async canUse(
+        instance: TelegramSceneInstance,
+        user: UserEntity,
+    ): Promise<boolean> {
         const name = instance.record.input?.name;
         const input =
             name === undefined ? undefined : instance.scene.inputs[name];
 
         return (
-            isAllowed(instance.scene.guard, user) &&
-            isAllowed(input?.guard, user)
+            (await isAllowed(instance.scene.guard, user)) &&
+            (await isAllowed(input?.guard, user))
         );
     }
 

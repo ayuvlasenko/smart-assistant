@@ -75,10 +75,8 @@ export class UserSettingsService {
         }
     }
 
-    listSections(botId: string): readonly UserSettingsSection[] {
-        return this.sections.filter(({ name }) =>
-            this.access.isEnabled(botId, name),
-        );
+    listSections(botId: string): Promise<UserSettingsSection[]> {
+        return this.access.listEnabled(botId, this.sections);
     }
 
     find(name: string): UserSetting | undefined {

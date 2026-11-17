@@ -71,7 +71,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -103,7 +103,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 4242,
                 message: {
@@ -139,11 +139,11 @@ void describe("TelegramUpdateHandler", () => {
 
         await createUser(usersRepository, "987654343");
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654343, "/start"),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 2,
                 message: {
@@ -189,7 +189,7 @@ void describe("TelegramUpdateHandler", () => {
 
         for (const updateId of [1, 2]) {
             await telegramUpdateHandler.handle(
-                telegramBots.root,
+                await telegramBots.root(),
                 buildTelegramTextMessageUpdate({
                     update_id: updateId,
                     message: { chat, text: "hello" },
@@ -221,7 +221,7 @@ void describe("TelegramUpdateHandler", () => {
             false,
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654325 }),
@@ -248,7 +248,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -283,7 +283,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -330,7 +330,7 @@ void describe("TelegramUpdateHandler", () => {
 
         await createUser(usersRepository, "987654324");
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654324 }),
@@ -368,7 +368,7 @@ void describe("TelegramUpdateHandler", () => {
 
         await createUser(usersRepository, "987654325");
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654325 }),
@@ -422,8 +422,8 @@ void describe("TelegramUpdateHandler", () => {
             },
         });
 
-        await telegramUpdateHandler.handle(telegramBots.root, update);
-        await telegramUpdateHandler.handle(telegramBots.root, update);
+        await telegramUpdateHandler.handle(await telegramBots.root(), update);
+        await telegramUpdateHandler.handle(await telegramBots.root(), update);
 
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
     });
@@ -449,7 +449,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -484,7 +484,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -519,7 +519,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -549,7 +549,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramPollUpdate(),
         );
 
@@ -567,7 +567,7 @@ void describe("TelegramUpdateHandler", () => {
             Promise.reject(new Error("MongoDB is down")),
         );
         await bot.telegramUpdateHandler.handle(
-            bot.telegramBots.root,
+            await bot.telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654396 }),
@@ -593,7 +593,7 @@ void describe("TelegramUpdateHandler", () => {
             Promise.reject(new Error("Request timed out")),
         );
         await bot.telegramUpdateHandler.handle(
-            bot.telegramBots.root,
+            await bot.telegramBots.root(),
             buildTelegramCallbackQueryUpdate({
                 message: buildTelegramTextMessage({
                     chat: buildTelegramPrivateChat({ id: 987654398 }),
@@ -662,7 +662,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 2,
                 message: {
@@ -674,7 +674,7 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramChannelPostUpdate({ text: "/help" }),
         );
 
@@ -698,7 +698,7 @@ void describe("TelegramUpdateHandler", () => {
         await createUser(usersRepository, "987654331");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramEditedMessageUpdate({
                 chat: buildTelegramPrivateChat({ id: 987654331 }),
                 text: "hello",
@@ -728,7 +728,7 @@ void describe("TelegramUpdateHandler", () => {
         await createUser(usersRepository, "987654332", "uk");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654332 }),
@@ -755,7 +755,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654333 }),
@@ -785,7 +785,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654334 }),
@@ -821,7 +821,7 @@ void describe("TelegramUpdateHandler", () => {
         await createUser(usersRepository, "987654335", "en");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654335 }),
@@ -854,7 +854,7 @@ void describe("TelegramUpdateHandler", () => {
         await createUser(usersRepository, "987654336", "uk");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654336 }),
@@ -884,7 +884,7 @@ void describe("TelegramUpdateHandler", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 1,
                 message: {
@@ -905,7 +905,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 2,
                 message: {
@@ -947,7 +947,7 @@ void describe("TelegramUpdateHandler", () => {
         await createUser(usersRepository, "987654337");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654337, "/start"),
         );
 
@@ -978,7 +978,7 @@ void describe("TelegramUpdateHandler deep links", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654338, "/start invite_secret_A-1"),
         );
 
@@ -1011,15 +1011,15 @@ void describe("TelegramUpdateHandler deep links", () => {
         });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654339, "/start poker_42", 1),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654339, "/start unknown_42", 2),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654339, "/start invite", 3),
         );
 
@@ -1050,7 +1050,7 @@ void describe("TelegramUpdateHandler deep links", () => {
             });
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654340, "/start"),
         );
 
@@ -1080,15 +1080,15 @@ void describe("TelegramUpdateHandler deep links", () => {
         await createUser(usersRepository, "987654341");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654341, "/start invite_abc", 1),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654341, "/start poker_42", 2),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654341, "/start other_1", 3),
         );
 
@@ -1123,7 +1123,7 @@ void describe("TelegramUpdateHandler deep links", () => {
         await createUser(usersRepository, "987654342");
 
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildStartUpdate(987654342, "/start vip_1", 1),
         );
 

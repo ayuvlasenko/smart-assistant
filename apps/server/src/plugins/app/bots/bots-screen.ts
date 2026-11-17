@@ -52,6 +52,7 @@ export async function renderBot(
     }
 
     const isRoot = botsService.isRoot(bot._id);
+    const isServed = await botsService.isServed(bot._id);
     const webhook = bot.disabledAt
         ? undefined
         : await botsService.readWebhook(ctx.user, bot._id);
@@ -88,7 +89,7 @@ export async function renderBot(
                 }),
             ],
             [
-                ...(isRoot || !botsService.isServed(bot._id)
+                ...(isRoot || !isServed
                     ? []
                     : [
                           scene.button(
@@ -205,7 +206,7 @@ export async function renderBotOwnerInvite(
         return renderMissing(t, scene);
     }
 
-    if (!bot.username || !botsService.isServed(bot._id)) {
+    if (!bot.username || !(await botsService.isServed(bot._id))) {
         return buildBotsMessage(
             [escapeTelegramHtml(t("bots:ownerInviteUnavailable"))],
             [[scene.backButton(t("bots:backButton"))]],

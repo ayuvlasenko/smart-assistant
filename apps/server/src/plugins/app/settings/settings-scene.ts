@@ -35,15 +35,15 @@ export function createSettingsScene(
     access: AccessControl<SettingsSubjects>,
 ): TelegramScene<typeof settingsStateSchema> {
     const canUpdate = access.guard("update", "Setting");
-    const viewOf = (
+    const viewOf = async (
         ctx: TelegramContext,
         scene: SettingsSceneControl,
-    ): SettingsView => ({
+    ): Promise<SettingsView> => ({
         ctx,
         scene,
         settingsService,
         userSettingsService,
-        canChangeBot: canUpdate(ctx.user),
+        canChangeBot: await canUpdate(ctx.user),
     });
 
     return defineScene({
@@ -56,19 +56,19 @@ export function createSettingsScene(
             list: {
                 params: settingsScreens.list,
                 render: async (ctx, scene) => [
-                    renderOwnSettings(viewOf(ctx, scene)),
+                    await renderOwnSettings(await viewOf(ctx, scene)),
                 ],
             },
             choice: {
                 params: settingsScreens.choice,
                 render: async (ctx, scene, { setting }) => {
-                    const view = viewOf(ctx, scene);
+                    const view = await viewOf(ctx, scene);
                     const own = userSettingsService.find(setting);
 
                     return [
                         own
                             ? renderOwnSettingChoice(view, own)
-                            : renderOwnSettings(view),
+                            : await renderOwnSettings(view),
                     ];
                 },
             },
@@ -77,7 +77,7 @@ export function createSettingsScene(
                 guard: canUpdate,
                 watch: () => [settingsTopic],
                 render: async (ctx, scene) => [
-                    renderBotSettings(viewOf(ctx, scene)),
+                    await renderBotSettings(await viewOf(ctx, scene)),
                 ],
             },
             choices: {
@@ -85,13 +85,13 @@ export function createSettingsScene(
                 guard: canUpdate,
                 watch: () => [settingsTopic],
                 render: async (ctx, scene, { setting }) => {
-                    const view = viewOf(ctx, scene);
+                    const view = await viewOf(ctx, scene);
                     const choices = findChoices(settingsService, setting);
 
                     return [
-                        choices
+                        await (choices
                             ? renderSettingsChoices(view, choices)
-                            : renderBotSettings(view),
+                            : renderBotSettings(view)),
                     ];
                 },
             },

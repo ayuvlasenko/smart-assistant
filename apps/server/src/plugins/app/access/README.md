@@ -28,14 +28,14 @@ The `admin` grant is registered by this domain and gives `manage all`.
 
 **Problem.** The user document stores only grant names, such as `["ping.use"]`. The rules behind a name belong to the domain that registered it, and a rule can depend on the user, such as "the reports that this user created".
 
-**Idea.** The names stay in MongoDB, and the rules stay in code. On the first question about a user, the service runs `define` of every grant the user holds and builds one CASL ability from the result.
+**Idea.** The names stay in MongoDB, and the rules stay in code. On the first question about a user, the service reads the modules and the default grants of the bot from MongoDB, runs `define` of every grant the user holds and builds one CASL ability from the result. CASL checks a built ability synchronously; the service builds it asynchronously, so `can`, `assert`, `accessibleBy` and a guard return a promise.
 
 **Walk-through.**
 
 1. On start, every domain plugin calls `access.register(section)`. The service keeps the sections in order for the invite form, and the grants in a map by name. A second section or grant with the same name stops the start.
-2. A call of `can`, `assert`, `accessibleBy` or a guard asks for the ability of the user object.
-3. For a user without a ban, the service creates one `AbilityBuilder` and calls `define(builder, user)` of every grant in `user.grants` and in the [default grants](#default-grants). Each grant adds its `can` and `cannot` rules to the same builder. A banned user gets no rules at all.
-4. The service builds the ability and keeps it in a `WeakMap` by the user object.
+2. A call of `can`, `assert`, `accessibleBy` or a guard asks for the ability of the user object and awaits it.
+3. The service reads the modules of the bot and its default grants, two queries at once; default grants that are set cost one more read of the bot, see [Settings](../settings/README.md#reading-and-writing-a-value). For a user without a ban, the service creates one `AbilityBuilder` and calls `define(builder, user)` of every grant in `user.grants` and in the [default grants](#default-grants). Each grant adds its `can` and `cannot` rules to the same builder. A banned user gets no rules at all.
+4. The service builds the ability and keeps its promise in a `WeakMap` by the user object, so the later checks of the same object read nothing.
 
 **Edge cases.** The update handler loads the user once per update, so one update builds one ability. A user whose grants changed gets a new ability on the next update, because the next update loads a new user object. A grant name that no domain registers any more is skipped, so a removed feature does not break the users who still hold its grant. `subjects<M>()` returns the same object for every domain: the type parameter only narrows what the compiler accepts, and the ability itself covers every subject.
 
@@ -83,7 +83,7 @@ access.register(
 );
 ```
 
-The modules of a bot come from the `modules` of its document in `bots`, see [Bots](../bots/README.md). `bots-registry.ts` hands `AccessService.useModules` a function that reads them.
+The modules of a bot come from the `modules` of its document in `bots`, see [Bots](../bots/README.md). `bots-registry.ts` hands `AccessService.useModules` an asynchronous function that reads them from MongoDB.
 
 **Walk-through.** An admin of a bot without poker sends `/poker`.
 
@@ -91,7 +91,7 @@ The modules of a bot come from the `modules` of its document in `bots`, see [Bot
 2. It adds `cannot manage PokerRoom` without conditions, because the bot does not have `poker`.
 3. The guard of `/poker` refuses, so the command is not in the menu of the chat and the bot stays silent on it. An old button of a poker scene gets an empty answer, `assert` throws, and `accessibleBy` returns the query that matches nothing.
 
-**Edge cases.** The `cannot` rule has no conditions, so it closes a check against a subject name too. A section registered without the second argument, such as `access`, is on in every bot. `isEnabled(botId, sectionName)` answers for a section name, so the invite form, the options of the default grants and the settings menu show only the sections that are on; the settings menu matches a settings section to the module of the same name, such as `poker`. A grant of a module that is off stays in `user.grants` and works again when the module comes back. The module relies on a guard on every entry point: `bots-registry.test.ts` checks that an admin of a bot without modules gets only the commands of the core.
+**Edge cases.** The `cannot` rule has no conditions, so it closes a check against a subject name too. A section registered without the second argument, such as `access`, is on in every bot. `isEnabled(botId, sectionName)` answers for a section name and `listEnabled(botId, sections)` for a list of sections, each with one read of the bot, so the invite form, the options of the default grants and the settings menu show only the sections that are on; the settings menu matches a settings section to the module of the same name, such as `poker`. A grant of a module that is off stays in `user.grants` and works again when the module comes back. The module relies on a guard on every entry point: `bots-registry.test.ts` checks that an admin of a bot without modules gets only the commands of the core.
 
 ## Default grants
 
@@ -101,7 +101,7 @@ The modules of a bot come from the `modules` of its document in `bots`, see [Bot
 
 **Walk-through.**
 
-1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` a function that reads the setting of a bot. Every bot has its own default grants.
+1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` an asynchronous function that reads the setting of a bot. Every bot has its own default grants.
 2. An update loads the user and asks a guard. The service builds the ability from `user.grants` together with the default grants, so the new defaults apply from the next update of every user.
 3. `admin` never comes from the defaults: the menu does not offer it, and the service drops it when it reads the setting.
 
@@ -109,13 +109,13 @@ The modules of a bot come from the `modules` of its document in `bots`, see [Bot
 
 ## Guard, accessibleBy and assert
 
-All three answer from the same ability, at different boundaries.
+All three answer from the same ability, at different boundaries, and all three return a promise. ESLint flags a call without `await`: `no-floating-promises` for a statement, `no-misused-promises` for a condition.
 
-| Boundary                   | Call                                                                | On refusal                                                                                                                                                    |
-| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Telegram entry point       | `access.guard(action, "Report")`                                    | The command leaves the menu and the bot stays silent on it, like on an unknown message; a button press gets an empty callback answer; a scene does not start. |
-| Service method that reads  | `access.accessibleBy(actor, action, "Report")` in the MongoDB query | The query returns only the documents the user may see, and nothing when the user has no rule for the subject.                                                 |
-| Service method that writes | `access.assert(actor, action, subject("Report", report))`           | CASL throws `ForbiddenError`; the update ends with an error reply.                                                                                            |
+| Boundary                   | Call                                                                      | On refusal                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram entry point       | `access.guard(action, "Report")`                                          | The command leaves the menu and the bot stays silent on it, like on an unknown message; a button press gets an empty callback answer; a scene does not start. |
+| Service method that reads  | `await access.accessibleBy(actor, action, "Report")` in the MongoDB query | The query returns only the documents the user may see, and nothing when the user has no rule for the subject.                                                 |
+| Service method that writes | `await access.assert(actor, action, subject("Report", report))`           | CASL throws `ForbiddenError`; the update ends with an error reply.                                                                                            |
 
 A guard only shapes what the user can reach in the chat, so it checks the subject name: "may this user do the action on some reports". The service checks again, so the business logic stays safe when it is called from somewhere other than the bot, and it checks the documents themselves.
 
@@ -161,7 +161,7 @@ For a list, put `accessibleBy` into the query. It takes the rules of the user fo
     ```
 
 3. Put `guard: access.guard("read", "Report")` on every command, deep link, scene, scene button and scene input that needs it.
-4. Give the service the typed view as its dependency. Read through `access.accessibleBy(actor, "read", "Report")` and check every write with `access.assert(actor, "update", subject("Report", report))` on the loaded document. `InvitesService` is the reference.
+4. Give the service the typed view as its dependency. Read through `await access.accessibleBy(actor, "read", "Report")` and check every write with `await access.assert(actor, "update", subject("Report", report))` on the loaded document. `InvitesService` is the reference.
 
 5. Give every document of the domain a `botId` from the actor, and pass the bot id to every lookup that skips `accessibleBy`. See [Rules stay inside the bot](#rules-stay-inside-the-bot).
 
@@ -169,7 +169,7 @@ The new grant shows up in the invite form at once. `define` gets the user, so a 
 
 ## Files
 
-| File                | Owns                                                                                                                                               |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `access-service.ts` | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, the `admin` grant |
-| `access-locales.ts` | The titles of the access section and of the `admin` grant                                                                                          |
+| File                | Owns                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `access-service.ts` | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, `isEnabled`, `listEnabled`, the `admin` grant |
+| `access-locales.ts` | The titles of the access section and of the `admin` grant                                                                                                                      |

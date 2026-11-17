@@ -800,13 +800,7 @@ async function allowWith(
 }
 
 async function startWith(bot: PokerBot, module: string): Promise<void> {
-    const testBot = await bot.botsRepository.setStartModule(
-        bot.botsRegistry.rootId,
-        module,
-    );
-
-    assert.ok(testBot);
-    bot.botsRegistry.put(testBot);
+    await bot.botsRepository.setStartModule(bot.botsRegistry.rootId, module);
 }
 
 async function createRoomThroughForm(

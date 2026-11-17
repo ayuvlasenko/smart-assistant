@@ -38,12 +38,15 @@ export class UsersService {
         this.log = log;
     }
 
-    findOrCreateByTelegramId(
+    async findOrCreateByTelegramId(
         data: Pick<UserEntity, "botId" | "telegramId"> & UserProfile,
     ): Promise<UserLookup> {
         return this.usersRepository.findOneByTelegramIdOrCreate({
             ...data,
-            isBanned: this.settingsService.read(autoBanSetting, data.botId),
+            isBanned: await this.settingsService.read(
+                autoBanSetting,
+                data.botId,
+            ),
         });
     }
 

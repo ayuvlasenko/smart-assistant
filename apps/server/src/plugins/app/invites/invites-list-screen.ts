@@ -64,7 +64,7 @@ export async function renderInvitesList(
                 invitesPageSize,
                 pageButtonOf(scene),
             ),
-            access.can(ctx.user, "create", "Invite")
+            (await access.can(ctx.user, "create", "Invite"))
                 ? [scene.button(t("invites:newInviteButton"), "create", null)]
                 : [],
         ],

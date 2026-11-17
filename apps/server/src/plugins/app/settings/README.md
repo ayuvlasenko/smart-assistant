@@ -4,7 +4,6 @@ This directory keeps the values that people change in the chat with `/settings`.
 
 ## Constraints
 
-- A guard and a CASL ability are synchronous, `(user) => boolean`, and the default grants are a setting, so a setting must be readable without a call to MongoDB or Valkey.
 - Several pods serve the bot, and an admin changes a value on one of them.
 
 ## Using a setting of a bot
@@ -36,24 +35,24 @@ settingsService.register({
     settings: [pokerMaxParticipantsSetting],
 });
 
-const maxParticipants = settingsService.read(
+const maxParticipants = await settingsService.read(
     pokerMaxParticipantsSetting,
     room.botId,
 );
 ```
 
-- A section with the name of an access module, such as `poker`, shows in the menu only in the bots that have the module, see [Modules](../access/README.md#modules). `listSections(botId)` returns the sections of a bot, and `options(botId)` of a choices setting returns the options in a bot.
+- A section with the name of an access module, such as `poker`, shows in the menu only in the bots that have the module, see [Modules](../access/README.md#modules). `listSections(botId)` resolves to the sections of a bot, and `options(botId)` of a choices setting resolves to the options in a bot.
 - Name a setting `<domain>.<name>` and keep its title in `<domain>-locales.ts`. The `emoji` starts the button of the setting in the menu, like the buttons of other screens; the line of the value shows the title without it.
 - Make the default value the behaviour the code had before the setting, so a deploy changes nothing until an admin does. A setting that adds a new limit on purpose, such as `poker.maxParticipants`, is the exception; its domain README says what changes on the deploy.
 - The plugin that registers a setting depends on `settings-service`. `settings-service` depends on `access-service`, so `AccessService` cannot register a setting itself; `access/access-default-grants.ts` does it for the default grants.
 
 The settings of a bot in the code now are `users.autoBan`, `access.defaultGrants` and `poker.maxParticipants`.
 
-## Values on every pod
+## Reading and writing a value
 
-**Problem.** `read` runs inside guards, on every update, and must not wait for a database. A value that only lives in the memory of one pod would differ between the pods.
+**Problem.** An admin changes a value on one pod, and the other pods must use it. A copy of the values in the memory of a pod differs from the copies of the other pods until the pod reads the values again.
 
-**Idea.** MongoDB keeps the values, and every pod keeps a snapshot of all of them in memory. `read` takes the value from the snapshot, and the pod reads the snapshot again every 10 seconds. Every bot has its own values, so `read` takes the bot id, from the user or the entity at hand.
+**Idea.** MongoDB keeps the values, and no pod keeps a copy. `read` asks MongoDB on every call and returns a promise, so every pod uses a new value at once. Every bot has its own values, so `read` takes the bot id, from the user or the entity at hand.
 
 **Data.** One document per changed setting of a bot in `settings`, with a unique index on `botId` and `name`; a setting that nobody changed in a bot has no document there and reads its default.
 
@@ -73,14 +72,14 @@ The settings of a bot in the code now are `users.autoBan`, `access.defaultGrants
 
 1. The number input of the `settings` scene calls `SettingsService.write`. It checks `update Setting`, which only `admin` has, and checks the value against the setting: the range of a number, the options of the choices.
 2. `SettingsRepository.save` upserts the document, and the service logs `Setting changed`.
-3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the bot settings of every admin of the bot redraw. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
-4. Pod B reads all documents on its next refresh, at most 10 seconds later, and replaces its snapshot.
+3. The service emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the bot settings of every admin of the bot redraw. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+4. The next `read` on any pod finds the document and returns 12.
 
 **Edge cases.**
 
 - `read` checks the stored value against the setting. A value of the wrong type, or a number out of the range after a deploy changed it, reads the default; a choice that is no longer among the options is dropped.
-- The first snapshot is read while the plugin loads, so the server does not start with defaults instead of the stored values; when MongoDB fails then, the server does not start. A failed refresh later logs `Failed to refresh settings` and keeps the old snapshot.
-- A flag and a choice change relative to the stored document: `toggle` and `toggleChoice` compute the new value inside one MongoDB update and put the stored result into the snapshot. So a second press that lands on a pod with a stale snapshot does not undo the first one. A number is a plain `write` of the typed value, and of two admins who type one at the same time the later write wins.
+- Every `read` is one query. Every update reads `users.autoBan` before it finds or creates its user, and reads `access.defaultGrants` when it builds an ability. A stored value of a choices setting costs one more read, of the bot, because `read` drops the choices that the bot does not offer. When MongoDB does not answer, `read` rejects and the update fails: there is no older value to fall back to.
+- A flag and a choice change relative to the stored document: `toggle` and `toggleChoice` compute the new value inside one MongoDB update. So two presses that land on different pods do not undo each other. A number is a plain `write` of the typed value, and of two admins who type one at the same time the later write wins.
 
 ## A setting of a user
 
@@ -149,11 +148,11 @@ The only setting of a user in the code now is `users.language`.
 
 ## Files
 
-| File                                                               | Owns                                                                        | Section                                     |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------- |
-| `settings-service.ts`                                              | The kinds of settings, their registration, the snapshot, `read` and `write` | [Values on every pod](#values-on-every-pod) |
-| `user-settings-service.ts`                                         | The settings of a user: their registration, `readUserChoice` and `write`    | [A setting of a user](#a-setting-of-a-user) |
-| `settings-repository.ts`                                           | The `settings` collection                                                   | [Values on every pod](#values-on-every-pod) |
-| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                      |                                             |
-| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its four screens                                 | [The menu](#the-menu)                       |
-| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, the two events, texts           |                                             |
+| File                                                               | Owns                                                                     | Section                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `settings-service.ts`                                              | The kinds of settings, their registration, `read` and `write`            | [Reading and writing a value](#reading-and-writing-a-value) |
+| `user-settings-service.ts`                                         | The settings of a user: their registration, `readUserChoice` and `write` | [A setting of a user](#a-setting-of-a-user)                 |
+| `settings-repository.ts`                                           | The `settings` collection                                                | [Reading and writing a value](#reading-and-writing-a-value) |
+| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                   |                                                             |
+| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its four screens                              | [The menu](#the-menu)                                       |
+| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, the two events, texts        |                                                             |

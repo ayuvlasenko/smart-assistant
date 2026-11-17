@@ -95,7 +95,7 @@ export class InvitesService {
             expiresAt: draft.expiresAt,
         };
 
-        this.access.assert(actor, "create", subject("Invite", data));
+        await this.access.assert(actor, "create", subject("Invite", data));
 
         if (!grants.length) {
             throw new InviteWithoutGrantsError();
@@ -153,7 +153,7 @@ export class InvitesService {
         return this.invitesRepository.findOne({
             $and: [
                 { _id: inviteId },
-                this.access.accessibleBy(actor, "read", "Invite"),
+                await this.access.accessibleBy(actor, "read", "Invite"),
             ],
         });
     }
@@ -162,7 +162,7 @@ export class InvitesService {
         actor: UserEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteEntity>> {
-        const filter = this.access.accessibleBy(actor, "read", "Invite");
+        const filter = await this.access.accessibleBy(actor, "read", "Invite");
         const [items, total] = await Promise.all([
             this.invitesRepository.findPage({
                 filter,
@@ -181,7 +181,7 @@ export class InvitesService {
         invite: InviteEntity,
         { skip, limit }: InvitesPageRequest,
     ): Promise<InvitesPage<InviteUser>> {
-        this.access.assert(actor, "read", subject("Invite", invite));
+        await this.access.assert(actor, "read", subject("Invite", invite));
 
         const activations = invite.activations
             .toReversed()
@@ -210,7 +210,7 @@ export class InvitesService {
             return null;
         }
 
-        this.access.assert(actor, "update", subject("Invite", invite));
+        await this.access.assert(actor, "update", subject("Invite", invite));
 
         const revoked = await this.invitesRepository.revoke(
             inviteId,

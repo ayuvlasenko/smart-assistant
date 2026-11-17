@@ -66,7 +66,7 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654341);
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTextUpdate(987654341, "hello"),
         );
 
@@ -101,7 +101,7 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654342);
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTextUpdate(987654342, "hello"),
         );
 
@@ -139,11 +139,11 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654343);
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTextUpdate(987654343, "second", 1),
         );
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTextUpdate(987654343, "first", 2),
         );
 
@@ -171,7 +171,7 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654344);
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildTextUpdate(987654344, "hello"),
         );
 
@@ -196,7 +196,7 @@ void describe("TelegramRouter", () => {
 
         await createUser(usersRepository, 987654345);
         await telegramUpdateHandler.handle(
-            telegramBots.root,
+            await telegramBots.root(),
             buildCommandUpdate(987654345, "/test@BipBopBot"),
         );
 

@@ -67,7 +67,7 @@ export async function buildTelegramSceneBot(
     const allowedUserIds = new Set<number>();
 
     const send = async (update: Update) => {
-        await telegramUpdateHandler.handle(telegramBots.root, update);
+        await telegramUpdateHandler.handle(await telegramBots.root(), update);
         return update;
     };
 
@@ -78,7 +78,7 @@ export async function buildTelegramSceneBot(
 
         allowedUserIds.add(telegramId);
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: telegramBots.root.id,
+            botId: (await telegramBots.root()).id,
             telegramId: String(telegramId),
             isBanned: false,
             languageCode: "en",

@@ -47,11 +47,12 @@ export class TelegramStartEntries {
     async open(
         ctx: TelegramContext<TelegramCommandMessageUpdate>,
     ): Promise<boolean> {
-        const module = this.telegramBots.find(ctx.user.botId)?.startModule;
+        const bot = await this.telegramBots.find(ctx.user.botId);
+        const module = bot?.startModule;
         const entry =
             module === undefined ? undefined : this.entries.get(module);
 
-        if (!entry || !isAllowed(entry.guard, ctx.user)) {
+        if (!entry || !(await isAllowed(entry.guard, ctx.user))) {
             return false;
         }
 

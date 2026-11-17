@@ -289,7 +289,7 @@ X-Telegram-Bot-Api-Secret-Token                                 base64url of HMA
 **Walk-through.** Telegram sends an update to a bot.
 
 1. The route reads `telegramId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
-2. The route finds the bot with `TelegramBots.loadByTelegramId`: in the snapshot of the registry, or in MongoDB when another pod added or moved the bot after the last refresh. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
+2. The route reads the bot from MongoDB with `TelegramBots.findByTelegramId`. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
 4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
@@ -743,7 +743,7 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 **Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text.
 
-**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramBot.startModule` carries it from the snapshot of the registry, so `/start` reads no database.
+**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` reads the bot from MongoDB on every `/start` and takes its `startModule`.
 
 **Walk-through.**
 
@@ -753,11 +753,11 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 4. The command calls `telegramStartEntries.open(ctx)`. It finds the entry of the start module of the bot, checks the guard and runs the handler, which starts the `poker` scene.
 5. `open` returns `false` for a bot without a start module and for a user whom the guard refuses. The command then replies with `telegram:welcome`.
 
-**Edge cases.** A deep link wins over the start module: `/start invite_…` runs the invite, and the invite opens the entry itself after it gives the grants. The grants of that update are new, so the handler calls `ctx.refreshUser(user)` first: `ctx.user` and `ctx.t` then belong to the newer document, and the guard of the entry sees the new grants. `refreshUser` throws for a document of another user. The other pods take a new start module on their next refresh of the bots, up to 10 seconds.
+**Edge cases.** A deep link wins over the start module: `/start invite_…` runs the invite, and the invite opens the entry itself after it gives the grants. The grants of that update are new, so the handler calls `ctx.refreshUser(user)` first: `ctx.user` and `ctx.t` then belong to the newer document, and the guard of the entry sees the new grants. `refreshUser` throws for a document of another user. Every pod reads the start module from MongoDB, so a new one works at once.
 
 ## Access and the command menu
 
-A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
+A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, and the transport awaits it through `isAllowed`. The transport knows only this type; a domain builds the guard from its CASL rules with `access.guard(action, subject)` on its typed view of the access service. The engine checks the guard at every place where the user acts, so a user who loses a grant loses the running scenes at once, without a cleanup.
 
 | Guard on              | Checked                                            | When the guard refuses                                                              |
 | --------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -779,14 +779,14 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **Walk-through.**
 
-1. `TelegramCommandMenus.sync` runs on every update of a user with access, on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
+1. `TelegramCommandMenus.sync` runs on every update of a user with access, with the bot of the update. `syncUser` finds the bot of a user and runs the same sync on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
 2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
    So a user who picked another language in `/settings` gets a menu of the chat in that language.
 3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
 4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
 5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
 
-**Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. A pod learns a changed setting up to 10 s late, see [Settings](../settings/README.md#values-on-every-pod), and compares with the old menu of the bot until then. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
+**Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 
 **Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<telegramId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 65 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. That is longer than the 60 s for which an update may hold its session lock, so an update that holds the lock ends by itself, also when it waits for the rate limiter. An update that waits in the queue of its chat behind such an update starts late and can still be cut; its claim then makes the retry of Telegram a duplicate. A pod with no running update closes at once. The cluster kills the pod 75 s after the start of the shutdown.
 

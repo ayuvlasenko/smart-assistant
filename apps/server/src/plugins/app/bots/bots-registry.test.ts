@@ -74,16 +74,14 @@ void describe("BotsRegistry", () => {
             token: cipher.encrypt("43:stopped-token"),
         });
         await botsRepository.disable(stopped._id, new Date());
-        await botsRegistry.refresh();
 
         assert.deepEqual(
-            botsRegistry
-                .list()
+            (await botsRegistry.list())
                 .map(({ id }) => id)
                 .sort((a, b) => a.localeCompare(b)),
             [child._id, botsRegistry.rootId].sort((a, b) => a.localeCompare(b)),
         );
-        assert.deepEqual(botsRegistry.find(botsRegistry.rootId), {
+        assert.deepEqual(await botsRegistry.find(botsRegistry.rootId), {
             id: botsRegistry.rootId,
             telegramId: testTelegramBotId,
             token: process.env.TELEGRAM_BOT_TOKEN,
@@ -91,7 +89,7 @@ void describe("BotsRegistry", () => {
             startModule: undefined,
         });
         assert.notEqual(child._id, "42");
-        assert.deepEqual(botsRegistry.find(child._id), {
+        assert.deepEqual(await botsRegistry.find(child._id), {
             id: child._id,
             telegramId: "42",
             token: "42:child-token",
@@ -120,10 +118,9 @@ void describe("BotsRegistry", () => {
                 randomBytes(32).toString("base64"),
             ).encrypt("42:child-token"),
         });
-        await botsRegistry.refresh();
 
-        assert.equal(botsRegistry.find(child._id), undefined);
-        assert.ok(botsRegistry.find(botsRegistry.rootId));
+        assert.equal(await botsRegistry.find(child._id), undefined);
+        assert.ok(await botsRegistry.find(botsRegistry.rootId));
         assert.ok(
             logs
                 .readEntries()
@@ -153,9 +150,8 @@ void describe("BotsRegistry", () => {
             username: "child_bot",
             token: new BotTokenCipher(key).encrypt("43:other-token"),
         });
-        await botsRegistry.refresh();
 
-        assert.equal(botsRegistry.find(child._id), undefined);
+        assert.equal(await botsRegistry.find(child._id), undefined);
         assert.ok(
             logs
                 .readEntries()
@@ -168,7 +164,7 @@ void describe("BotsRegistry", () => {
         assert.ok(!JSON.stringify(logs.readEntries()).includes("other-token"));
     });
 
-    void it("loads a bot that another pod added after the last refresh", async (t) => {
+    void it("finds a bot that another pod added, by its id and by its Telegram id", async (t) => {
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
@@ -184,12 +180,14 @@ void describe("BotsRegistry", () => {
             token: new BotTokenCipher(key).encrypt("42:child-token"),
         });
 
-        assert.equal(botsRegistry.find(child._id), undefined);
         assert.equal(
-            (await botsRegistry.loadByTelegramId("42"))?.token,
+            (await botsRegistry.findByTelegramId("42"))?.token,
             "42:child-token",
         );
-        assert.equal(botsRegistry.find(child._id)?.token, "42:child-token");
+        assert.equal(
+            (await botsRegistry.find(child._id))?.token,
+            "42:child-token",
+        );
     });
 
     void it("keeps the root bot and its data when the root token becomes a token of another bot", async (t) => {
@@ -209,7 +207,10 @@ void describe("BotsRegistry", () => {
         });
 
         assert.equal(second.botsRegistry.rootId, rootId);
-        assert.equal(second.botsRegistry.find(rootId)?.telegramId, "777000111");
+        assert.equal(
+            (await second.botsRegistry.find(rootId))?.telegramId,
+            "777000111",
+        );
         assert.equal(await mongo.collection("bots").countDocuments({}), 1);
         assert.ok(
             logs
@@ -264,29 +265,29 @@ void describe("Bot modules", () => {
             ],
         });
         const router = app.getDecorator<TelegramRouter>("telegramRouter");
-        const allowed = () => {
+        const allowed = async () => {
             const admin = buildUserEntity({
                 botId: botsRegistry.rootId,
                 grants: [adminGrant],
             });
+            const names: string[] = [];
 
-            return router
-                .listCommands()
-                .filter(({ guard }) => isAllowed(guard, admin))
-                .map(({ name }) => name)
-                .sort((a, b) => a.localeCompare(b));
+            for (const { name, guard } of router.listCommands()) {
+                if (await isAllowed(guard, admin)) {
+                    names.push(name);
+                }
+            }
+
+            return names.sort((a, b) => a.localeCompare(b));
         };
 
-        assert.deepEqual(allowed(), ["cancel", "invites", "settings"]);
+        assert.deepEqual(await allowed(), ["cancel", "invites", "settings"]);
 
-        const bot = await app
+        await app
             .getDecorator<PokerBot["botsRepository"]>("botsRepository")
             .updateModules(botsRegistry.rootId, ["poker", "ping"]);
 
-        assert.ok(bot);
-        botsRegistry.put(bot);
-
-        assert.deepEqual(allowed(), [
+        assert.deepEqual(await allowed(), [
             "cancel",
             "invites",
             "ping",
@@ -310,13 +311,7 @@ async function allowAdmin(
 }
 
 async function setModules(bot: PokerBot, modules: string[]): Promise<void> {
-    const updated = await bot.botsRepository.updateModules(
-        bot.botsRegistry.rootId,
-        modules,
-    );
-
-    assert.ok(updated);
-    bot.botsRegistry.put(updated);
+    await bot.botsRepository.updateModules(bot.botsRegistry.rootId, modules);
 }
 
 async function createBot(

@@ -110,13 +110,10 @@ void describe("Invites and the start module", () => {
         const guest = buildTelegramPrivateChat({ id: 987654841 });
         const pinger = buildTelegramPrivateChat({ id: 987654842 });
         const admin = buildUserEntity({ grants: [adminGrant] });
-        const testBot = await bot.botsRepository.setStartModule(
+        await bot.botsRepository.setStartModule(
             bot.botsRegistry.rootId,
             "poker",
         );
-
-        assert.ok(testBot);
-        bot.botsRegistry.put(testBot);
 
         const pokerInvite = await bot.invitesService.create(admin, {
             grants: [pokerJoinGrant],
@@ -503,7 +500,7 @@ async function sendAsStranger(
     const [command] = text.split(" ");
 
     await bot.telegramUpdateHandler.handle(
-        bot.telegramBots.root,
+        await bot.telegramBots.root(),
         buildTelegramTextMessageUpdate({
             update_id: strangerUpdateId,
             message: {

@@ -58,12 +58,12 @@ export default fp(
         );
 
         events.on("settings.userSettingChanged", ({ data }) =>
-            telegramCommandMenus.sync(data.user),
+            telegramCommandMenus.syncUser(data.user),
         );
         events.on("settings.settingChanged", async ({ data }) => {
             telegramChats.publish(data.botId, [settingsTopic]);
 
-            const bot = telegramBots.find(data.botId);
+            const bot = await telegramBots.find(data.botId);
 
             if (!bot) {
                 return;

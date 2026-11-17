@@ -82,7 +82,7 @@ export class TelegramBotService {
             return;
         }
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.listBotsOnStart()) {
             try {
                 await this.setWebhookOnStart(bot);
             } catch (err) {
@@ -139,7 +139,7 @@ export class TelegramBotService {
     async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
         const webhooks: TelegramBotWebhook[] = [];
 
-        for (const bot of this.telegramBots.list()) {
+        for (const bot of await this.telegramBots.list()) {
             try {
                 webhooks.push(await this.refreshWebhook(bot));
             } catch (err) {
@@ -163,7 +163,7 @@ export class TelegramBotService {
 
     async resolveBotUrl(botId: string): Promise<string> {
         return buildTelegramBotUrl(
-            await this.resolveUsername(this.telegramBots.get(botId)),
+            await this.resolveUsername(await this.telegramBots.get(botId)),
         );
     }
 
@@ -172,9 +172,18 @@ export class TelegramBotService {
         link: TelegramDeepLink,
     ): Promise<string> {
         return buildTelegramDeepLinkUrl(
-            await this.resolveUsername(this.telegramBots.get(botId)),
+            await this.resolveUsername(await this.telegramBots.get(botId)),
             link,
         );
+    }
+
+    private async listBotsOnStart(): Promise<TelegramBot[]> {
+        try {
+            return await this.telegramBots.list();
+        } catch (err) {
+            this.log.error({ err }, "Failed to read the bots on start");
+            return [];
+        }
     }
 
     private async setWebhookOnStart(bot: TelegramBot): Promise<void> {
