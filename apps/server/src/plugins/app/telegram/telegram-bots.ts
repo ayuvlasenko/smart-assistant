@@ -20,7 +20,6 @@ export interface TelegramBotsPluginOptions extends FastifyPluginOptions {
 export interface TelegramBot {
     id: string;
     telegramId: string;
-    modules: readonly string[];
     startModule?: string;
     api: TelegramApiClient;
 }
@@ -89,7 +88,6 @@ export class TelegramBots {
         return {
             id: bot.id,
             telegramId: bot.telegramId,
-            modules: bot.modules,
             startModule: bot.startModule,
             api: client.api,
         };
