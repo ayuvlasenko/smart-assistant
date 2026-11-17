@@ -42,7 +42,8 @@ export type TelegramApiResult =
 
 export type TelegramDeliveryKind = "publish" | "deliver";
 
-export type TelegramCommandMenuSync = "unchanged" | "set" | "failed";
+export type TelegramCommandMenuSync =
+    "unchanged" | "set" | "removed" | "failed";
 
 export class TelegramMetrics {
     private readonly updates: Counter<"type" | "result" | "bot">;

@@ -34,7 +34,7 @@ Most of the code below exists because of these limits of the Bot API:
 - The bot changes a message only by its id. An edit to the same content fails with `message is not modified`, and a text message cannot become a photo.
 - The bot can delete a message only during 48 hours after it was sent. In a private chat this covers the messages of the user too.
 - A link into the bot can only send `/start <payload>`, with at most 64 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`.
-- The command menu is set per chat and per language with `setMyCommands`. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
+- The command menu is set for the bot, per language and per chat with `setMyCommands`; a chat without a menu of its own shows the menu of the bot. A command name holds only `a-z`, `0-9` and `_`, at most 32 characters.
 - The Bot API limits the message rate: about 1 message per second in one chat with short bursts, and about 30 messages per second for the whole bot. Any method can answer `429` with `retry_after`, the seconds to wait. Telegram does not publish limits per method; a test showed that deletes do not count against the message limit of the chat, see [Rate limits](#rate-limits).
 
 ## Writing bot code
@@ -400,7 +400,7 @@ rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
 | `chatMessages`, `chat:<chat_id>`         | 1 per second | 20    | `send*`, `edit*`                                                                |
 | `chatDeletes`, `chat:<chat_id>:deletes`  | 30 per sec.  | 30    | `deleteMessage(s)`                                                              |
 | `botMessages`, `global` with the classes | 25 per sec.  | 5     | `send*`, `edit*`                                                                |
-| `botCommands`, `commands`                | 2 per second | 6     | `setMyCommands`                                                                 |
+| `botCommands`, `commands`                | 2 per second | 6     | `setMyCommands`, `deleteMyCommands`                                             |
 | none                                     |              |       | `answerCallbackQuery`, `getMe`, `setWebhook`, `deleteWebhook`, `getWebhookInfo` |
 
 The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a test in one private chat, Telegram took 100 `sendMessage` calls before the first `429` and refilled them within a minute, so `chatMessages` lets 20 calls through at once: enough for a screen of several messages or fast paging, and well under that test. We do not know whether Telegram counts edits in the global limit, so edits take a global token too. Deletes have their own chat bucket and no global one: in a test in one private chat, 100 `deleteMessage` calls passed in 0.5 s right after `sendMessage` got a `429`, and the next 100 `sendMessage` calls passed as before, so a delete neither waits for the messages of the chat nor spends them. `chatDeletes` stays under the rate of that test, and it never delays the message that the scene sends after a delete. Telegram publishes no limit for `setMyCommands`. In a test, 20 calls sent at once passed and every later call got a `429` with a `retry_after` of 6 s, with 30 calls to one menu and with 40 calls to 40 different menus alike, so the limit counts for the bot and not for a menu. `botCommands` lets 6 calls through at once and 2 per second after them, at most 18 in any 6 s, and a `429` pauses the bucket for every pod. The test set the menus of a language; the menu of a chat was not tested.
@@ -746,15 +746,25 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 `isBanned` is not a guard: it is the gate before the router. A banned user gets only the deep links registered with `allowBanned`, such as an invite link.
 
-**The command menu.** The guards of the commands also build the menu of each chat, so a user sees only the commands the user can run.
+**The command menu.** The guards of the commands also build the menus, so a user sees only the commands the user can run.
+
+**Problem.** Telegram lets a bot call `setMyCommands` about 20 times and then makes it wait, see [Rate limits](#rate-limits). A menu of its own for every chat costs one call per new user, so in a wave of new users the bot would answer each of them only after the menu.
+
+**Idea.** The bot has one menu for everybody: the commands of a user who holds no grants of their own, only the [default grants](../access/README.md#default-grants). A chat gets a menu of its own only when the commands of its user differ from the menu of the bot, such as the chat of an admin.
+
+**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<botId>:commands:menu` keeps the hash of the menus of the bot for 30 days.
+
+**Walk-through.**
 
 1. `TelegramCommandMenus.sync` runs on every update of a user with access, and on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user.
-2. It lists the commands whose guard allows the user, in the user's language, and hashes the list together with the menu generation of the bot from `telegram:<botId>:commands:generation`.
-3. When the hash equals `telegram:<botId>:commands:<telegramId>`, it does nothing. Otherwise it calls `setMyCommands` with the chat scope and stores the new hash for one day.
+2. It lists the commands whose guard allows the user, and the commands of `buildUserWithoutGrants` in the same bot, both in the user's language.
+3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
+4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
+5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
 
-So the menu changes after a new grant, a language change, or a deploy that adds a command, and otherwise costs one API call per user at most once a day. The day only bounds the memory of the hashes: a user who comes back after it gets the same menu set again. A failed sync logs an error and does not fail the update. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set` or `failed`.
+**Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. A pod learns a changed setting up to 10 s late, see [Settings](../settings/README.md#values-on-every-pod), and compares with the old menu of the bot until then. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 
-**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the default menu of every bot: the commands without a guard, in every language. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their default menus, writes a new generation for every bot and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. The new generation changes every hash, so each chat gets its menu again on its next update.
+**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the menus of every bot when they changed. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
 
 ## Files
 

@@ -73,7 +73,7 @@ The settings in the code now are `users.autoBan`, `access.defaultGrants` and `po
 
 1. The number input of the `settings` scene calls `SettingsService.write`. It checks `update Setting`, which only `admin` has, and checks the value against the setting: the range of a number, the options of the choices.
 2. `SettingsRepository.save` upserts the document, and the service logs `Setting changed`.
-3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the menu of every admin of the bot redraws.
+3. Pod A puts the value into the snapshot of the admin's bot at once and emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the menu of every admin of the bot redraws. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
 4. Pod B reads all documents on its next refresh, at most 10 seconds later, and replaces its snapshot.
 
 **Edge cases.**

@@ -138,6 +138,36 @@ void describe("Settings menu", () => {
                 .some(({ text }) => text === pokerLocales.en.newRoomButton),
         );
     });
+
+    void it("puts the command that the default access opens into the menu of the bot", async (t) => {
+        const bot = await buildBot(t);
+        const admin = await allowAdmin(bot, 987655306);
+        const user = buildTelegramPrivateChat({ id: 987655307 });
+
+        await bot.sendText(admin, "/settings");
+        await bot.pressButton(admin, "🔑 Default access");
+        await bot.pressButton(admin, `⬜ ${pokerLocales.en.createGrant}`);
+        await bot.allowUser(user.id);
+        await bot.sendText(user, "/poker");
+
+        const menus = bot.telegramApiService.setMyCommands.mock.calls.map(
+            (call) => call.arguments[0],
+        );
+
+        assert.ok(
+            menus.some(
+                ({ scope, commands }) =>
+                    !scope &&
+                    commands.some(({ command }) => command === "poker"),
+            ),
+        );
+        assert.ok(
+            !menus.some(
+                ({ scope }) =>
+                    scope?.type === "chat" && scope.chat_id === user.id,
+            ),
+        );
+    });
 });
 
 function buildBot(t: TestContext): Promise<PokerBot> {

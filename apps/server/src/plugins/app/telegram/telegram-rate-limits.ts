@@ -61,6 +61,7 @@ const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
         deleteMessage: [chatDeletes],
         deleteMessages: [chatDeletes],
         setMyCommands: [botCommands],
+        deleteMyCommands: [botCommands],
     };
 
 export function telegramRateLimitBuckets(

@@ -23,6 +23,7 @@ export type TelegramApiClient = Pick<
     | "sendMessage"
     | "answerCallbackQuery"
     | "setMyCommands"
+    | "deleteMyCommands"
     | "editMessageReplyMarkup"
     | "deleteMessages"
     | "sendRichMessage"
@@ -98,6 +99,10 @@ export class TelegramApiService {
 
     setMyCommands(...args: TelegramMethodArgs<"setMyCommands">) {
         return this.call("setMyCommands", ...args);
+    }
+
+    deleteMyCommands(...args: TelegramMethodArgs<"deleteMyCommands">) {
+        return this.call("deleteMyCommands", ...args);
     }
 
     editMessageReplyMarkup(

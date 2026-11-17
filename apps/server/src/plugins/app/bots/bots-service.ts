@@ -329,7 +329,7 @@ export class BotsService {
         }
 
         try {
-            await this.telegramCommandMenus.refresh(bot);
+            await this.telegramCommandMenus.syncBot(bot);
         } catch (err) {
             this.log.error(
                 { err, botId },
