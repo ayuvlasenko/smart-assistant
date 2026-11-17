@@ -61,15 +61,10 @@ export class LockService {
 
     async acquire(key: string, options: LockOptions): Promise<HeldLock> {
         const startedAt = performance.now();
-        const leaveQueue = await this.enterQueue(key);
+        const leaveQueue = await this.waitForTurn(key);
 
         try {
-            return await this.acquireInTurn(
-                key,
-                options,
-                startedAt,
-                leaveQueue,
-            );
+            return await this.takeLock(key, options, startedAt, leaveQueue);
         } catch (err) {
             leaveQueue();
             throw err;
@@ -99,7 +94,7 @@ export class LockService {
         return { key: lock.key, value: lock.token };
     }
 
-    private async enterQueue(key: string): Promise<() => void> {
+    private async waitForTurn(key: string): Promise<() => void> {
         const previous = this.queues.get(key);
         const { promise: turn, resolve: endTurn } =
             Promise.withResolvers<void>();
@@ -117,7 +112,7 @@ export class LockService {
         };
     }
 
-    private async acquireInTurn(
+    private async takeLock(
         key: string,
         options: LockOptions,
         startedAt: number,
