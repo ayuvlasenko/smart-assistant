@@ -1,8 +1,9 @@
 import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { BotEntity, EncryptedBotToken, newRootBotId } from "./bot-entity.js";
+import { BotTelegramIdTakenError } from "./bots-errors.js";
 
 export type BotData = Pick<BotEntity, "telegramId" | "username" | "token"> &
     Partial<Pick<BotEntity, "createdBy">>;
@@ -139,13 +140,23 @@ export class BotsRepository {
         );
     }
 
-    updateToken(
+    async updateToken(
         _id: string,
         telegramId: string,
         token: EncryptedBotToken,
         username: string,
     ): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { telegramId, token, username } });
+        try {
+            return await this.update(_id, {
+                $set: { telegramId, token, username },
+            });
+        } catch (err) {
+            if (isDuplicateKeyError(err)) {
+                throw new BotTelegramIdTakenError(telegramId);
+            }
+
+            throw err;
+        }
     }
 
     disable(_id: string, now: Date): Promise<BotEntity | null> {
@@ -200,6 +211,10 @@ export class BotsRepository {
     private collection() {
         return this.mongo.db.collection<BotEntity>("bots");
     }
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+    return err instanceof MongoServerError && err.code === 11000;
 }
 
 export default fp(

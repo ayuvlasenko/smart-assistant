@@ -492,6 +492,44 @@ void describe("/bots", () => {
         );
     });
 
+    void it("refuses a move when another bot takes the Telegram bot after the check, and keeps the webhook", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657019 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const other = await bot.botsService.add(actor, otherToken);
+
+        assert.equal(other.status, "added");
+        await mongo.collection("bots").createIndex(
+            { telegramId: 1 },
+            {
+                unique: true,
+                name: "telegramId_unique",
+                partialFilterExpression: { telegramId: { $exists: true } },
+            },
+        );
+        t.after(() => mongo.collection("bots").dropIndex("telegramId_unique"));
+        t.mock.method(
+            bot.botsRepository,
+            "findOneByTelegramId",
+            () => Promise.resolve(null),
+            { times: 1 },
+        );
+
+        assert.deepEqual(
+            await bot.botsService.move(actor, childId, otherToken),
+            { status: "alreadyAdded", botId: other.bot._id },
+        );
+        assert.equal(
+            (await bot.botsRepository.findOneById(childId))?.telegramId,
+            "42",
+        );
+        assert.equal(
+            bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
+            0,
+        );
+    });
+
     void it("keeps the bots away from the admin of any other bot", async (t) => {
         const bot = await buildBot(t);
         const access = bot.app

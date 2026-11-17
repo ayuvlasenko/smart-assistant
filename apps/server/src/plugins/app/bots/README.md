@@ -63,8 +63,9 @@ The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the 
 
 1. The admin presses `🔀 Move`, presses it again to confirm, and sends the token of the other Telegram bot.
 2. `BotsService.move` calls `getMe` with the token. A token of the same Telegram bot gets `sameBot`, and a Telegram bot that another document has gets `alreadyAdded` and the screen of that bot.
-3. The service removes the webhook of the old Telegram bot with `deleteWebhook`, so the old bot sends no more updates.
-4. `updateToken` stores the new `telegramId`, the token and the username. The registry takes the bot at once, and the service sets the webhook and the default menu of the new Telegram bot.
+3. `updateToken` stores the new `telegramId`, the token and the username. When another document took the Telegram bot after step 2, the unique index `telegramId_unique` refuses the write: the repository throws `BotTelegramIdTakenError`, the move answers `alreadyAdded`, and the bot keeps its Telegram bot and its webhook.
+4. The service removes the webhook of the old Telegram bot with `deleteWebhook`, so the old bot sends no more updates. The registry of the pod still holds the old token for this call.
+5. The registry takes the bot, and the service sets the webhook and the default menu of the new Telegram bot.
 
 **Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The scenes of a user stay under the old Telegram id and expire there, because their message ids belong to the chat with the old bot; the user starts again in the new one. The command menus are set again for the new Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu). The other pods use the old token until their next refresh, up to 10 seconds; an update of the new Telegram bot that reaches such a pod makes it read the bot from MongoDB. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the path of its own Telegram id, which no bot has any more, so the server skips them.
 

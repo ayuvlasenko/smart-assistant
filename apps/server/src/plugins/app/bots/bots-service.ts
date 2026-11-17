@@ -13,7 +13,8 @@ import { InvitesService } from "../invites/invites-service.js";
 import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotEntity, BotsSubjects } from "./bot-entity.js";
-import { BotsConnector } from "./bots-connector.js";
+import { BotProfile, BotsConnector } from "./bots-connector.js";
+import { BotTelegramIdTakenError } from "./bots-errors.js";
 import { BotsEvents } from "./bots-events.js";
 import { botsModule, BotsRegistry } from "./bots-registry.js";
 import { BotsRepository } from "./bots-repository.js";
@@ -295,19 +296,17 @@ export class BotsService {
             return this.alreadyAdded(profile.telegramId);
         }
 
-        await this.botsConnector.disconnect(botId);
+        const bot = await this.takeTelegramBot(botId, profile, token);
 
-        const bot = await this.botsRepository.updateToken(
-            botId,
-            profile.telegramId,
-            this.botsRegistry.encrypt(token),
-            profile.username,
-        );
+        if (bot === "taken") {
+            return this.alreadyAdded(profile.telegramId);
+        }
 
         if (!bot) {
             return { status: "invalidToken" };
         }
 
+        await this.botsConnector.disconnect(botId);
         this.botsRegistry.put(bot);
         await this.botsConnector.connect(botId);
         this.log.info(
@@ -365,6 +364,27 @@ export class BotsService {
     private assertNotRoot(botId: string): void {
         if (this.isRoot(botId)) {
             throw new Error("The root bot lives in TELEGRAM_BOT_TOKEN");
+        }
+    }
+
+    private async takeTelegramBot(
+        botId: string,
+        profile: BotProfile,
+        token: string,
+    ): Promise<BotEntity | null | "taken"> {
+        try {
+            return await this.botsRepository.updateToken(
+                botId,
+                profile.telegramId,
+                this.botsRegistry.encrypt(token),
+                profile.username,
+            );
+        } catch (err) {
+            if (err instanceof BotTelegramIdTakenError) {
+                return "taken";
+            }
+
+            throw err;
         }
     }
 
