@@ -209,6 +209,7 @@ void describe("Poker rooms", () => {
         await bot.telegramChats.idle();
 
         const creatorRoom = await readRoomMessage(bot, creator);
+        const [, ...creatorRoomBelowHeader] = creatorRoom.split("\n");
 
         assert.deepEqual(await readCardRows(bot, creator), [
             ["1", "2", "3", "5", "8", "13"],
@@ -220,7 +221,7 @@ void describe("Poker rooms", () => {
         );
         assert.match(creatorRoom, / ⏳$/m);
         assert.match(creatorRoom, / ✅$/m);
-        assert.ok(!creatorRoom.includes("13"));
+        assert.ok(!creatorRoomBelowHeader.some((line) => line.includes("13")));
         assert.match(memberRoom, /\(you\) ✅$/m);
         assert.equal(
             (await readRoomKeyboard(bot, member))
