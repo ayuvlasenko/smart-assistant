@@ -16,7 +16,7 @@ This directory keeps the bots that the server serves. A bot is a tenant: its use
 
 **Data.** `BotsRepository` gives a new bot a generated id, such as `6741c2f09a3b5d0012e4a7c1`, and a new root bot the id `root`. A unique index keeps one document per `telegramId`. The flag `isRoot` marks the root bot.
 
-**Edge cases.** A bot created before the internal id keeps the number of its first token as `_id`, so never read an `_id` as a Telegram number: after a move the two differ. The command menus keep `telegramId` inside their hashes, so the first sync after a move sets the menus of the other Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+**Edge cases.** Never read an `_id` as a Telegram number. The migration `20261117140000-give-bots-internal-ids.js` gave new ids to the bots that had the number of their token as `_id`, and wrote the new id to the `botId` of their users, invites, settings and poker rooms. It changed MongoDB only: the Valkey keys of the old id stayed behind, so the scenes that were open at that time ended, and the webhook path changed. Production sets the webhook of the new path on its next start; a preview needs `POST /api/telegram/webhook/refresh`. The command menus keep `telegramId` inside their hashes, so the first sync after a move sets the menus of the other Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
 
 ## The root bot
 
