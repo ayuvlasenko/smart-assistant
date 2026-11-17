@@ -18,6 +18,7 @@ const internalServerErrorMessage = "Internal Server Error";
 
 export const options = {
     ...requestIdOptions,
+    disableRequestLogging: true,
     ajv: {
         customOptions: {
             coerceTypes: "array",
@@ -75,18 +76,7 @@ export default async function serviceApp(
             return response;
         }
 
-        request.log.error(
-            {
-                err,
-                request: {
-                    method: request.method,
-                    url: request.url,
-                    query: request.query,
-                    params: request.params,
-                },
-            },
-            "Unhandled error occurred",
-        );
+        request.log.error({ err }, "Unhandled error occurred");
 
         return { message: internalServerErrorMessage };
     });
@@ -101,8 +91,8 @@ export default async function serviceApp(
     });
 
     fastify.addHook("onReady", () => {
-        fastify.log.info(`Loaded plugins:\n${fastify.printPlugins()}`);
-        fastify.log.info(`Registered routes:\n${fastify.printRoutes()}`);
+        fastify.log.debug(`Loaded plugins:\n${fastify.printPlugins()}`);
+        fastify.log.debug(`Registered routes:\n${fastify.printRoutes()}`);
     });
 
     fastify.setNotFoundHandler(
@@ -112,19 +102,7 @@ export default async function serviceApp(
                 timeWindow: 500,
             }),
         },
-        (request, reply) => {
-            request.log.warn(
-                {
-                    request: {
-                        method: request.method,
-                        url: request.url,
-                        query: request.query,
-                        params: request.params,
-                    },
-                },
-                "Resource not found",
-            );
-
+        (_request, reply) => {
             reply.code(404);
 
             return { message: "Not Found" };

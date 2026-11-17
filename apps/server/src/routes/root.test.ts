@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-    REQUEST_ID_HEADER,
-    requestLogSerializers,
-} from "../request-logging.js";
+import { buildLoggerOptions } from "../logger-options.js";
+import { REQUEST_ID_HEADER } from "../request-logging.js";
 import { buildTestApp } from "../test/helper.js";
 import { createLogCollector } from "../test/log-collector.js";
 
@@ -38,8 +36,8 @@ void describe("GET /", () => {
         const logs = createLogCollector();
         const { app } = await buildTestApp({
             logger: {
-                ...logs.logger,
-                serializers: requestLogSerializers,
+                ...buildLoggerOptions("info"),
+                stream: logs.logger.stream,
             },
             t,
         });
@@ -52,13 +50,60 @@ void describe("GET /", () => {
                 "x-forwarded-port": "443",
             },
         });
-        const incomingRequestLog = logs
+        const requestLog = logs
             .readEntries()
-            .find((entry) => entry.msg === "incoming request");
+            .find((entry) => entry.msg === "request completed");
 
         assert.equal(response.statusCode, 200);
-        assert.ok(incomingRequestLog?.req);
-        assert.equal(incomingRequestLog.req.remoteAddress, "203.0.113.10");
-        assert.equal(incomingRequestLog.req.remotePort, 443);
+        assert.ok(requestLog?.req);
+        assert.equal(requestLog.req.remoteAddress, "203.0.113.10");
+        assert.equal(requestLog.req.remotePort, 443);
+    });
+
+    void it("writes one line per request, with the name of the level, the status and the time", async (t) => {
+        const logs = createLogCollector();
+        const { app } = await buildTestApp({
+            logger: {
+                ...buildLoggerOptions("info"),
+                stream: logs.logger.stream,
+            },
+            t,
+        });
+
+        await app.inject({ method: "GET", url: "/" });
+        await app.inject({ method: "GET", url: "/missing" });
+
+        const requestLogs = logs
+            .readEntries()
+            .filter((entry) => entry.req?.url !== undefined);
+
+        assert.deepEqual(
+            requestLogs.map(({ msg, level, req, res, pid }) => ({
+                msg,
+                level,
+                url: req?.url,
+                statusCode: res?.statusCode,
+                pid,
+            })),
+            [
+                {
+                    msg: "request completed",
+                    level: "info",
+                    url: "/",
+                    statusCode: 200,
+                    pid: undefined,
+                },
+                {
+                    msg: "request completed",
+                    level: "info",
+                    url: "/missing",
+                    statusCode: 404,
+                    pid: undefined,
+                },
+            ],
+        );
+        assert.ok(
+            requestLogs.every(({ responseTime }) => responseTime !== undefined),
+        );
     });
 });

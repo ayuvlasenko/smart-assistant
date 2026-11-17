@@ -29,9 +29,12 @@ export class BannedTelegramUserError extends Error {
 }
 
 export class UnhandledTelegramUpdateError extends Error {
-    constructor() {
+    readonly refusedRoute: string | undefined;
+
+    constructor(refusedRoute?: string) {
         super("No Telegram route handled the update");
         this.name = "UnhandledTelegramUpdateError";
+        this.refusedRoute = refusedRoute;
     }
 }
 

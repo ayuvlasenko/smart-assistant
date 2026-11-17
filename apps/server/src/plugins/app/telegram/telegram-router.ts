@@ -90,6 +90,14 @@ interface TelegramDeepLinkMatch {
     route: TelegramDeepLinkRoute;
 }
 
+interface TelegramRouteMatch {
+    route?: TelegramRoute;
+    name?: string;
+}
+
+const sceneRouteName = "scene";
+const matchRouteName = "route";
+
 export class TelegramRouter {
     private readonly middlewares: TelegramMiddleware[] = [];
     private readonly commandRoutes = new Map<string, TelegramCommandRoute>();
@@ -209,25 +217,42 @@ export class TelegramRouter {
         return commands;
     }
 
-    async dispatch(ctx: TelegramContext<Update>): Promise<void> {
+    async dispatch(ctx: TelegramContext<Update>): Promise<string> {
         if (ctx.user.isBanned) {
             return this.dispatchBanned(ctx);
         }
+
+        let handledBy = sceneRouteName;
+        let refusedRoute: string | undefined;
 
         await runMiddlewares(
             ctx,
             [
                 ...this.middlewares,
                 (sceneCtx, next) => this.sceneEngine.handle(sceneCtx, next),
-                (routeCtx, next) => this.route(routeCtx, next),
+                async (routeCtx, next) => {
+                    const { route, name } = await this.findRoute(routeCtx);
+
+                    if (!route) {
+                        refusedRoute = name;
+                        return next();
+                    }
+
+                    handledBy = name ?? matchRouteName;
+                    await runRoute(routeCtx, route);
+                },
             ],
             async () => {
-                throw new UnhandledTelegramUpdateError();
+                throw new UnhandledTelegramUpdateError(refusedRoute);
             },
         );
+
+        return handledBy;
     }
 
-    private async dispatchBanned(ctx: TelegramContext<Update>): Promise<void> {
+    private async dispatchBanned(
+        ctx: TelegramContext<Update>,
+    ): Promise<string> {
         const deepLink = this.findDeepLink(ctx);
 
         if (
@@ -238,37 +263,30 @@ export class TelegramRouter {
         }
 
         await runRoute(ctx, deepLinkRouteOf(deepLink));
-    }
 
-    private async route(
-        ctx: TelegramContext<Update>,
-        next: () => Promise<void>,
-    ): Promise<void> {
-        const route = await this.findRoute(ctx);
-
-        if (!route) {
-            return next();
-        }
-
-        await runRoute(ctx, route);
+        return deepLinkNameOf(deepLink);
     }
 
     private async findRoute(
         ctx: TelegramContext<Update>,
-    ): Promise<TelegramRoute | undefined> {
+    ): Promise<TelegramRouteMatch> {
         const deepLink = this.findDeepLink(ctx);
 
         if (deepLink) {
-            return isAllowed(deepLink.route.guard, ctx.user)
-                ? deepLinkRouteOf(deepLink)
-                : undefined;
+            return {
+                name: deepLinkNameOf(deepLink),
+                route: isAllowed(deepLink.route.guard, ctx.user)
+                    ? deepLinkRouteOf(deepLink)
+                    : undefined,
+            };
         }
 
         const command = extractTelegramCommand(ctx.update);
         const commandRoute = command && this.commandRoutes.get(command.name);
+        const commandName = commandRoute && `command:${command.name}`;
 
         if (commandRoute && isAllowed(commandRoute.guard, ctx.user)) {
-            return commandRoute;
+            return { name: commandName, route: commandRoute };
         }
 
         for (const route of this.matchRoutes) {
@@ -276,9 +294,11 @@ export class TelegramRouter {
                 isAllowed(route.guard, ctx.user) &&
                 (await route.matches(ctx))
             ) {
-                return route;
+                return { route };
             }
         }
+
+        return { name: commandName };
     }
 
     private findDeepLink(
@@ -301,6 +321,10 @@ export class TelegramRouter {
             );
         }
     }
+}
+
+function deepLinkNameOf({ link }: TelegramDeepLinkMatch): string {
+    return `deepLink:${link.name}`;
 }
 
 function deepLinkRouteOf({

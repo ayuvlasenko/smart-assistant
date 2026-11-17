@@ -114,9 +114,67 @@ void describe("TelegramUpdateHandler", () => {
 
         const entry = logs
             .readEntries()
-            .find(({ msg }) => msg === "User for update");
+            .find(({ msg }) => msg === "Update handled");
 
         assert.equal(entry?.updateId, 4242);
+        assert.ok(entry.userId);
+        assert.equal(entry.result, "banned");
+    });
+
+    void it("logs the command that handled an update and the command whose guard refused one", async (t) => {
+        const logs = createLogCollector();
+        const { telegramBots, telegramUpdateHandler, usersRepository } =
+            await buildTelegramBotServiceTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                logger: logs.logger,
+                registerRoutes: (router) => {
+                    router.command("secret", async () => undefined, {
+                        guard: (user) => user.grants.includes("vip"),
+                    });
+                },
+            });
+
+        await createUser(usersRepository, "987654343");
+        await telegramUpdateHandler.handle(
+            telegramBots.root,
+            buildStartUpdate(987654343, "/start"),
+        );
+        await telegramUpdateHandler.handle(
+            telegramBots.root,
+            buildTelegramTextMessageUpdate({
+                update_id: 2,
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654343 }),
+                    entities: [{ length: 7, offset: 0, type: "bot_command" }],
+                    text: "/secret",
+                },
+            }),
+        );
+
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Update handled")
+                .map(({ result, route, refusedRoute }) => ({
+                    result,
+                    route,
+                    refusedRoute,
+                })),
+            [
+                {
+                    result: "handled",
+                    route: "command:start",
+                    refusedRoute: undefined,
+                },
+                {
+                    result: "unhandled",
+                    route: undefined,
+                    refusedRoute: "command:secret",
+                },
+            ],
+        );
     });
 
     void it("counts a user once, on the first update", async (t) => {

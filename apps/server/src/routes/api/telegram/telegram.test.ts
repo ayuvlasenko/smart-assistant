@@ -201,7 +201,7 @@ void describe("POST /api/telegram/webhook", () => {
         const responseRequestId = response.headers[REQUEST_ID_HEADER];
         const receivedUpdateLog = logs
             .readEntries()
-            .find((entry) => entry.msg === "Received update");
+            .find((entry) => entry.msg === "Update handled");
 
         assert.equal(response.statusCode, 200);
         assert.ok(typeof responseRequestId === "string");
@@ -233,7 +233,7 @@ void describe("POST /api/telegram/webhook", () => {
 
         const logOutput = JSON.stringify(logs.readEntries());
 
-        assert.ok(logOutput.includes("Received update"));
+        assert.ok(logOutput.includes("Update handled"));
         assert.ok(!logOutput.includes("secret-invite-token"));
     });
 });
