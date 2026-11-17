@@ -134,7 +134,7 @@ export class TelegramMetrics {
     }
 
     startUpdate(
-        botId: string,
+        telegramId: string,
         update: Update,
     ): (result: TelegramUpdateResult) => void {
         const type = extractTelegramUpdateType(update);
@@ -142,7 +142,7 @@ export class TelegramMetrics {
 
         return (result) => {
             stopTimer();
-            this.updates.inc({ type, result, bot: botId });
+            this.updates.inc({ type, result, bot: telegramId });
         };
     }
 
@@ -155,7 +155,7 @@ export class TelegramMetrics {
     }
 
     startApiRequest(
-        botId: string,
+        telegramId: string,
         method: string,
     ): (result: TelegramApiResult, errorCode?: number) => void {
         const stopTimer = this.apiRequestDuration.startTimer({ method });
@@ -166,7 +166,7 @@ export class TelegramMetrics {
                 method,
                 result,
                 error_code: errorCode === undefined ? "" : String(errorCode),
-                bot: botId,
+                bot: telegramId,
             });
         };
     }

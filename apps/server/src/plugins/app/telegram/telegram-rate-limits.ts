@@ -65,7 +65,7 @@ const telegramRateLimits: Partial<Record<TelegramMethod, TelegramRateLimit[]>> =
     };
 
 export function telegramRateLimitBuckets(
-    botId: string,
+    telegramId: string,
     method: TelegramMethod,
     params: unknown,
 ): RateLimitBucket[] {
@@ -75,7 +75,12 @@ export function telegramRateLimitBuckets(
 
             return scope === undefined
                 ? []
-                : [{ key: `rate-limit:telegram:${botId}:${scope}`, ...limit }];
+                : [
+                      {
+                          key: `rate-limit:telegram:${telegramId}:${scope}`,
+                          ...limit,
+                      },
+                  ];
         },
     );
 }

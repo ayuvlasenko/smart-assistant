@@ -53,7 +53,7 @@ const slowWaitMilliseconds = 1_000;
 
 export class TelegramApiService {
     private readonly baseUrl: string;
-    private readonly botId: string;
+    private readonly telegramId: string;
     private readonly log: FastifyBaseLogger;
     private readonly telegramMetrics: TelegramMetrics;
     private readonly rateLimiter: RateLimiter;
@@ -71,7 +71,7 @@ export class TelegramApiService {
         this.rateLimiter = rateLimiter;
         this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
         this.baseUrl = `https://api.telegram.org/bot${botToken}`;
-        this.botId = botToken.split(":", 1).join("");
+        this.telegramId = botToken.split(":", 1).join("");
     }
 
     getMe() {
@@ -164,7 +164,11 @@ export class TelegramApiService {
             signal: AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
             priority: "interactive",
         };
-        const buckets = telegramRateLimitBuckets(this.botId, method, params);
+        const buckets = telegramRateLimitBuckets(
+            this.telegramId,
+            method,
+            params,
+        );
 
         for (;;) {
             await this.waitForSlot(method, buckets, scope);
@@ -227,7 +231,7 @@ export class TelegramApiService {
         signal: AbortSignal,
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const stopRequest = this.telegramMetrics.startApiRequest(
-            this.botId,
+            this.telegramId,
             method,
         );
         let result: ApiResponse<TelegramMethodResult<TMethod>>;
