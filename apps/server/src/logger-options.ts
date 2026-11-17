@@ -15,7 +15,7 @@ interface SerializedError {
     stack: string;
 }
 
-const serializedKeys = ["req", "res"];
+const normalizer = new LoggerNormalizer(["req", "res"]);
 
 export function buildLoggerOptions(level: string): LoggerOptions {
     return {
@@ -39,7 +39,7 @@ export function buildPrettyLoggerOptions(level: string): LoggerOptions {
 function normalizeRecord(
     record: Record<string, unknown>,
 ): Record<string, unknown> {
-    return new LoggerNormalizer(serializedKeys).normalize(record);
+    return normalizer.normalize(record);
 }
 
 function keepNormalizedError(error: object): SerializedError {
