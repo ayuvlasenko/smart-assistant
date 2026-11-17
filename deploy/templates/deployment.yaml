@@ -19,6 +19,7 @@ spec:
         app: server
         resourceName: {{ .Values.resourceName }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.server.shutdown.terminationGracePeriodSeconds }}
       containers:
         - name: server
           image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
@@ -40,7 +41,13 @@ spec:
               path: /status
               port: {{ .Values.server.port }}
             {{- toYaml .Values.server.probes.liveness | nindent 12 }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.server.shutdown.preStopSeconds }}
           env:
+            - name: FASTIFY_CLOSE_GRACE_DELAY
+              value: {{ .Values.server.shutdown.closeGraceMilliseconds | quote }}
             - name: RESOURCE_NAME
               value: {{ .Values.resourceName | quote }}
             - name: ENVIRONMENT

@@ -23,6 +23,10 @@ server:
       periodSeconds: 30
       timeoutSeconds: 2
       failureThreshold: 5
+  shutdown:
+    preStopSeconds: 5
+    closeGraceMilliseconds: 20000
+    terminationGracePeriodSeconds: 30
   resources:
     requests:
       memory: "256Mi"
