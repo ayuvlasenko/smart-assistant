@@ -12,11 +12,11 @@ This directory keeps the bots that the server serves. A bot is a tenant: its use
 
 **Problem.** The users, the invites, the settings and the data of the modules carry the `botId` of their bot. With the number of the token as that id, a bot that moves to another Telegram bot loses all of them.
 
-**Idea.** The `_id` of a bot document is an internal id that never changes, and `telegramId` keeps the number of the token. The data, the Valkey keys `telegram:<botId>:…` and the webhook path use the internal id. Only what belongs to the Telegram bot uses `telegramId`: the buckets of the [rate limits](../telegram/README.md#rate-limits) and the label `bot` of the metrics.
+**Idea.** The `_id` of a bot document is an internal id that never changes, and `telegramId` keeps the number of the token. MongoDB uses the internal id: the `botId` of the users, the invites, the settings and the data of the modules. Everything that belongs to the Telegram bot uses `telegramId`: the webhook path and its secret, the Valkey keys `telegram:<telegramId>:…` with the sessions, the claims and the caches, the buckets of the [rate limits](../telegram/README.md#rate-limits) and the label `bot` of the metrics. So a move takes the data along and leaves the state of the old Telegram bot behind.
 
 **Data.** `BotsRepository` gives a new bot a generated id, such as `6741c2f09a3b5d0012e4a7c1`, and a new root bot the id `root`. A unique index keeps one document per `telegramId`. The flag `isRoot` marks the root bot.
 
-**Edge cases.** Never read an `_id` as a Telegram number. The migration `20261117140000-give-bots-internal-ids.js` gave new ids to the bots that had the number of their token as `_id`, and wrote the new id to the `botId` of their users, invites, settings and poker rooms. It changed MongoDB only: the Valkey keys of the old id stayed behind, so the scenes that were open at that time ended, and the webhook path changed. Production sets the webhook of the new path on its next start; a preview needs `POST /api/telegram/webhook/refresh`. The command menus keep `telegramId` inside their hashes, so the first sync after a move sets the menus of the other Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+**Edge cases.** Never read an `_id` as a Telegram number. The migration `20261117140000-give-bots-internal-ids.js` gave new ids to the bots that had the number of their token as `_id`, and wrote the new id to the `botId` of their users, invites, settings and poker rooms. It changed MongoDB only, and nothing else had to change: the Valkey keys and the webhook path carry the Telegram id, as before.
 
 ## The root bot
 
@@ -66,9 +66,9 @@ The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the 
 3. The service removes the webhook of the old Telegram bot with `deleteWebhook`, so the old bot sends no more updates.
 4. `updateToken` stores the new `telegramId`, the token and the username. The registry takes the bot at once, and the service sets the webhook and the default menu of the new Telegram bot.
 
-**Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The other pods use the old token until their next refresh, up to 10 seconds. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the same path with the same secret, and the server answers them through the new one, until the owner revokes the old token.
+**Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The scenes of a user stay under the old Telegram id and expire there, because their message ids belong to the chat with the old bot; the user starts again in the new one. The command menus are set again for the new Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu). The other pods use the old token until their next refresh, up to 10 seconds; an update of the new Telegram bot that reaches such a pod makes it read the bot from MongoDB. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the path of its own Telegram id, which no bot has any more, so the server skips them.
 
-The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of a Telegram bot that no document has, `BotsRepository.ensureRoot` writes its number to the root document on start, and the registry logs `Root bot moved to another Telegram bot`. The server does not have the old token, so the webhook of the old Telegram bot stays until its owner removes it. A server with another root token that starts against the same database moves the root bot too, so keep one root token per database. When the token belongs to a Telegram bot that a document already has, that document becomes the root bot, and the old root document stays without a token and is not served.
+The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of a Telegram bot that no document has, `BotsRepository.ensureRoot` writes its number to the root document on start, and the registry logs `Root bot moved to another Telegram bot`. The server does not have the old token, so the webhook of the old Telegram bot stays until its owner removes it; its updates name the old Telegram id and are skipped. Production sets the webhook of the new Telegram bot on the same start, because the claim `telegram:<telegramId>:webhook:set` belongs to the Telegram bot. A server with another root token that starts against the same database moves the root bot too, so keep one root token per database. When the token belongs to a Telegram bot that a document already has, that document becomes the root bot, and the old root document stays without a token and is not served.
 
 ## Stopping a bot
 
@@ -97,7 +97,7 @@ The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of
 }
 ```
 
-The root record has `isRoot`, and no `token` and no `username`. `BotTokenCipher` encrypts a token with AES-256-GCM and `BOTS_ENCRYPTION_KEY`: 32 random bytes in base64, such as the output of `openssl rand -base64 32`. The key lives in the server secret and never in MongoDB, so a dump of the database does not give the bots away.
+The root record has `isRoot` and the `telegramId` of `TELEGRAM_BOT_TOKEN`, and no `token` and no `username`. `BotTokenCipher` encrypts a token with AES-256-GCM and `BOTS_ENCRYPTION_KEY`: 32 random bytes in base64, such as the output of `openssl rand -base64 32`. The key lives in the server secret and never in MongoDB, so a dump of the database does not give the bots away.
 
 **Walk-through.**
 

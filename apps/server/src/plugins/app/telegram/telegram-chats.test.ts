@@ -18,6 +18,7 @@ import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-servi
 import {
     buildTelegramPrivateChat,
     testBotId,
+    testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
@@ -575,7 +576,7 @@ async function readWatchers(
 ): Promise<number[]> {
     const matches = await bot.app
         .getDecorator<TelegramSessionStore>("telegramSessionStore")
-        .findIndexed(testBotId, telegramSceneTopicIndex(topic));
+        .findIndexed(testTelegramBotId, telegramSceneTopicIndex(topic));
 
     return matches.map(({ userId }) => userId);
 }

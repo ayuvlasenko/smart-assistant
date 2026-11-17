@@ -26,6 +26,7 @@ import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSessionStore } from "./telegram-session-store.js";
 
 export interface TelegramChatOptions {
+    bot: TelegramBot;
     userId: number;
     user: UserEntity;
     log: FastifyBaseLogger;
@@ -232,14 +233,17 @@ export class TelegramChats {
         topics: string[],
     ): Promise<Map<number, TelegramSceneRef[]>> {
         const entries = new Map<number, Set<string>>();
-        const matches = await Promise.all(
-            topics.map((topic) =>
-                this.sessionStore.findIndexed(
-                    botId,
-                    telegramSceneTopicIndex(topic),
-                ),
-            ),
-        );
+        const bot = this.telegramBots.find(botId);
+        const matches = bot
+            ? await Promise.all(
+                  topics.map((topic) =>
+                      this.sessionStore.findIndexed(
+                          bot.telegramId,
+                          telegramSceneTopicIndex(topic),
+                      ),
+                  ),
+              )
+            : [];
 
         for (const { userId, entry } of matches.flat()) {
             entries.set(userId, (entries.get(userId) ?? new Set()).add(entry));
@@ -349,34 +353,33 @@ export class TelegramChats {
             ...bindings,
         });
 
-        await this.withChat(bot, { userId, user, log }, handle);
+        await this.withChat({ bot, userId, user, log }, handle);
     }
 
     private withChat<T>(
-        bot: TelegramBot,
         chat: TelegramChatOptions,
         handle: (ctx: TelegramContext<undefined>) => Promise<T>,
     ): Promise<T> {
         const responder = new TelegramResponder(
             chat.userId,
             undefined,
-            bot.api,
+            chat.bot.api,
             chat.log,
         );
 
-        return this.deliveryPermits.run(bot.id, () =>
+        return this.deliveryPermits.run(chat.bot.id, () =>
             this.withContext(chat, undefined, responder, handle),
         );
     }
 
     private withContext<TUpdate extends Update | undefined, T>(
-        { userId, user, log }: TelegramChatOptions,
+        { bot, userId, user, log }: TelegramChatOptions,
         update: TUpdate,
         responder: TelegramResponder,
         handle: (ctx: TelegramContext<TUpdate>) => Promise<T>,
     ): Promise<T> {
         return this.sessionStore.withSession(
-            user.botId,
+            bot.telegramId,
             userId,
             (session, signal) => {
                 const ctx = new TelegramContext({

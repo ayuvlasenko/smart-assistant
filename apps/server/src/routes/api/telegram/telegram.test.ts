@@ -13,6 +13,7 @@ import {
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
     testBotId,
+    testTelegramBotId,
     testTelegramWebhookPath,
 } from "../../../test/telegram-fixtures.js";
 import { TELEGRAM_SECRET_HEADER } from "./telegram.js";
@@ -258,7 +259,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
                     status: "refreshed",
                     webhookUrl: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
-                        testBotId,
+                        testTelegramBotId,
                     ),
                     botUrl: "https://t.me/bipbopbot",
                 },
@@ -273,12 +274,12 @@ void describe("POST /api/telegram/webhook/refresh", () => {
                     {
                         url: resolveTelegramWebhookUrl(
                             app.getDecorator<Env>("config"),
-                            testBotId,
+                            testTelegramBotId,
                         ),
                         secret_token: telegramWebhookSecret(
                             app.getDecorator<Env>("config")
                                 .TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                            testBotId,
+                            testTelegramBotId,
                         ),
                     },
                 ],

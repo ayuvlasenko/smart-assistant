@@ -186,7 +186,7 @@ void describe("BotsRegistry", () => {
 
         assert.equal(botsRegistry.find(child._id), undefined);
         assert.equal(
-            (await botsRegistry.load(child._id))?.token,
+            (await botsRegistry.loadByTelegramId("42"))?.token,
             "42:child-token",
         );
         assert.equal(botsRegistry.find(child._id)?.token, "42:child-token");

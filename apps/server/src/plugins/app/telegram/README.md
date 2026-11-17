@@ -235,7 +235,7 @@ Every inline keyboard follows the same layout, so a user finds the same kind of 
 
 ```mermaid
 flowchart TD
-    route["routes/api/telegram<br/>POST /webhook/:botId"] -->|"find the bot"| bots[TelegramBots]
+    route["routes/api/telegram<br/>POST /webhook/:telegramId"] -->|"find the bot"| bots[TelegramBots]
     route --> handler[TelegramUpdateHandler]
     handler -->|"claim update_id"| lock[LockService]
     handler -->|"find or create user"| users[UsersService]
@@ -279,29 +279,29 @@ flowchart TD
 **Data.**
 
 ```text
-https://<DOMAIN>/api/telegram/webhook/<resource>/<botId>   the URL that Telegram calls; the ingress rewrites it
-POST /api/telegram/webhook/<botId>                         to this route
-X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, botId)
+https://<DOMAIN>/api/telegram/webhook/<resource>/<telegramId>   the URL that Telegram calls; the ingress rewrites it
+POST /api/telegram/webhook/<telegramId>                         to this route
+X-Telegram-Bot-Api-Secret-Token                                 base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, telegramId)
 ```
 
-`<botId>` is the id of the bot document, and not the number in its token, see [The id of a bot](../bots/README.md#the-id-of-a-bot). `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id, its `telegramId` and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
+`<telegramId>` is the number before `:` in the token of the bot. Everything that Telegram or Valkey knows about a bot carries this number: the webhook path and its secret, the keys `telegram:<telegramId>:…` and the rate limit buckets. MongoDB knows a bot by the id of its document, the `botId` of a user, which stays when the bot moves to another Telegram bot, see [The id of a bot](../bots/README.md#the-id-of-a-bot). `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id, its `telegramId` and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
 
 **Walk-through.** Telegram sends an update to a bot.
 
-1. The route reads `botId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
-2. The route finds the bot with `TelegramBots.load`: in the snapshot of the registry, or in MongoDB when another pod added the bot after the last refresh. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
+1. The route reads `telegramId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
+2. The route finds the bot with `TelegramBots.loadByTelegramId`: in the snapshot of the registry, or in MongoDB when another pod added or moved the bot after the last refresh. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
 4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
 **Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 
-**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The bot id is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
+**Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The Telegram id of a bot is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
 
 ## An incoming update
 
 ```mermaid
 sequenceDiagram
-    participant R as POST /webhook/:botId
+    participant R as POST /webhook/:telegramId
     participant H as TelegramUpdateHandler
     participant C as TelegramChats
     participant S as TelegramSessionStore
@@ -313,7 +313,7 @@ sequenceDiagram
     H->>H: find or create user, follow name and language
     H->>H: sync the chat command menu
     H->>C: withUpdate(update, user)
-    C->>S: withSession(botId, userId)
+    C->>S: withSession(telegramId, userId)
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
@@ -336,7 +336,7 @@ sequenceDiagram
     H->>H: answer callback, map errors to a reply and a metric
 ```
 
-**Duplicates.** Before anything else, the handler sets `telegram:<botId>:update:<update_id>` with `SET NX` for one hour. Every bot counts its own `update_id`, so the key carries the bot. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
+**Duplicates.** Before anything else, the handler sets `telegram:<telegramId>:update:<update_id>` with `SET NX` for one hour. Every Telegram bot counts its own `update_id`, so the key carries its Telegram id. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
 
 **Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
@@ -353,12 +353,12 @@ sequenceDiagram
 **Data.**
 
 ```text
-telegram:<botId>:session:42            hash, every field with its own TTL (HPEXPIRE)
+telegram:<telegramId>:session:42            hash, every field with its own TTL (HPEXPIRE)
     scene:Xk3f9aB1c0dE                 the record of one scene instance, JSON
     focus                              id of the scene whose input waits for text
     blocking                           id of the running blocking scene
-telegram:<botId>:session:42:lock       token of the update that holds the session
-telegram:<botId>:index:<name>          sorted sets, see "Updates for other users"
+telegram:<telegramId>:session:42:lock       token of the update that holds the session
+telegram:<telegramId>:index:<name>          sorted sets, see "Updates for other users"
 ```
 
 A hash keeps all the state of a user under one key, so one Lua call writes it atomically. A field TTL lets every scene expire on its own, without a cleanup job. `HPEXPIRE` needs Valkey 9.
@@ -648,7 +648,7 @@ A topic is a name of the data that a scene shows, chosen by the domain and prefi
 **Data.**
 
 ```text
-telegram:<botId>:index:scene-topic:invites.invite:66f1c2…     sorted set
+telegram:<telegramId>:index:scene-topic:invites.invite:66f1c2…     sorted set
     42:invites:Xk3f9aB1c0dE      score 1760586400000   (expiry of the scene)
     77:invites:Pq81LmZ0aa2K      score 1760590000000
 ```
@@ -775,7 +775,7 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **Idea.** The bot has one menu for everybody: the commands of a user who holds no grants of their own, only the [default grants](../access/README.md#default-grants). A chat gets a menu of its own only when the commands of its user differ from the menu of the bot, such as the chat of an admin.
 
-**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<botId>:commands:menu` keeps the hash of the menus of the bot for 30 days. Both hashes include the `telegramId` of the bot, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync.
+**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<telegramId>:commands:menu` keeps the hash of the menus of the bot for 30 days. The hash of a chat menu includes the `telegramId` of the bot, and the key of the bot menus carries it, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync. `refresh` removes the stored hash before its first call, so a refresh that fails in the middle leaves no hash and the next sync sets every menu again.
 
 **Walk-through.**
 
@@ -788,9 +788,9 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. A pod learns a changed setting up to 10 s late, see [Settings](../settings/README.md#values-on-every-pod), and compares with the old menu of the bot until then. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 
-**Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<botId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 20 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. The cluster kills the pod 30 s after the start of the shutdown.
+**Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<telegramId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 20 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. The cluster kills the pod 30 s after the start of the shutdown.
 
-**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<botId>:webhook:set`, and sets the menus of every bot when they changed. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
+**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<telegramId>:webhook:set`, and sets the menus of every bot when they changed. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
 
 ## Files
 

@@ -23,7 +23,7 @@ const telegramWebhookHeadersSchema = Type.Object({
 });
 
 const telegramWebhookParamsSchema = Type.Object({
-    botId: Type.String(),
+    telegramId: Type.String(),
 });
 
 const telegramBotWebhookSchema = Type.Union([
@@ -56,22 +56,22 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
 
     const config = fastify.getDecorator<Env>("config");
     const isValidSecret = (request: FastifyRequest) => {
-        const botId = readBotId(request.params);
+        const telegramId = readTelegramId(request.params);
         const secret = request.headers[TELEGRAM_SECRET_HEADER];
 
         return (
-            botId !== undefined &&
+            telegramId !== undefined &&
             typeof secret === "string" &&
             isTelegramWebhookSecret(
                 config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                botId,
+                telegramId,
                 secret,
             )
         );
     };
 
     fastify.post(
-        "/webhook/:botId(^(?!refresh$)[\\w-]+$)",
+        "/webhook/:telegramId(^\\d+$)",
         {
             config: {
                 rateLimit: {
@@ -95,11 +95,13 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return reply.unauthorized();
             }
 
-            const bot = await telegramBots.load(request.params.botId);
+            const bot = await telegramBots.loadByTelegramId(
+                request.params.telegramId,
+            );
 
             if (!bot) {
                 request.log.warn(
-                    { botId: request.params.botId },
+                    { botTelegramId: request.params.telegramId },
                     "Telegram update for an unknown bot, skipping",
                 );
                 return;
@@ -150,10 +152,16 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
 
 export default plugin;
 
-function readBotId(params: unknown): string | undefined {
-    if (typeof params !== "object" || params === null || !("botId" in params)) {
+function readTelegramId(params: unknown): string | undefined {
+    if (
+        typeof params !== "object" ||
+        params === null ||
+        !("telegramId" in params)
+    ) {
         return undefined;
     }
 
-    return typeof params.botId === "string" ? params.botId : undefined;
+    return typeof params.telegramId === "string"
+        ? params.telegramId
+        : undefined;
 }

@@ -76,20 +76,26 @@ export class BotsRegistry {
         return this.cipher.encrypt(token);
     }
 
-    async load(botId: string): Promise<RegisteredBot | undefined> {
-        const known = this.find(botId);
+    findByTelegramId(telegramId: string): RegisteredBot | undefined {
+        return this.list().find((bot) => bot.telegramId === telegramId);
+    }
+
+    async loadByTelegramId(
+        telegramId: string,
+    ): Promise<RegisteredBot | undefined> {
+        const known = this.findByTelegramId(telegramId);
 
         if (known) {
             return known;
         }
 
-        const bot = await this.botsRepository.findOneById(botId);
+        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
 
         if (bot) {
             this.put(bot);
         }
 
-        return this.find(botId);
+        return this.findByTelegramId(telegramId);
     }
 
     put(bot: BotEntity): void {

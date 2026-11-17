@@ -42,11 +42,11 @@ export class TelegramSessionStore {
     }
 
     async withSession<T>(
-        botId: string,
+        botTelegramId: string,
         userId: number,
         handle: (session: TelegramSession, signal: AbortSignal) => Promise<T>,
     ): Promise<T> {
-        const sessionKey = sessionKeyOf(botId, userId);
+        const sessionKey = sessionKeyOf(botTelegramId, userId);
         await using lock = await this.lockService.acquire(
             `${sessionKey}:lock`,
             this.lockOptions,
@@ -57,7 +57,7 @@ export class TelegramSessionStore {
         try {
             result = await handle(session, lock.signal);
         } catch (err) {
-            await this.save(lock, botId, userId, session).catch(
+            await this.save(lock, botTelegramId, userId, session).catch(
                 (saveErr: unknown) => {
                     throw new AggregateError(
                         [err, saveErr],
@@ -68,17 +68,17 @@ export class TelegramSessionStore {
             throw err;
         }
 
-        await this.save(lock, botId, userId, session);
+        await this.save(lock, botTelegramId, userId, session);
 
         return result;
     }
 
     async findIndexed(
-        botId: string,
+        botTelegramId: string,
         name: string,
     ): Promise<TelegramSessionIndexMatch[]> {
         const members = await this.cache.getExpiringSetMembers(
-            indexKeyOf(botId, name),
+            indexKeyOf(botTelegramId, name),
         );
 
         return members.flatMap((member) => {
@@ -93,7 +93,7 @@ export class TelegramSessionStore {
 
     private async save(
         lock: Lock,
-        botId: string,
+        botTelegramId: string,
         userId: number,
         session: TelegramSession,
     ): Promise<void> {
@@ -107,7 +107,7 @@ export class TelegramSessionStore {
             {
                 ...fields,
                 expiringSets: indexes.map(({ name, adds, removals }) => ({
-                    key: indexKeyOf(botId, name),
+                    key: indexKeyOf(botTelegramId, name),
                     adds: adds.map(({ entry, expiresAt }) => ({
                         member: `${userId}:${entry}`,
                         expiresAt,
@@ -124,12 +124,12 @@ export class TelegramSessionStore {
     }
 }
 
-function sessionKeyOf(botId: string, userId: number): string {
-    return `telegram:${botId}:session:${userId}`;
+function sessionKeyOf(botTelegramId: string, userId: number): string {
+    return `telegram:${botTelegramId}:session:${userId}`;
 }
 
-function indexKeyOf(botId: string, name: string): string {
-    return `telegram:${botId}:index:${name}`;
+function indexKeyOf(botTelegramId: string, name: string): string {
+    return `telegram:${botTelegramId}:index:${name}`;
 }
 
 export default fp(

@@ -37,7 +37,7 @@ export const testBotId = newRootBotId;
 export const testTelegramBotId = telegramIdOfToken(
     process.env.TELEGRAM_BOT_TOKEN ?? "",
 );
-export const testTelegramWebhookPath = `/api/telegram/webhook/${testBotId}`;
+export const testTelegramWebhookPath = `/api/telegram/webhook/${testTelegramBotId}`;
 
 export type TelegramTextMessage = Message.TextMessage & Update.NonChannel;
 export type TelegramChannelTextMessage = Message.TextMessage & Update.Channel;
@@ -542,7 +542,7 @@ export function buildTelegramGetMeResponse(
 export function buildTelegramWebhookHeaders(
     secret = telegramWebhookSecret(
         process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN ?? "test",
-        testBotId,
+        testTelegramBotId,
     ),
 ): Record<typeof TELEGRAM_SECRET_HEADER, string> {
     return {

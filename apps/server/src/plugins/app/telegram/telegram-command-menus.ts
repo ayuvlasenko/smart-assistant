@@ -82,6 +82,8 @@ export class TelegramCommandMenus {
     async refresh(bot: TelegramBot): Promise<void> {
         const menus = this.buildBotMenus(bot);
 
+        await this.cache.delete(botMenuKeyOf(bot));
+
         for (const { languageCode, commands } of menus) {
             const result = await bot.api.setMyCommands({
                 commands,
@@ -224,7 +226,7 @@ function hashMenus(bot: TelegramBot, menus: TelegramBotMenu[]): string {
 }
 
 function botMenuKeyOf(bot: TelegramBot): string {
-    return `telegram:${bot.id}:commands:menu`;
+    return `telegram:${bot.telegramId}:commands:menu`;
 }
 
 export default fp(

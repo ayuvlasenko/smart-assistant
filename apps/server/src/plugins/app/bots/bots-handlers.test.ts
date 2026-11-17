@@ -106,11 +106,11 @@ void describe("/bots", () => {
                 {
                     url: resolveTelegramWebhookUrl(
                         bot.app.getDecorator<Env>("config"),
-                        stored._id,
+                        stored.telegramId,
                     ),
                     secret_token: telegramWebhookSecret(
                         process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN ?? "",
-                        stored._id,
+                        stored.telegramId,
                     ),
                 },
             ],
@@ -335,7 +335,7 @@ void describe("/bots", () => {
         bot.childApis.get("42")?.getMe.mock.mockImplementation(async () => {
             throw new Error("connect ECONNREFUSED api.telegram.org");
         });
-        await bot.cache.delete(`telegram:${childId}:username`);
+        await bot.cache.delete("telegram:42:username");
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.ownerInviteButton);
@@ -401,6 +401,7 @@ void describe("/bots", () => {
         assert.equal(result.status, "added");
 
         const childId = result.bot._id;
+        const link = { name: "invite", value: "token" };
 
         nextUpdateId += 1;
         await sendTo(
@@ -410,6 +411,13 @@ void describe("/bots", () => {
             `/start invite_${result.ownerInvite.token}`,
             nextUpdateId,
         );
+
+        assert.ok(
+            (
+                await bot.telegramBotService.resolveDeepLinkUrl(childId, link)
+            ).includes("child_42_bot"),
+        );
+
         await bot.sendText(admin, "/bots");
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.moveButton);
@@ -439,11 +447,27 @@ void describe("/bots", () => {
             [
                 resolveTelegramWebhookUrl(
                     bot.app.getDecorator<Env>("config"),
-                    childId,
+                    "44",
                 ),
             ],
         );
         assert.ok((await bot.readMessageTexts(admin.id)).includes(en.botMoved));
+
+        await sendTo(bot, childId, owner, "/start", nextUpdateId);
+
+        assert.deepEqual(readTextsOf(bot.childApis.get("44"), owner), [
+            telegramLocales.en.welcome,
+        ]);
+        assert.ok(
+            (
+                await bot.telegramBotService.resolveDeepLinkUrl(childId, link)
+            ).includes("child_44_bot"),
+        );
+        assert.equal(await bot.telegramBots.loadByTelegramId("42"), undefined);
+        assert.equal(
+            (await bot.telegramBots.loadByTelegramId("44"))?.id,
+            childId,
+        );
     });
 
     void it("refuses to move a bot to itself and to a bot that is already added", async (t) => {

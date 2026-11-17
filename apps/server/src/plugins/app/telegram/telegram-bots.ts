@@ -58,8 +58,10 @@ export class TelegramBots {
         return bot;
     }
 
-    async load(botId: string): Promise<TelegramBot | undefined> {
-        const bot = await this.registry.load(botId);
+    async loadByTelegramId(
+        telegramId: string,
+    ): Promise<TelegramBot | undefined> {
+        const bot = await this.registry.loadByTelegramId(telegramId);
 
         return bot ? this.toTelegramBot(bot) : undefined;
     }

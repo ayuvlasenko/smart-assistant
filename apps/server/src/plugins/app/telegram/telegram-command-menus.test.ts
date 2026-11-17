@@ -143,6 +143,26 @@ void describe("TelegramCommandMenus chat menus", () => {
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
     });
 
+    void it("sets every menu of the bot again after a refresh that failed in the middle", async (t) => {
+        const { telegramApiService, telegramBots, telegramCommandMenus } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+
+        await telegramCommandMenus.setOnStart();
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => ({
+                ok: false,
+                error_code: 500,
+                description: "Internal Server Error",
+            }),
+            5,
+        );
+
+        await assert.rejects(telegramCommandMenus.refresh(telegramBots.root));
+        await telegramCommandMenus.setOnStart();
+
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 10);
+    });
+
     void it("leaves a user whose commands are the menu of the bot without a chat menu", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));

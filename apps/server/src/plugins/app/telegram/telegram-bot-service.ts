@@ -36,16 +36,16 @@ const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
     config: Pick<Env, "DOMAIN" | "RESOURCE_NAME" | "TELEGRAM_WEBHOOK_URL">,
-    botId: string,
+    telegramId: string,
 ): string {
     const baseUrl = config.TELEGRAM_WEBHOOK_URL;
 
     if (baseUrl) {
-        return `${baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl}/${botId}`;
+        return `${baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl}/${telegramId}`;
     }
 
     return new URL(
-        `/api/telegram/webhook/${config.RESOURCE_NAME}/${botId}`,
+        `/api/telegram/webhook/${config.RESOURCE_NAME}/${telegramId}`,
         config.DOMAIN,
     ).toString();
 }
@@ -95,12 +95,12 @@ export class TelegramBotService {
     }
 
     async setWebhook(bot: TelegramBot): Promise<string> {
-        const url = resolveTelegramWebhookUrl(this.config, bot.id);
+        const url = resolveTelegramWebhookUrl(this.config, bot.telegramId);
         const result = await bot.api.setWebhook({
             url,
             secret_token: telegramWebhookSecret(
                 this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                bot.id,
+                bot.telegramId,
             ),
         });
 
@@ -179,7 +179,7 @@ export class TelegramBotService {
 
     private async setWebhookOnStart(bot: TelegramBot): Promise<void> {
         const claim = await this.lockService.tryAcquire(
-            `telegram:${bot.id}:webhook:set`,
+            `telegram:${bot.telegramId}:webhook:set`,
             telegramWebhookClaimTtlMilliseconds,
         );
 
@@ -209,7 +209,7 @@ export class TelegramBotService {
 
     private resolveUsername(bot: TelegramBot): Promise<string> {
         return this.cache.remember(
-            `telegram:${bot.id}:username`,
+            `telegram:${bot.telegramId}:username`,
             Type.String(),
             telegramBotUsernameCacheTtlMilliseconds,
             () => this.fetchUsername(bot),

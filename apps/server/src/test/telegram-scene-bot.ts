@@ -17,7 +17,7 @@ import {
     buildTelegramTextMessage,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
-    testBotId,
+    testTelegramBotId,
 } from "./telegram-fixtures.js";
 
 export interface TelegramSceneBot extends TelegramBotServiceTestApp {
@@ -168,8 +168,11 @@ export async function buildTelegramSceneBot(
     };
 }
 
-export function buildSessionKey(userId: number, botId = testBotId): string {
-    return `telegram:${botId}:session:${userId}`;
+export function buildSessionKey(
+    userId: number,
+    botTelegramId = testTelegramBotId,
+): string {
+    return `telegram:${botTelegramId}:session:${userId}`;
 }
 
 function buildTextUpdate(chat: Chat.PrivateChat, text: string): Update {

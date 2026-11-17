@@ -11,7 +11,10 @@ import {
     buildTelegramBotServiceTestApp,
     buildTwoBotsTestApp,
 } from "../../../test/telegram-bot-service-helper.js";
-import { testBotId } from "../../../test/telegram-fixtures.js";
+import {
+    testBotId,
+    testTelegramBotId,
+} from "../../../test/telegram-fixtures.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
@@ -20,7 +23,7 @@ let mongoClient!: MongoClient;
 let mongo!: Db;
 
 const webhookClaimSchema = Type.String();
-const webhookClaimKey = `telegram:${testBotId}:webhook:set`;
+const webhookClaimKey = `telegram:${testTelegramBotId}:webhook:set`;
 
 before(async () => {
     const testMongo = await buildTestMongo();
@@ -90,12 +93,12 @@ void describe("TelegramBotService", () => {
                 {
                     url: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
-                        testBotId,
+                        testTelegramBotId,
                     ),
                     secret_token: telegramWebhookSecret(
                         app.getDecorator<Env>("config")
                             .TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                        testBotId,
+                        testTelegramBotId,
                     ),
                 },
             ],
@@ -300,7 +303,7 @@ void describe("TelegramBotService", () => {
             firstUrl,
             resolveTelegramWebhookUrl(
                 app.getDecorator<Env>("config"),
-                testBotId,
+                testTelegramBotId,
             ),
         );
         assert.equal(secondUrl, firstUrl);

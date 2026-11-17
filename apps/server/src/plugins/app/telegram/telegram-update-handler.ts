@@ -163,7 +163,7 @@ export class TelegramUpdateHandler {
         update,
     }: TelegramUpdateRun): Promise<void> {
         const claim = await this.lockService.tryAcquire(
-            `telegram:${bot.id}:update:${update.update_id}`,
+            `telegram:${bot.telegramId}:update:${update.update_id}`,
             updateClaimTtlMilliseconds,
         );
 
@@ -212,6 +212,7 @@ export class TelegramUpdateHandler {
     ): Promise<string> {
         return this.telegramChats.withUpdate(
             {
+                bot: run.bot,
                 update: run.update,
                 responder: run.responder,
                 userId,
