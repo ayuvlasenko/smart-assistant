@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
+import { Translate } from "../i18n-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
@@ -17,11 +18,17 @@ import {
     renderBotOwnerInvite,
     renderBotsList,
 } from "./bots-screen.js";
-import { BotAddResult, BotsService, BotTokenResult } from "./bots-service.js";
+import {
+    BotAddResult,
+    BotMoveResult,
+    BotsService,
+    BotTokenResult,
+} from "./bots-service.js";
 
 export const botsTopic = "bots";
 
 const botsSceneTtlMilliseconds = 24 * 60 * 60 * 1000;
+const tokenPayload = Type.Object({ token: Type.String() });
 
 export function buildBotsState(): BotsState {
     return { tokenBotId: null };
@@ -132,6 +139,15 @@ export function createBotsScene(
                     await scene.ask("token");
                 },
             },
+            move: {
+                value: botsButtonValues.move,
+                guard: canUpdate,
+                confirm: true,
+                handle: async (ctx, scene, botId) => {
+                    scene.state.tokenBotId = botId;
+                    await scene.ask("moveToken");
+                },
+            },
             stop: {
                 value: botsButtonValues.stop,
                 guard: canUpdate,
@@ -149,8 +165,36 @@ export function createBotsScene(
             },
         },
         inputs: {
+            moveToken: {
+                payload: tokenPayload,
+                guard: canUpdate,
+                cleanup: true,
+                steps: (step) => [
+                    textStep(step, {
+                        name: "token",
+                        property: "token",
+                        prompt: (t) => t("bots:movePrompt"),
+                        validate: validateToken,
+                    }),
+                ],
+                complete: async (ctx, scene, { token }) => {
+                    const botId = scene.state.tokenBotId;
+
+                    if (botId) {
+                        await completeMove(
+                            ctx,
+                            scene,
+                            await botsService.move(
+                                ctx.user,
+                                botId,
+                                token.trim(),
+                            ),
+                        );
+                    }
+                },
+            },
             token: {
-                payload: Type.Object({ token: Type.String() }),
+                payload: tokenPayload,
                 guard: canUpdate,
                 cleanup: true,
                 steps: (step) => [
@@ -158,11 +202,7 @@ export function createBotsScene(
                         name: "token",
                         property: "token",
                         prompt: (t) => t("bots:tokenPrompt"),
-                        validate: (text, t) => {
-                            return isBotToken(text.trim())
-                                ? undefined
-                                : t("bots:tokenFormat");
-                        },
+                        validate: validateToken,
                     }),
                 ],
                 complete: async (ctx, scene, { token }) => {
@@ -191,6 +231,10 @@ export function createBotsScene(
     });
 }
 
+function validateToken(text: string, t: Translate): string | undefined {
+    return isBotToken(text.trim()) ? undefined : t("bots:tokenFormat");
+}
+
 async function completeAddition(
     ctx: TelegramContext,
     scene: BotsSceneControl,
@@ -202,6 +246,30 @@ async function completeAddition(
                 botId: result.bot._id,
                 token: result.ownerInvite.token,
             });
+            return;
+        case "alreadyAdded":
+            await ctx.reply(ctx.t("bots:alreadyAdded"));
+            await scene.push("bot", { botId: result.botId });
+            return;
+        case "invalidToken":
+            await ctx.reply(ctx.t("bots:invalidToken"));
+            return;
+        case "keyMissing":
+            await ctx.reply(ctx.t("bots:keyMissing"));
+    }
+}
+
+async function completeMove(
+    ctx: TelegramContext,
+    scene: BotsSceneControl,
+    result: BotMoveResult,
+): Promise<void> {
+    switch (result.status) {
+        case "moved":
+            await ctx.reply(ctx.t("bots:botMoved"));
+            return;
+        case "sameBot":
+            await ctx.reply(ctx.t("bots:sameBot"));
             return;
         case "alreadyAdded":
             await ctx.reply(ctx.t("bots:alreadyAdded"));

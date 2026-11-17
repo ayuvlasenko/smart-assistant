@@ -20,6 +20,7 @@ import {
     buildTelegramTextMessage,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
+    testBotId,
     testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import {
@@ -82,7 +83,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654321",
         );
 
@@ -230,7 +231,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654325",
         );
 
@@ -275,7 +276,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testTelegramBotId,
+            botId: testBotId,
             telegramId: "987654323",
             isBanned: false,
             languageCode: "en",
@@ -405,7 +406,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testTelegramBotId,
+            botId: testBotId,
             telegramId: "987654328",
             isBanned: false,
             languageCode: "en",
@@ -441,7 +442,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testTelegramBotId,
+            botId: testBotId,
             telegramId: "987654324",
             isBanned: true,
             languageCode: "en",
@@ -476,7 +477,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testTelegramBotId,
+            botId: testBotId,
             telegramId: "987654325",
             isBanned: false,
             languageCode: "en",
@@ -511,7 +512,7 @@ void describe("TelegramUpdateHandler", () => {
         });
 
         await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testTelegramBotId,
+            botId: testBotId,
             telegramId: "987654326",
             isBanned: false,
             languageCode: "en",
@@ -768,7 +769,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654333",
         );
 
@@ -798,7 +799,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654334",
         );
 
@@ -834,7 +835,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654335",
         );
 
@@ -867,7 +868,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654336",
         );
 
@@ -899,7 +900,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const created = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654342",
         );
 
@@ -920,7 +921,7 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         const updated = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654342",
         );
 
@@ -1023,7 +1024,7 @@ void describe("TelegramUpdateHandler deep links", () => {
         );
 
         const user = await usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             "987654339",
         );
 
@@ -1168,7 +1169,7 @@ async function createUser(
     languageCode: Language = "en",
 ): Promise<void> {
     await usersRepository.findOneByTelegramIdOrCreate({
-        botId: testTelegramBotId,
+        botId: testBotId,
         telegramId,
         isBanned: false,
         languageCode,

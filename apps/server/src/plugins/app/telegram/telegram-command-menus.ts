@@ -92,7 +92,7 @@ export class TelegramCommandMenus {
             }
         }
 
-        await this.cache.set(botMenuKeyOf(bot), hashMenus(menus), {
+        await this.cache.set(botMenuKeyOf(bot), hashMenus(bot, menus), {
             ttlMilliseconds: botMenuHashTtlMilliseconds,
         });
         this.log.info(
@@ -107,7 +107,7 @@ export class TelegramCommandMenus {
     async syncBot(bot: TelegramBot): Promise<void> {
         const hash = await this.cache.get(botMenuKeyOf(bot), Type.String());
 
-        if (hash !== hashMenus(this.buildBotMenus(bot))) {
+        if (hash !== hashMenus(bot, this.buildBotMenus(bot))) {
             await this.refresh(bot);
         }
     }
@@ -129,7 +129,7 @@ export class TelegramCommandMenus {
             ),
         )
             ? undefined
-            : hashCommands(commands);
+            : hashMenus(bot, [{ commands }]);
 
         if (commandMenu === user.commandMenu) {
             this.telegramMetrics.recordCommandMenuSync("unchanged");
@@ -214,13 +214,9 @@ export class TelegramCommandMenus {
     }
 }
 
-function hashCommands(commands: BotCommand[]): string {
-    return hashMenus([{ commands }]);
-}
-
-function hashMenus(menus: TelegramBotMenu[]): string {
+function hashMenus(bot: TelegramBot, menus: TelegramBotMenu[]): string {
     return createHash("sha256")
-        .update(JSON.stringify(menus))
+        .update(JSON.stringify({ telegramId: bot.telegramId, menus }))
         .digest("base64url");
 }
 

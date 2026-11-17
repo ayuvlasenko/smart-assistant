@@ -10,11 +10,9 @@ import {
 import { AppLogger } from "../app-logger.js";
 import { InviteEntity } from "../invites/invite-entity.js";
 import { InvitesService } from "../invites/invites-service.js";
-import { TelegramBotService } from "../telegram/telegram-bot-service.js";
-import { TelegramBots } from "../telegram/telegram-bots.js";
-import { TelegramCommandMenus } from "../telegram/telegram-command-menus.js";
 import { UserEntity } from "../users/user-entity.js";
-import { BotEntity, BotsSubjects, isBotToken } from "./bot-entity.js";
+import { BotEntity, BotsSubjects } from "./bot-entity.js";
+import { BotsConnector } from "./bots-connector.js";
 import { BotsEvents } from "./bots-events.js";
 import { botsModule, BotsRegistry } from "./bots-registry.js";
 import { BotsRepository } from "./bots-repository.js";
@@ -31,17 +29,17 @@ export type BotTokenResult =
     | { status: "invalidToken" }
     | { status: "keyMissing" };
 
-interface BotProfile {
-    id: string;
-    username: string;
-}
+export type BotMoveResult =
+    | { status: "moved"; bot: BotEntity }
+    | { status: "sameBot" }
+    | { status: "alreadyAdded"; botId: string }
+    | { status: "invalidToken" }
+    | { status: "keyMissing" };
 
 export class BotsService {
     private readonly botsRepository: BotsRepository;
     private readonly botsRegistry: BotsRegistry;
-    private readonly telegramBots: TelegramBots;
-    private readonly telegramBotService: TelegramBotService;
-    private readonly telegramCommandMenus: TelegramCommandMenus;
+    private readonly botsConnector: BotsConnector;
     private readonly invitesService: InvitesService;
     private readonly access: AccessControl<BotsSubjects>;
     private readonly eventEmitter: Emittery<BotsEvents>;
@@ -50,9 +48,7 @@ export class BotsService {
     constructor(
         botsRepository: BotsRepository,
         botsRegistry: BotsRegistry,
-        telegramBots: TelegramBots,
-        telegramBotService: TelegramBotService,
-        telegramCommandMenus: TelegramCommandMenus,
+        botsConnector: BotsConnector,
         invitesService: InvitesService,
         access: AccessControl<BotsSubjects>,
         eventEmitter: Emittery<BotsEvents>,
@@ -60,9 +56,7 @@ export class BotsService {
     ) {
         this.botsRepository = botsRepository;
         this.botsRegistry = botsRegistry;
-        this.telegramBots = telegramBots;
-        this.telegramBotService = telegramBotService;
-        this.telegramCommandMenus = telegramCommandMenus;
+        this.botsConnector = botsConnector;
         this.invitesService = invitesService;
         this.access = access;
         this.eventEmitter = eventEmitter;
@@ -74,7 +68,7 @@ export class BotsService {
     }
 
     isServed(botId: string): boolean {
-        return this.telegramBots.find(botId) !== undefined;
+        return this.botsConnector.isServed(botId);
     }
 
     listModules(): readonly AccessSection[] {
@@ -95,27 +89,13 @@ export class BotsService {
         return this.botsRepository.findOneById(botId);
     }
 
-    async readWebhook(
+    readWebhook(
         actor: UserEntity,
         botId: string,
     ): Promise<WebhookInfo | undefined> {
         this.access.assert(actor, "read", "Bot");
 
-        const bot = this.telegramBots.find(botId);
-
-        if (!bot) {
-            return undefined;
-        }
-
-        try {
-            return await this.telegramBotService.readWebhook(bot);
-        } catch (err) {
-            this.log.warn(
-                { err, botId },
-                "Failed to read the webhook of a bot",
-            );
-            return undefined;
-        }
+        return this.botsConnector.readWebhook(botId);
     }
 
     async add(actor: UserEntity, token: string): Promise<BotAddResult> {
@@ -125,25 +105,25 @@ export class BotsService {
             return { status: "keyMissing" };
         }
 
-        const profile = await this.readProfile(token);
+        const profile = await this.botsConnector.readProfile(token);
 
         if (!profile) {
             return { status: "invalidToken" };
         }
 
         const bot = await this.botsRepository.createIfMissing({
-            _id: profile.id,
+            telegramId: profile.telegramId,
             username: profile.username,
             token: this.botsRegistry.encrypt(token),
             createdBy: actor._id,
         });
 
         if (!bot) {
-            return { status: "alreadyAdded", botId: profile.id };
+            return this.alreadyAdded(profile.telegramId);
         }
 
         this.botsRegistry.put(bot);
-        await this.connect(bot._id);
+        await this.botsConnector.connect(bot._id);
 
         const ownerInvite = await this.invitesService.createOwnerInvite(
             bot._id,
@@ -186,7 +166,7 @@ export class BotsService {
         }
 
         this.botsRegistry.put(bot);
-        await this.refreshCommands(botId);
+        await this.botsConnector.refreshCommands(botId);
         this.log.info(
             { botId, modules: bot.modules, userId: actor._id },
             "Bot modules changed",
@@ -208,18 +188,21 @@ export class BotsService {
             return { status: "keyMissing" };
         }
 
-        const profile = await this.readProfile(token);
+        const profile = await this.botsConnector.readProfile(token);
 
         if (!profile) {
             return { status: "invalidToken" };
         }
 
-        if (profile.id !== botId) {
+        const current = await this.botsRepository.findOneById(botId);
+
+        if (profile.telegramId !== current?.telegramId) {
             return { status: "otherBot" };
         }
 
         const bot = await this.botsRepository.updateToken(
             botId,
+            profile.telegramId,
             this.botsRegistry.encrypt(token),
             profile.username,
         );
@@ -229,16 +212,72 @@ export class BotsService {
         }
 
         this.botsRegistry.put(bot);
-        await this.connect(botId);
+        await this.botsConnector.connect(botId);
         this.log.info({ botId, userId: actor._id }, "Bot token replaced");
         await this.emitChanged(botId);
 
         return { status: "replaced", bot };
     }
 
+    async move(
+        actor: UserEntity,
+        botId: string,
+        token: string,
+    ): Promise<BotMoveResult> {
+        this.access.assert(actor, "update", "Bot");
+        this.assertNotRoot(botId);
+
+        if (!this.botsRegistry.canStoreTokens) {
+            return { status: "keyMissing" };
+        }
+
+        const profile = await this.botsConnector.readProfile(token);
+        const current = await this.botsRepository.findOneById(botId);
+
+        if (!profile || !current) {
+            return { status: "invalidToken" };
+        }
+
+        if (profile.telegramId === current.telegramId) {
+            return { status: "sameBot" };
+        }
+
+        if (await this.botsRepository.findOneByTelegramId(profile.telegramId)) {
+            return this.alreadyAdded(profile.telegramId);
+        }
+
+        await this.botsConnector.disconnect(botId);
+
+        const bot = await this.botsRepository.updateToken(
+            botId,
+            profile.telegramId,
+            this.botsRegistry.encrypt(token),
+            profile.username,
+        );
+
+        if (!bot) {
+            return { status: "invalidToken" };
+        }
+
+        this.botsRegistry.put(bot);
+        await this.botsConnector.connect(botId);
+        this.log.info(
+            {
+                botId,
+                telegramId: profile.telegramId,
+                previousTelegramId: current.telegramId,
+                userId: actor._id,
+            },
+            "Bot moved to another Telegram bot",
+        );
+        await this.emitChanged(botId);
+
+        return { status: "moved", bot };
+    }
+
     async reconnect(actor: UserEntity, botId: string): Promise<void> {
         this.access.assert(actor, "update", "Bot");
-        await this.connect(botId);
+        await this.botsConnector.connect(botId);
         await this.emitChanged(botId);
     }
 
@@ -246,18 +285,7 @@ export class BotsService {
         this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
-        const telegramBot = this.telegramBots.find(botId);
-
-        if (telegramBot) {
-            try {
-                await this.telegramBotService.deleteWebhook(telegramBot);
-            } catch (err) {
-                this.log.warn(
-                    { err, botId },
-                    "Failed to delete the webhook of a stopped bot",
-                );
-            }
-        }
+        await this.botsConnector.disconnect(botId);
 
         const bot = await this.botsRepository.disable(botId, new Date());
 
@@ -277,7 +305,7 @@ export class BotsService {
 
         if (bot) {
             this.botsRegistry.put(bot);
-            await this.connect(botId);
+            await this.botsConnector.connect(botId);
             this.log.info({ botId, userId: actor._id }, "Bot started");
             await this.emitChanged(botId);
         }
@@ -291,51 +319,16 @@ export class BotsService {
         }
     }
 
-    private async readProfile(token: string): Promise<BotProfile | undefined> {
-        if (!isBotToken(token)) {
-            return undefined;
-        }
-
-        const result = await this.telegramBots.connect(token).getMe();
-
-        return result.ok
-            ? { id: String(result.result.id), username: result.result.username }
-            : undefined;
-    }
-
-    private async connect(botId: string): Promise<void> {
-        const bot = this.telegramBots.find(botId);
+    private async alreadyAdded(
+        telegramId: string,
+    ): Promise<{ status: "alreadyAdded"; botId: string }> {
+        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
 
         if (!bot) {
-            return;
+            throw new Error(`Bot of Telegram ${telegramId} is not stored`);
         }
 
-        try {
-            await this.telegramBotService.setWebhook(bot);
-            await this.telegramCommandMenus.refresh(bot);
-        } catch (err) {
-            this.log.error(
-                { err, botId },
-                "Failed to connect the webhook of a bot",
-            );
-        }
-    }
-
-    private async refreshCommands(botId: string): Promise<void> {
-        const bot = this.telegramBots.find(botId);
-
-        if (!bot) {
-            return;
-        }
-
-        try {
-            await this.telegramCommandMenus.syncBot(bot);
-        } catch (err) {
-            this.log.error(
-                { err, botId },
-                "Failed to refresh the commands of a bot",
-            );
-        }
+        return { status: "alreadyAdded", botId: bot._id };
     }
 
     private async emitChanged(botId: string): Promise<void> {
@@ -350,11 +343,7 @@ export default fp(
             new BotsService(
                 fastify.getDecorator<BotsRepository>("botsRepository"),
                 fastify.getDecorator<BotsRegistry>("botsRegistry"),
-                fastify.getDecorator<TelegramBots>("telegramBots"),
-                fastify.getDecorator<TelegramBotService>("telegramBotService"),
-                fastify.getDecorator<TelegramCommandMenus>(
-                    "telegramCommandMenus",
-                ),
+                fastify.getDecorator<BotsConnector>("botsConnector"),
                 fastify.getDecorator<InvitesService>("invitesService"),
                 fastify
                     .getDecorator<AccessService>("accessService")
@@ -371,13 +360,11 @@ export default fp(
         dependencies: [
             "access-service",
             "app-logger",
+            "bots-connector",
             "bots-registry",
             "bots-repository",
             "emittery",
             "invites-service",
-            "telegram-bot-service",
-            "telegram-bots",
-            "telegram-command-menus",
         ],
     },
 );

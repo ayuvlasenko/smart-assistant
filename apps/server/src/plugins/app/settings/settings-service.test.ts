@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { testBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import {
@@ -68,9 +68,9 @@ void describe("SettingsService", () => {
     void it("reads the default value of a setting nobody changed", async (t) => {
         const settingsService = await buildSettings(t);
 
-        assert.equal(settingsService.read(flag, testTelegramBotId), true);
-        assert.equal(settingsService.read(limit, testTelegramBotId), 5);
-        assert.deepEqual(settingsService.read(colours, testTelegramBotId), []);
+        assert.equal(settingsService.read(flag, testBotId), true);
+        assert.equal(settingsService.read(limit, testBotId), 5);
+        assert.deepEqual(settingsService.read(colours, testBotId), []);
     });
 
     void it("stores a value of an admin and shows it to another pod after a refresh", async (t) => {
@@ -80,13 +80,13 @@ void describe("SettingsService", () => {
         await writer.write(admin, limit, 8);
         await writer.write(admin, colours, ["blue"]);
 
-        assert.equal(writer.read(limit, testTelegramBotId), 8);
-        assert.equal(reader.read(limit, testTelegramBotId), 5);
+        assert.equal(writer.read(limit, testBotId), 8);
+        assert.equal(reader.read(limit, testBotId), 5);
 
         await reader.refresh();
 
-        assert.equal(reader.read(limit, testTelegramBotId), 8);
-        assert.deepEqual(reader.read(colours, testTelegramBotId), ["blue"]);
+        assert.equal(reader.read(limit, testBotId), 8);
+        assert.deepEqual(reader.read(colours, testBotId), ["blue"]);
     });
 
     void it("toggles against the stored value, also on a pod whose snapshot is stale", async (t) => {
@@ -98,17 +98,14 @@ void describe("SettingsService", () => {
         await first.toggle(admin, flag);
         await stale.toggle(admin, flag);
 
-        assert.deepEqual(stale.read(colours, testTelegramBotId), [
-            "red",
-            "blue",
-        ]);
-        assert.equal(stale.read(flag, testTelegramBotId), true);
+        assert.deepEqual(stale.read(colours, testBotId), ["red", "blue"]);
+        assert.equal(stale.read(flag, testBotId), true);
 
         await stale.toggleChoice(admin, colours, "red");
         await first.refresh();
 
-        assert.deepEqual(first.read(colours, testTelegramBotId), ["blue"]);
-        assert.equal(first.read(flag, testTelegramBotId), true);
+        assert.deepEqual(first.read(colours, testBotId), ["blue"]);
+        assert.equal(first.read(flag, testBotId), true);
         await assert.rejects(
             first.toggleChoice(admin, colours, "green"),
             /not an option/,
@@ -134,7 +131,7 @@ void describe("SettingsService", () => {
             settingsService.write(admin, colours, ["green"]),
             /not valid/,
         );
-        assert.equal(settingsService.read(flag, testTelegramBotId), true);
+        assert.equal(settingsService.read(flag, testBotId), true);
     });
 
     void it("keeps the values of every bot apart", async (t) => {
@@ -148,14 +145,14 @@ void describe("SettingsService", () => {
         await settingsService.write(otherAdmin, limit, 3);
         await settingsService.toggle(otherAdmin, flag);
 
-        assert.equal(settingsService.read(limit, testTelegramBotId), 8);
-        assert.equal(settingsService.read(flag, testTelegramBotId), true);
+        assert.equal(settingsService.read(limit, testBotId), 8);
+        assert.equal(settingsService.read(flag, testBotId), true);
         assert.equal(settingsService.read(limit, "42"), 3);
         assert.equal(settingsService.read(flag, "42"), false);
 
         await settingsService.refresh();
 
-        assert.equal(settingsService.read(limit, testTelegramBotId), 8);
+        assert.equal(settingsService.read(limit, testBotId), 8);
         assert.equal(settingsService.read(limit, "42"), 3);
     });
 
@@ -164,18 +161,16 @@ void describe("SettingsService", () => {
 
         await mongo.collection("settings").insertMany([
             {
-                botId: testTelegramBotId,
+                botId: testBotId,
                 name: colours.name,
                 value: ["red", "removed"],
             },
-            { botId: testTelegramBotId, name: limit.name, value: "many" },
+            { botId: testBotId, name: limit.name, value: "many" },
         ]);
         await settingsService.refresh();
 
-        assert.deepEqual(settingsService.read(colours, testTelegramBotId), [
-            "red",
-        ]);
-        assert.equal(settingsService.read(limit, testTelegramBotId), 5);
+        assert.deepEqual(settingsService.read(colours, testBotId), ["red"]);
+        assert.equal(settingsService.read(limit, testBotId), 5);
     });
 });
 

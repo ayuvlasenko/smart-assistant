@@ -15,7 +15,7 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
-    testTelegramBotId,
+    testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
@@ -60,7 +60,7 @@ void describe("Invites bootstrap", () => {
         await sendAsStranger(bot, third, "/start invite_wrong-token");
 
         const admin = await bot.usersRepository.findOneByTelegramId(
-            testTelegramBotId,
+            testBotId,
             String(first.id),
         );
 
@@ -69,7 +69,7 @@ void describe("Invites bootstrap", () => {
         assert.equal(
             (
                 await bot.usersRepository.findOneByTelegramId(
-                    testTelegramBotId,
+                    testBotId,
                     String(second.id),
                 )
             )?.isBanned,

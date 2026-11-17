@@ -12,7 +12,7 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
-    testTelegramBotId,
+    testBotId,
     testTelegramWebhookPath,
 } from "../../../test/telegram-fixtures.js";
 import { TELEGRAM_SECRET_HEADER } from "./telegram.js";
@@ -254,11 +254,11 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         assert.deepEqual(response.json(), {
             bots: [
                 {
-                    botId: testTelegramBotId,
+                    botId: testBotId,
                     status: "refreshed",
                     webhookUrl: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
-                        testTelegramBotId,
+                        testBotId,
                     ),
                     botUrl: "https://t.me/bipbopbot",
                 },
@@ -273,12 +273,12 @@ void describe("POST /api/telegram/webhook/refresh", () => {
                     {
                         url: resolveTelegramWebhookUrl(
                             app.getDecorator<Env>("config"),
-                            testTelegramBotId,
+                            testBotId,
                         ),
                         secret_token: telegramWebhookSecret(
                             app.getDecorator<Env>("config")
                                 .TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                            testTelegramBotId,
+                            testBotId,
                         ),
                     },
                 ],
@@ -334,7 +334,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
         assert.deepEqual(response.json(), {
             bots: [
                 {
-                    botId: testTelegramBotId,
+                    botId: testBotId,
                     status: "failed",
                     error: "Telegram setWebhook failed: bad webhook",
                 },

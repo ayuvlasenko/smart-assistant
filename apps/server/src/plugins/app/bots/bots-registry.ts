@@ -3,12 +3,17 @@ import fp from "fastify-plugin";
 import { Env } from "../../../env.js";
 import { AccessService } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
-import { BotEntity, botIdOfToken, EncryptedBotToken } from "./bot-entity.js";
+import {
+    BotEntity,
+    EncryptedBotToken,
+    telegramIdOfToken,
+} from "./bot-entity.js";
 import { BotTokenCipher } from "./bot-token-cipher.js";
 import { BotsRepository } from "./bots-repository.js";
 
 export interface RegisteredBot {
     id: string;
+    telegramId: string;
     token: string;
     modules: readonly string[];
 }
@@ -18,13 +23,13 @@ export const botsModule = "bots";
 const refreshIntervalMilliseconds = 10_000;
 
 export class BotsRegistry {
-    readonly rootId: string;
     private readonly rootToken: string;
     private readonly botsRepository: BotsRepository;
     private readonly cipher: BotTokenCipher | undefined;
     private readonly log: FastifyBaseLogger;
     private bots = new Map<string, RegisteredBot>();
     private refreshTimer: NodeJS.Timeout | undefined;
+    private startedRootId: string | undefined;
 
     constructor(
         botsRepository: BotsRepository,
@@ -35,8 +40,15 @@ export class BotsRegistry {
         this.botsRepository = botsRepository;
         this.cipher = cipher;
         this.rootToken = rootToken;
-        this.rootId = botIdOfToken(rootToken);
         this.log = log;
+    }
+
+    get rootId(): string {
+        if (this.startedRootId === undefined) {
+            throw new Error("The bots registry is not started");
+        }
+
+        return this.startedRootId;
     }
 
     get canStoreTokens(): boolean {
@@ -90,7 +102,24 @@ export class BotsRegistry {
     }
 
     async start(): Promise<void> {
-        await this.botsRepository.ensure(this.rootId);
+        const { bot, previousTelegramId } =
+            await this.botsRepository.ensureRoot(
+                telegramIdOfToken(this.rootToken),
+            );
+
+        this.startedRootId = bot._id;
+
+        if (previousTelegramId) {
+            this.log.warn(
+                {
+                    botId: bot._id,
+                    telegramId: bot.telegramId,
+                    previousTelegramId,
+                },
+                "Root bot moved to another Telegram bot",
+            );
+        }
+
         await this.refresh();
         this.log.info(
             {
@@ -131,9 +160,10 @@ export class BotsRegistry {
     }
 
     private register(bot: BotEntity): RegisteredBot | undefined {
-        if (bot._id === this.rootId) {
+        if (bot._id === this.startedRootId) {
             return {
                 id: bot._id,
+                telegramId: telegramIdOfToken(this.rootToken),
                 token: this.rootToken,
                 modules: [...bot.modules, botsModule],
             };
@@ -145,7 +175,7 @@ export class BotsRegistry {
 
         const token = this.decrypt(bot._id, bot.token);
 
-        if (token && botIdOfToken(token) !== bot._id) {
+        if (token && telegramIdOfToken(token) !== bot.telegramId) {
             this.log.error(
                 { botId: bot._id },
                 "Bot token belongs to another bot",
@@ -153,7 +183,14 @@ export class BotsRegistry {
             return undefined;
         }
 
-        return token ? { id: bot._id, token, modules: bot.modules } : undefined;
+        return token
+            ? {
+                  id: bot._id,
+                  telegramId: bot.telegramId,
+                  token,
+                  modules: bot.modules,
+              }
+            : undefined;
     }
 
     private decrypt(

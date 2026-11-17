@@ -12,7 +12,7 @@ import {
 import { buildTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramPrivateChat,
-    testTelegramBotId,
+    testBotId,
 } from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
@@ -153,7 +153,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.sendText(chat, "/vip");
         bot.telegramChats.deliver(
             bot.vipScene,
-            [{ botId: testTelegramBotId, userId: chat.id, key: "vip" }],
+            [{ botId: testBotId, userId: chat.id, key: "vip" }],
             async (ctx, scene) => {
                 delivered.push(scene.state.count);
                 scene.state.count += 1;
@@ -163,7 +163,7 @@ void describe("Telegram guards on scenes", () => {
         await setGrants(chat.id, []);
         bot.telegramChats.deliver(
             bot.vipScene,
-            [{ botId: testTelegramBotId, userId: chat.id, key: "vip" }],
+            [{ botId: testBotId, userId: chat.id, key: "vip" }],
             async (ctx, scene) => {
                 delivered.push(scene.state.count);
             },

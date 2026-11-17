@@ -253,7 +253,12 @@ export async function buildTelegramBotServiceTestApp({
 
 export async function buildTwoBotsTestApp(
     options: BuildTelegramBotServiceTestAppOptions,
-): Promise<TelegramBotServiceTestApp & { child: TelegramApiServiceMock }> {
+): Promise<
+    TelegramBotServiceTestApp & {
+        child: TelegramApiServiceMock;
+        childBotId: string;
+    }
+> {
     const key = randomBytes(32).toString("base64");
     const child = buildTelegramApiServiceMock({ t: options.t });
     const app = await buildTelegramBotServiceTestApp({
@@ -262,7 +267,7 @@ export async function buildTwoBotsTestApp(
         env: { ...options.env, BOTS_ENCRYPTION_KEY: key },
     });
     const bot = await app.botsRepository.createIfMissing({
-        _id: "42",
+        telegramId: "42",
         username: "child_bot",
         token: new BotTokenCipher(key).encrypt("42:child-token"),
     });
@@ -273,7 +278,7 @@ export async function buildTwoBotsTestApp(
 
     app.botsRegistry.put(bot);
 
-    return { ...app, child };
+    return { ...app, child, childBotId: bot._id };
 }
 
 function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

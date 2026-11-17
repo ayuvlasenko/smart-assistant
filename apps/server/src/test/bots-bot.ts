@@ -1,4 +1,5 @@
 import { TestContext } from "node:test";
+import botsConnectorPlugin from "../plugins/app/bots/bots-connector.js";
 import botsHandlersPlugin from "../plugins/app/bots/bots-handlers.js";
 import botsServicePlugin, {
     BotsService,
@@ -33,6 +34,7 @@ export async function buildBotsBot(
             invitesRepositoryPlugin,
             invitesServicePlugin,
             invitesHandlersPlugin,
+            botsConnectorPlugin,
             botsServicePlugin,
             botsHandlersPlugin,
             ...(options.plugins ?? []),

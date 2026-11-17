@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { testBotId } from "../../../test/telegram-fixtures.js";
 import { UsersService } from "./users-service.js";
 
 let databaseName!: string;
@@ -45,7 +45,7 @@ void describe("UsersService", () => {
         const usersService = app.getDecorator<UsersService>("usersService");
         const { user: banned } =
             await usersRepository.findOneByTelegramIdOrCreate({
-                botId: testTelegramBotId,
+                botId: testBotId,
                 telegramId: "987654901",
                 isBanned: true,
                 languageCode: "en",
@@ -84,7 +84,7 @@ void describe("UsersService", () => {
         };
 
         const first = await usersService.findOrCreateByTelegramId({
-            botId: testTelegramBotId,
+            botId: testBotId,
             ...profile,
         });
         const other = await usersService.findOrCreateByTelegramId({
@@ -92,7 +92,7 @@ void describe("UsersService", () => {
             ...profile,
         });
         const again = await usersService.findOrCreateByTelegramId({
-            botId: testTelegramBotId,
+            botId: testBotId,
             ...profile,
         });
 

@@ -10,7 +10,7 @@ import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
-    testTelegramBotId,
+    testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildTelegramSceneBot } from "../../../test/telegram-scene-bot.js";
 import { UsersRepository } from "../users/users-repository.js";
@@ -360,7 +360,7 @@ async function createUser(
     telegramId: number,
 ): Promise<void> {
     await usersRepository.findOneByTelegramIdOrCreate({
-        botId: testTelegramBotId,
+        botId: testBotId,
         telegramId: String(telegramId),
         isBanned: false,
         languageCode: "en",

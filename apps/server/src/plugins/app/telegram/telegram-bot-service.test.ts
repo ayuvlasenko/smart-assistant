@@ -11,7 +11,7 @@ import {
     buildTelegramBotServiceTestApp,
     buildTwoBotsTestApp,
 } from "../../../test/telegram-bot-service-helper.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { testBotId } from "../../../test/telegram-fixtures.js";
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
@@ -20,7 +20,7 @@ let mongoClient!: MongoClient;
 let mongo!: Db;
 
 const webhookClaimSchema = Type.String();
-const webhookClaimKey = `telegram:${testTelegramBotId}:webhook:set`;
+const webhookClaimKey = `telegram:${testBotId}:webhook:set`;
 
 before(async () => {
     const testMongo = await buildTestMongo();
@@ -90,12 +90,12 @@ void describe("TelegramBotService", () => {
                 {
                     url: resolveTelegramWebhookUrl(
                         app.getDecorator<Env>("config"),
-                        testTelegramBotId,
+                        testBotId,
                     ),
                     secret_token: telegramWebhookSecret(
                         app.getDecorator<Env>("config")
                             .TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                        testTelegramBotId,
+                        testBotId,
                     ),
                 },
             ],
@@ -155,7 +155,7 @@ void describe("TelegramBotService", () => {
                     (entry) =>
                         entry.msg ===
                             "Failed to set the webhook of a bot on start" &&
-                        entry.botId === testTelegramBotId,
+                        entry.botId === testBotId,
                 ),
         );
     });
@@ -212,21 +212,22 @@ void describe("TelegramBotService", () => {
                 description: "Unauthorized",
             },
         });
-        const { child, telegramBotService } = await buildTwoBotsTestApp({
-            databaseName,
-            mongoClient,
-            t,
-            telegramApiService: failing,
-            environment: "preview",
-        });
+        const { child, childBotId, telegramBotService } =
+            await buildTwoBotsTestApp({
+                databaseName,
+                mongoClient,
+                t,
+                telegramApiService: failing,
+                environment: "preview",
+            });
 
         const webhooks = await telegramBotService.refreshWebhooks();
 
         assert.deepEqual(
             webhooks.map(({ botId, status }) => ({ botId, status })),
             [
-                { botId: testTelegramBotId, status: "failed" },
-                { botId: "42", status: "refreshed" },
+                { botId: testBotId, status: "failed" },
+                { botId: childBotId, status: "refreshed" },
             ],
         );
         assert.equal(failing.setWebhook.mock.callCount(), 0);
@@ -249,7 +250,7 @@ void describe("TelegramBotService", () => {
         });
 
         assert.deepEqual((await telegramBotService.refreshWebhooks())[0], {
-            botId: testTelegramBotId,
+            botId: testBotId,
             status: "failed",
             error: "Telegram request failed",
         });
@@ -299,7 +300,7 @@ void describe("TelegramBotService", () => {
             firstUrl,
             resolveTelegramWebhookUrl(
                 app.getDecorator<Env>("config"),
-                testTelegramBotId,
+                testBotId,
             ),
         );
         assert.equal(secondUrl, firstUrl);

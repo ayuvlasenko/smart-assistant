@@ -11,7 +11,7 @@ import {
     adminGrant,
 } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
-import { botIdOfToken } from "../bots/bot-entity.js";
+import { BotsRegistry } from "../bots/bots-registry.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
@@ -362,7 +362,7 @@ export default fp(
 
         fastify.addHook("onReady", async () => {
             const { invite, revoked } = await invitesService.bootstrap(
-                botIdOfToken(config.TELEGRAM_BOT_TOKEN),
+                fastify.getDecorator<BotsRegistry>("botsRegistry").rootId,
                 config.INVITE_TOKEN,
             );
 
@@ -389,6 +389,7 @@ export default fp(
             "@fastify/env",
             "access-service",
             "app-logger",
+            "bots-registry",
             "emittery",
             "invites-repository",
             "users-repository",

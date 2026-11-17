@@ -23,6 +23,7 @@ export const botsButtonValues = {
     ownerInvite: Type.String(),
     webhook: Type.String(),
     token: Type.String(),
+    move: Type.String(),
     stop: Type.String(),
     start: Type.String(),
 };

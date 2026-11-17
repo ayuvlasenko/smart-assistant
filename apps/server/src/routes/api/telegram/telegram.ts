@@ -71,7 +71,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
     };
 
     fastify.post(
-        "/webhook/:botId(^\\d+$)",
+        "/webhook/:botId(^(?!refresh$)[\\w-]+$)",
         {
             config: {
                 rateLimit: {

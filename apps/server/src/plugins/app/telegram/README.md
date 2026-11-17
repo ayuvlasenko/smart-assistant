@@ -283,7 +283,7 @@ POST /api/telegram/webhook/<botId>                         to this route
 X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA256(TELEGRAM_WEBHOOK_SECRET_TOKEN, botId)
 ```
 
-`<botId>` is the number before `:` in the token of the bot. `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
+`<botId>` is the id of the bot document, and not the number in its token, see [The id of a bot](../bots/README.md#the-id-of-a-bot). `TelegramBots` turns every bot of `BotsRegistry` into a `TelegramBot`: its id, its `telegramId` and its `TelegramApiService`, created once per token. See [Bots](../bots/README.md) for where the bots and their tokens come from. `UserEntity.botId` ties a user to its bot, so code that has the user has the bot.
 
 **Walk-through.** Telegram sends an update to a bot.
 
@@ -292,7 +292,7 @@ X-Telegram-Bot-Api-Secret-Token                            base64url of HMAC-SHA
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
 4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
 
-**Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the bot id in the label `bot`.
+**Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 
 **Edge cases.** A wrong token and a token of another bot get the same `401`, so the answers do not tell which bots the server serves. The master secret itself is not a valid token of any bot. The bot id is not a secret: any user who talks to the bot can learn it, so the path only routes the update, and the header authenticates it. `TELEGRAM_WEBHOOK_URL` replaces the base of the URL for local work, such as `https://<tunnel>/api/telegram/webhook`, and the route appends the bot id to it.
 
@@ -384,16 +384,16 @@ The session is saved also when the handler throws, so the changes made before th
 **Data.** The prefix of the resource is left out.
 
 ```text
-rate-limit:telegram:<botId>:chat:42                    hash: tokens, updatedAt (ms)
-rate-limit:telegram:<botId>:chat:42:deletes            hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global                     hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:class:interactive   hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:class:background    hash: tokens, updatedAt
-rate-limit:telegram:<botId>:global:waiting:background  sorted set: pod id → expiry time (ms)
-rate-limit:telegram:<botId>:commands                   hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:chat:42                    hash: tokens, updatedAt (ms)
+rate-limit:telegram:<telegramId>:chat:42:deletes            hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global                     hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:class:interactive   hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:class:background    hash: tokens, updatedAt
+rate-limit:telegram:<telegramId>:global:waiting:background  sorted set: pod id → expiry time (ms)
+rate-limit:telegram:<telegramId>:commands                   hash: tokens, updatedAt
 ```
 
-`<botId>` is the number before `:` in the token of the bot, so every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script by its hash and loads the script again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script.
+`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script by its hash and loads the script again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script.
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
@@ -754,7 +754,7 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 
 **Idea.** The bot has one menu for everybody: the commands of a user who holds no grants of their own, only the [default grants](../access/README.md#default-grants). A chat gets a menu of its own only when the commands of its user differ from the menu of the bot, such as the chat of an admin.
 
-**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<botId>:commands:menu` keeps the hash of the menus of the bot for 30 days.
+**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<botId>:commands:menu` keeps the hash of the menus of the bot for 30 days. Both hashes include the `telegramId` of the bot, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync.
 
 **Walk-through.**
 

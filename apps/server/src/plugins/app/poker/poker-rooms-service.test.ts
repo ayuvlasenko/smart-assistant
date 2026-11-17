@@ -11,7 +11,7 @@ import {
 } from "node:test";
 import { buildTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { testBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { UserEntity } from "../users/user-entity.js";
@@ -891,7 +891,7 @@ function buildBot(t: TestContext): Promise<PokerBot> {
 async function createUser(
     bot: PokerBot,
     grants: string[],
-    botId = testTelegramBotId,
+    botId = testBotId,
 ): Promise<UserEntity> {
     nextTelegramId += 1;
 

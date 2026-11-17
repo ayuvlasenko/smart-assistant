@@ -59,7 +59,7 @@ export async function renderBot(
     return buildBotsMessage(
         [
             formatBold(labelOf(t, botsService, bot)),
-            `<code>${escapeTelegramHtml(bot._id)}</code>`,
+            `<code>${escapeTelegramHtml(bot.telegramId)}</code>`,
             formatLabeled(t("bots:statusLabel"), statusOf(t, bot)),
             formatLabeled(
                 t("bots:modulesLabel"),
@@ -95,6 +95,7 @@ export async function renderBot(
                     ? []
                     : [scene.button(t("bots:tokenButton"), "token", bot._id)]),
             ],
+            ...(isRoot ? [] : [[moveButton(t, scene, bot)]]),
             [
                 scene.backButton(t("bots:backButton")),
                 ...(isRoot ? [] : [switchButton(t, scene, bot)]),
@@ -212,7 +213,7 @@ function labelOf(
         return t("bots:rootBot");
     }
 
-    return bot.username ? `@${bot.username}` : bot._id;
+    return bot.username ? `@${bot.username}` : bot.telegramId;
 }
 
 function statusOf(t: Translate, bot: BotEntity): string {
@@ -249,6 +250,22 @@ function describeWebhook(
     return webhook.pending_update_count
         ? `${state}, ${t("bots:webhookPending", { count: webhook.pending_update_count })}`
         : state;
+}
+
+function moveButton(
+    t: Translate,
+    scene: BotsSceneControl,
+    bot: BotEntity,
+): InlineKeyboardButton {
+    return scene.button(
+        t(
+            scene.isConfirming("move", bot._id)
+                ? "bots:confirmMoveButton"
+                : "bots:moveButton",
+        ),
+        "move",
+        bot._id,
+    );
 }
 
 function switchButton(

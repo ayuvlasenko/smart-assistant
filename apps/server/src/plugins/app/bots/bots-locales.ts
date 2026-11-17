@@ -21,6 +21,8 @@ const en = {
     tokenButton: "🔄 Token",
     stopButton: "⏸ Stop",
     confirmStopButton: "⏸ Sure?",
+    moveButton: "🔀 Move",
+    confirmMoveButton: "🔀 Sure?",
     startButton: "▶️ Start",
     backButton: "‹ Back",
     copyLinkButton: "📋 Copy link",
@@ -35,8 +37,14 @@ const en = {
     alreadyAdded: "This bot is already added.",
     keyMissing:
         "The server has no BOTS_ENCRYPTION_KEY, so it can't store a bot token.",
-    otherBot: "This token belongs to another bot.",
+    otherBot:
+        "This token belongs to another bot. To move this bot there, use 🔀 Move.",
     tokenReplaced: "The token is replaced.",
+    movePrompt:
+        "Send the token of the new bot from @BotFather, or /cancel to stop. The users keep their access and their data, and each of them has to open the new bot. The message with the token is deleted.",
+    sameBot:
+        "This is a token of the same bot. To replace its token, use 🔄 Token.",
+    botMoved: "The bot is moved. Its users have to open the new bot.",
     botMissing: "This bot no longer exists.",
     ownerInviteUnavailable:
         "The bot is stopped or its token can't be read, so it has no owner link now. Start the bot or send a new token with 🔄 Token.",
@@ -65,6 +73,8 @@ export const botsLocales: Locales<typeof en> = {
         tokenButton: "🔄 Токен",
         stopButton: "⏸ Зупинити",
         confirmStopButton: "⏸ Точно?",
+        moveButton: "🔀 Перенести",
+        confirmMoveButton: "🔀 Точно?",
         startButton: "▶️ Запустити",
         backButton: "‹ Назад",
         copyLinkButton: "📋 Скопіювати посилання",
@@ -80,8 +90,15 @@ export const botsLocales: Locales<typeof en> = {
         alreadyAdded: "Цього бота вже додано.",
         keyMissing:
             "На сервері немає BOTS_ENCRYPTION_KEY, тому він не може зберегти токен бота.",
-        otherBot: "Цей токен належить іншому боту.",
+        otherBot:
+            "Цей токен належить іншому боту. Щоб перенести цього бота туди, скористайтеся 🔀 Перенести.",
         tokenReplaced: "Токен замінено.",
+        movePrompt:
+            "Надішліть токен нового бота від @BotFather або /cancel, щоб зупинитися. Користувачі збережуть доступ і дані, і кожен із них має відкрити нового бота. Повідомлення з токеном буде видалено.",
+        sameBot:
+            "Це токен того самого бота. Щоб замінити його токен, скористайтеся 🔄 Токен.",
+        botMoved:
+            "Бота перенесено. Його користувачі мають відкрити нового бота.",
         botMissing: "Цього бота більше немає.",
         ownerInviteUnavailable:
             "Бот зупинено або його токен не вдається прочитати, тому посилання власника зараз немає. Запустіть бота або надішліть новий токен через 🔄 Токен.",
@@ -107,6 +124,8 @@ export const botsLocales: Locales<typeof en> = {
         tokenButton: "🔄 Токен",
         stopButton: "⏸ Остановить",
         confirmStopButton: "⏸ Точно?",
+        moveButton: "🔀 Перенести",
+        confirmMoveButton: "🔀 Точно?",
         startButton: "▶️ Запустить",
         backButton: "‹ Назад",
         copyLinkButton: "📋 Скопировать ссылку",
@@ -122,8 +141,14 @@ export const botsLocales: Locales<typeof en> = {
         alreadyAdded: "Этот бот уже добавлен.",
         keyMissing:
             "На сервере нет BOTS_ENCRYPTION_KEY, поэтому он не может сохранить токен бота.",
-        otherBot: "Этот токен принадлежит другому боту.",
+        otherBot:
+            "Этот токен принадлежит другому боту. Чтобы перенести этого бота туда, воспользуйтесь 🔀 Перенести.",
         tokenReplaced: "Токен заменён.",
+        movePrompt:
+            "Отправьте токен нового бота от @BotFather или /cancel, чтобы остановиться. Пользователи сохранят доступ и данные, и каждому из них нужно открыть нового бота. Сообщение с токеном будет удалено.",
+        sameBot:
+            "Это токен того же бота. Чтобы заменить его токен, воспользуйтесь 🔄 Токен.",
+        botMoved: "Бот перенесён. Его пользователям нужно открыть нового бота.",
         botMissing: "Этого бота больше нет.",
         ownerInviteUnavailable:
             "Бот остановлен или его токен не удаётся прочитать, поэтому ссылки владельца сейчас нет. Запустите бота или отправьте новый токен через 🔄 Токен.",

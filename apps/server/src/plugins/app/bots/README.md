@@ -5,25 +5,35 @@ This directory keeps the bots that the server serves. A bot is a tenant: its use
 ## Constraints
 
 - A bot token is a password: whoever has it controls the bot.
-- The id of a bot is the number before `:` in its token. It stays when the owner revokes the token in BotFather and gets a new one.
+- Telegram identifies a bot by the number before `:` in its token. The number stays when the owner revokes the token in BotFather and gets a new one. A lost or deleted Telegram bot never comes back: its service needs another Telegram bot, with another number.
 - Several pods serve the bots, and a bot changes on one of them.
+
+## The id of a bot
+
+**Problem.** The users, the invites, the settings and the data of the modules carry the `botId` of their bot. With the number of the token as that id, a bot that moves to another Telegram bot loses all of them.
+
+**Idea.** The `_id` of a bot document is an internal id that never changes, and `telegramId` keeps the number of the token. The data, the Valkey keys `telegram:<botId>:…` and the webhook path use the internal id. Only what belongs to the Telegram bot uses `telegramId`: the buckets of the [rate limits](../telegram/README.md#rate-limits) and the label `bot` of the metrics.
+
+**Data.** `BotsRepository` gives a new bot a generated id, such as `6741c2f09a3b5d0012e4a7c1`, and a new root bot the id `root`. A unique index keeps one document per `telegramId`. The flag `isRoot` marks the root bot.
+
+**Edge cases.** A bot created before the internal id keeps the number of its first token as `_id`, so never read an `_id` as a Telegram number: after a move the two differ. The command menus keep `telegramId` inside their hashes, so the first sync after a move sets the menus of the other Telegram bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
 
 ## The root bot
 
-The root bot is the bot of `TELEGRAM_BOT_TOKEN`. Its token lives only in the server secret; its record in `bots` keeps its modules. Every other bot keeps its token in MongoDB, encrypted. The module `bots` is on only in the root bot, so only an admin of the root bot reaches `/bots`: the subject `Bot` is closed in every other bot, see [Modules](../access/README.md#modules). `Bot` is checked against the subject name only, because a bot document has no `botId` of its own.
+The root bot is the bot of `TELEGRAM_BOT_TOKEN`. Its token lives only in the server secret; its record in `bots`, the one with `isRoot`, keeps its modules. Every other bot keeps its token in MongoDB, encrypted. The module `bots` is on only in the root bot, so only an admin of the root bot reaches `/bots`: the subject `Bot` is closed in every other bot, see [Modules](../access/README.md#modules). `Bot` is checked against the subject name only, because a bot document has no `botId` of its own.
 
 ## Managing bots
 
 `/bots` in the root bot starts the `bots` scene with the key `bots`, a TTL of 24 h and the guard `read Bot`. Every change emits `bots.botChanged`, and `bots-handlers.ts` publishes the topic `bots` in the root bot, so the screens of every admin redraw.
 
-| Screen        | Params           | Shows                                                                                                          | Leads to                           |
-| ------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `list`        |                  | Every bot with its status and modules; `➕ Add bot`                                                            | `bot`, the token input             |
-| `bot`         | `botId`          | Id, status, modules and the webhook from `getWebhookInfo`; the root bot shows only its modules and its webhook | `modules`, `ownerInvite`, `‹ Back` |
-| `modules`     | `botId`          | A checkbox per module; a press toggles the module                                                              | `‹ Back`                           |
-| `ownerInvite` | `botId`, `token` | The owner link of the bot and `📋 Copy link`                                                                   | `‹ Back`                           |
+| Screen        | Params           | Shows                                                                                                                       | Leads to                                             |
+| ------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `list`        |                  | Every bot with its status and modules; `➕ Add bot`                                                                         | `bot`, the token input                               |
+| `bot`         | `botId`          | `telegramId`, status, modules and the webhook from `getWebhookInfo`; the root bot has no `🔄 Token`, `🔀 Move` and `⏸ Stop` | `modules`, `ownerInvite`, the token inputs, `‹ Back` |
+| `modules`     | `botId`          | A checkbox per module; a press toggles the module                                                                           | `‹ Back`                                             |
+| `ownerInvite` | `botId`, `token` | The owner link of the bot and `📋 Copy link`                                                                                | `‹ Back`                                             |
 
-The input `token` asks for a token with `cleanup: true`, so the message with the token is deleted once the step accepts it. `tokenBotId` in the state tells a new bot from a new token of a stopped or revoked one.
+The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the message with the token is deleted once the step accepts it. `tokenBotId` in the state keeps the bot that the token is for; without it, `token` adds a new bot.
 
 ## Adding a bot
 
@@ -34,13 +44,30 @@ The input `token` asks for a token with `cleanup: true`, so the message with the
 **Walk-through.**
 
 1. The admin presses `➕ Add bot` and sends the token. The step checks its form with `isBotToken`, and the engine deletes the message.
-2. `BotsService.add` calls `getMe` with the token. Telegram returns the id and the username of the bot, or refuses the token.
-3. The repository inserts the bot with `createIfMissing`, so a second admin who sends the same token gets `alreadyAdded` and a link to the bot.
+2. `BotsService.add` reads the profile of the bot through `BotsConnector`, which calls `getMe` with the token. Telegram returns the id and the username of the bot, or refuses the token.
+3. The repository inserts the bot with `createIfMissing`, an upsert by `telegramId`, so a second admin who sends a token of the same Telegram bot gets `alreadyAdded` and the screen of that bot.
 4. The registry takes the bot at once; the other pods take it on their next refresh or on its first update.
 5. The service sets the webhook and the default menu of the bot, then creates the owner link: an invite of the new bot with `admin` and `maxUses: 1`, see [Invites](../invites/README.md#bootstrap).
 6. The scene shows the link. The owner opens it in the new bot and becomes its admin; from then on the owner manages invites, settings and the users of that bot alone.
 
-**Edge cases.** Without `BOTS_ENCRYPTION_KEY` the service refuses with `keyMissing` before it calls Telegram. A failed `setWebhook` logs `Failed to connect the webhook of a bot` and keeps the bot: its screen shows the webhook as not connected, and `🔁 Webhook` tries again, as does every production start. `🔑 Owner link` creates a new owner link when the first one is lost. Only a bot that the registry serves has the button: a stopped bot and a bot whose token can't be decrypted get none, and `createOwnerInvite` creates no invite for them. The screen builds the owner link from the stored `username` of the bot with `buildTelegramDeepLinkUrl`, so it sends no request to Telegram and shows the link also when Telegram can't be reached. An open owner link shows that the link is unavailable once the bot stops or its token can't be decrypted. Only `add` and `🔄 Token` store the `username`: if the owner changes it, the label of the bot and the owner link keep the old one until `🔄 Token`. `🔄 Token` takes a new token of the same bot after the owner revoked the old one in BotFather; a token of another bot gets `otherBot`. Never log the token: it arrives as message text.
+**Edge cases.** Without `BOTS_ENCRYPTION_KEY` the service refuses with `keyMissing` before it calls Telegram. A failed `setWebhook` logs `Failed to connect the webhook of a bot` and keeps the bot: its screen shows the webhook as not connected, and `🔁 Webhook` tries again, as does every production start. `🔑 Owner link` creates a new owner link when the first one is lost. Only a bot that the registry serves has the button: a stopped bot and a bot whose token can't be decrypted get none, and `createOwnerInvite` creates no invite for them. The screen builds the owner link from the stored `username` of the bot with `buildTelegramDeepLinkUrl`, so it sends no request to Telegram and shows the link also when Telegram can't be reached. An open owner link shows that the link is unavailable once the bot stops or its token can't be decrypted. Only `add` and `🔄 Token` store the `username`: if the owner changes it, the label of the bot and the owner link keep the old one until `🔄 Token`. `🔄 Token` takes a new token of the same Telegram bot after the owner revoked the old one in BotFather; a token of another Telegram bot gets `otherBot`, which points to [`🔀 Move`](#moving-a-bot-to-another-telegram-bot). Never log the token: it arrives as message text.
+
+## Moving a bot to another Telegram bot
+
+**Problem.** The owner loses the Telegram bot, or wants a bot with another username. A new bot added with `➕ Add bot` starts empty: the users, their grants and the data of the modules stay with the old one.
+
+**Idea.** `🔀 Move` puts the token of another Telegram bot into the same document. The `_id` stays, so everything that carries the `botId` stays with the bot.
+
+**Walk-through.**
+
+1. The admin presses `🔀 Move`, presses it again to confirm, and sends the token of the other Telegram bot.
+2. `BotsService.move` calls `getMe` with the token. A token of the same Telegram bot gets `sameBot`, and a Telegram bot that another document has gets `alreadyAdded` and the screen of that bot.
+3. The service removes the webhook of the old Telegram bot with `deleteWebhook`, so the old bot sends no more updates.
+4. `updateToken` stores the new `telegramId`, the token and the username. The registry takes the bot at once, and the service sets the webhook and the default menu of the new Telegram bot.
+
+**Edge cases.** Telegram refuses a message to a user who has not opened the bot, so every user opens the new Telegram bot once: until then a delivery to the user fails with `403`. The other pods use the old token until their next refresh, up to 10 seconds. A failed `deleteWebhook` logs `Failed to delete the webhook of a bot` and the move goes on: the old Telegram bot then keeps sending updates to the same path with the same secret, and the server answers them through the new one, until the owner revokes the old token.
+
+The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of a Telegram bot that no document has, `BotsRepository.ensureRoot` writes its number to the root document on start, and the registry logs `Root bot moved to another Telegram bot`. The server does not have the old token, so the webhook of the old Telegram bot stays until its owner removes it. A server with another root token that starts against the same database moves the root bot too, so keep one root token per database. When the token belongs to a Telegram bot that a document already has, that document becomes the root bot, and the old root document stays without a token and is not served.
 
 ## Stopping a bot
 
@@ -52,11 +79,12 @@ The input `token` asks for a token with `cleanup: true`, so the message with the
 
 **Idea.** Every pod keeps a snapshot of the active bots with their decrypted tokens and modules, and reads it again every 10 seconds, like the [settings](../settings/README.md#values-on-every-pod).
 
-**Data.** One document per bot in `bots`, with the bot id as `_id`:
+**Data.** One document per bot in `bots`, see [The id of a bot](#the-id-of-a-bot):
 
 ```json
 {
-    "_id": "8123456789",
+    "_id": "6741c2f09a3b5d0012e4a7c1",
+    "telegramId": "8123456789",
     "username": "poker_team_bot",
     "token": { "iv": "…", "tag": "…", "data": "…" },
     "modules": ["poker"],
@@ -67,16 +95,16 @@ The input `token` asks for a token with `cleanup: true`, so the message with the
 }
 ```
 
-The root record has no `token` and no `username`. `BotTokenCipher` encrypts a token with AES-256-GCM and `BOTS_ENCRYPTION_KEY`: 32 random bytes in base64, such as the output of `openssl rand -base64 32`. The key lives in the server secret and never in MongoDB, so a dump of the database does not give the bots away.
+The root record has `isRoot`, and no `token` and no `username`. `BotTokenCipher` encrypts a token with AES-256-GCM and `BOTS_ENCRYPTION_KEY`: 32 random bytes in base64, such as the output of `openssl rand -base64 32`. The key lives in the server secret and never in MongoDB, so a dump of the database does not give the bots away.
 
 **Walk-through.**
 
-1. On start, `BotsRegistry.start` makes sure that the root record exists, with no modules, and reads every bot.
+1. On start, `BotsRegistry.start` calls `ensureRoot` with the number of `TELEGRAM_BOT_TOKEN`. It marks the document with that `telegramId` as the root bot, or writes the number to the root document, or creates the root document with no modules. Then the registry reads every bot.
 2. It takes the token of the root bot from `TELEGRAM_BOT_TOKEN` and adds `bots` to its modules. It decrypts the token of every other bot.
 3. Every 10 seconds it reads all bots again and replaces the snapshot.
 4. An update for a bot that is not in the snapshot yet, such as a bot created on another pod a second ago, calls `load`, which reads that bot from MongoDB.
 
-**Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. A decrypted token whose bot id differs from the `_id` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
+**Edge cases.** A stopped bot, one with `disabledAt`, is not in the snapshot: an update of it gets `200` and is skipped, and a delivery to its users is skipped. Without `BOTS_ENCRYPTION_KEY`, or with another key, a stored token can't be decrypted: the registry logs `Bot token can't be decrypted` with the bot id and skips the bot. A decrypted token whose number differs from the `telegramId` of its document logs `Bot token belongs to another bot`, and the registry skips that bot too. The root bot does not depend on the key, so its admin can fix the key. A failed refresh logs `Failed to refresh bots` and keeps the old snapshot.
 
 ## Modules
 
@@ -84,13 +112,14 @@ A bot runs the core and the modules in its `modules`. A module is a feature doma
 
 ## Files
 
-| File                                                 | Owns                                                                       | Section                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------- |
-| `bot-entity.ts`                                      | The bot document, the subject `Bot`, the bot id of a token                 | [The registry](#the-registry)   |
-| `bot-token-cipher.ts`                                | The encryption of a stored token                                           | [The registry](#the-registry)   |
-| `bots-repository.ts`                                 | The `bots` collection                                                      | [The registry](#the-registry)   |
-| `bots-registry.ts`                                   | The snapshot of the active bots, their tokens and their modules            | [The registry](#the-registry)   |
-| `bots-service.ts`                                    | Adding, stopping and starting a bot, its modules and its token             | [Adding a bot](#adding-a-bot)   |
-| `bots-scene.ts`, `bots-screen.ts`, `bots-schemas.ts` | The `/bots` scene and its screens                                          | [Managing bots](#managing-bots) |
-| `bots-handlers.ts`                                   | The `bots` module, the `/bots` command and the redraw on `bots.botChanged` | [Managing bots](#managing-bots) |
-| `bots-events.ts`, `bots-locales.ts`                  | The events and the texts of the domain                                     |                                 |
+| File                                                 | Owns                                                                       | Section                             |
+| ---------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
+| `bot-entity.ts`                                      | The bot document, the subject `Bot`, the Telegram id of a token            | [The id of a bot](#the-id-of-a-bot) |
+| `bot-token-cipher.ts`                                | The encryption of a stored token                                           | [The registry](#the-registry)       |
+| `bots-repository.ts`                                 | The `bots` collection                                                      | [The registry](#the-registry)       |
+| `bots-registry.ts`                                   | The snapshot of the active bots, their tokens and their modules            | [The registry](#the-registry)       |
+| `bots-service.ts`                                    | Adding, moving, stopping and starting a bot, its modules and its token     | [Adding a bot](#adding-a-bot)       |
+| `bots-connector.ts`                                  | The calls of a bot to Telegram: `getMe`, the webhook and the menus         | [Adding a bot](#adding-a-bot)       |
+| `bots-scene.ts`, `bots-screen.ts`, `bots-schemas.ts` | The `/bots` scene and its screens                                          | [Managing bots](#managing-bots)     |
+| `bots-handlers.ts`                                   | The `bots` module, the `/bots` command and the redraw on `bots.botChanged` | [Managing bots](#managing-bots)     |
+| `bots-events.ts`, `bots-locales.ts`                  | The events and the texts of the domain                                     |                                     |

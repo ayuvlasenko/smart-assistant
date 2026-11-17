@@ -11,7 +11,7 @@ import {
 } from "node:test";
 import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { testTelegramBotId } from "../../../test/telegram-fixtures.js";
+import { testBotId } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
 import { UserEntity } from "../users/user-entity.js";
@@ -426,17 +426,14 @@ void describe("InvitesService bootstrap", () => {
     void it("creates a single-use admin invite from INVITE_TOKEN while there is no admin", async (t) => {
         const bot = await buildBot(t, { INVITE_TOKEN: "bootstrap-token" });
         const invite = await bot.invitesRepository.findOneByToken(
-            testTelegramBotId,
+            testBotId,
             "bootstrap-token",
         );
 
         assert.deepEqual(invite?.grants, [adminGrant]);
         assert.equal(invite.maxUses, 1);
         assert.deepEqual(
-            await bot.invitesService.bootstrap(
-                testTelegramBotId,
-                "bootstrap-token",
-            ),
+            await bot.invitesService.bootstrap(testBotId, "bootstrap-token"),
             {
                 invite: "kept",
                 revoked: 0,
@@ -448,10 +445,10 @@ void describe("InvitesService bootstrap", () => {
         const bot = await buildBot(t);
         const holder = await createUser(bot, "987654742", [], true);
 
-        await bot.invitesService.bootstrap(testTelegramBotId, "token-a");
+        await bot.invitesService.bootstrap(testBotId, "token-a");
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(testTelegramBotId, "token-b"),
+            await bot.invitesService.bootstrap(testBotId, "token-b"),
             {
                 invite: "created",
                 revoked: 1,
@@ -471,11 +468,11 @@ void describe("InvitesService bootstrap", () => {
         const bot = await buildBot(t);
         const holder = await createUser(bot, "987654744", [], true);
 
-        await bot.invitesService.bootstrap(testTelegramBotId, "token-a");
-        await bot.invitesService.bootstrap(testTelegramBotId, undefined);
+        await bot.invitesService.bootstrap(testBotId, "token-a");
+        await bot.invitesService.bootstrap(testBotId, undefined);
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(testTelegramBotId, "token-a"),
+            await bot.invitesService.bootstrap(testBotId, "token-a"),
             {
                 invite: "reopened",
                 revoked: 0,
@@ -492,14 +489,14 @@ void describe("InvitesService bootstrap", () => {
         const holder = await createUser(bot, "987654745", [], true);
         const other = await createUser(bot, "987654746", [], true);
 
-        await bot.invitesService.bootstrap(testTelegramBotId, "token-a");
+        await bot.invitesService.bootstrap(testBotId, "token-a");
         await bot.invitesService.activate(holder, "token-a");
         await mongo
             .collection("users")
             .updateOne({ _id: holder._id }, { $set: { grants: [] } });
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(testTelegramBotId, "token-a"),
+            await bot.invitesService.bootstrap(testBotId, "token-a"),
             {
                 invite: "unusable",
                 revoked: 0,
@@ -516,15 +513,15 @@ void describe("InvitesService bootstrap", () => {
         const holder = await createUser(bot, "987654747", [], true);
         const other = await createUser(bot, "987654748", [], true);
 
-        await bot.invitesService.bootstrap(testTelegramBotId, "token-a");
+        await bot.invitesService.bootstrap(testBotId, "token-a");
         await bot.invitesService.activate(holder, "token-a");
-        await bot.invitesService.bootstrap(testTelegramBotId, "token-a");
+        await bot.invitesService.bootstrap(testBotId, "token-a");
         await mongo
             .collection("users")
             .updateOne({ _id: holder._id }, { $set: { grants: [] } });
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(testTelegramBotId, "token-a"),
+            await bot.invitesService.bootstrap(testBotId, "token-a"),
             {
                 invite: "unusable",
                 revoked: 0,
@@ -541,7 +538,7 @@ void describe("InvitesService bootstrap", () => {
         const admin = await createUser(bot, "987654743", [adminGrant]);
 
         await mongo.collection("invites").insertOne({
-            botId: testTelegramBotId,
+            botId: testBotId,
             token: "orphan-token",
             grants: [adminGrant],
             maxUses: 1,
@@ -556,10 +553,7 @@ void describe("InvitesService bootstrap", () => {
         });
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(
-                testTelegramBotId,
-                "orphan-token",
-            ),
+            await bot.invitesService.bootstrap(testBotId, "orphan-token"),
             {
                 invite: "none",
                 revoked: 1,
@@ -568,7 +562,7 @@ void describe("InvitesService bootstrap", () => {
         assert.ok(
             (
                 await bot.invitesRepository.findOneByToken(
-                    testTelegramBotId,
+                    testBotId,
                     "orphan-token",
                 )
             )?.revokedAt,
@@ -580,10 +574,10 @@ void describe("InvitesService bootstrap", () => {
         );
 
         await mongo.collection("users").deleteMany({});
-        await bot.invitesService.bootstrap(testTelegramBotId, "fresh-token");
+        await bot.invitesService.bootstrap(testBotId, "fresh-token");
 
         assert.deepEqual(
-            await bot.invitesService.bootstrap(testTelegramBotId, undefined),
+            await bot.invitesService.bootstrap(testBotId, undefined),
             {
                 invite: "none",
                 revoked: 1,
@@ -592,7 +586,7 @@ void describe("InvitesService bootstrap", () => {
         assert.ok(
             (
                 await bot.invitesRepository.findOneByToken(
-                    testTelegramBotId,
+                    testBotId,
                     "fresh-token",
                 )
             )?.revokedAt,
@@ -614,7 +608,7 @@ async function createUser(
     isBanned = false,
 ): Promise<UserEntity> {
     const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
-        botId: testTelegramBotId,
+        botId: testBotId,
         telegramId,
         isBanned,
         languageCode: "en",
@@ -637,7 +631,7 @@ function createInvite(
         Partial<Pick<InviteEntity, "maxUses" | "expiresAt">>,
 ): Promise<InviteEntity> {
     return bot.invitesRepository.create({
-        botId: testTelegramBotId,
+        botId: testBotId,
         token: new ObjectId().toHexString(),
         ...data,
     });

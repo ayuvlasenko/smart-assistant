@@ -9,6 +9,8 @@ export interface EncryptedBotToken {
 
 export interface BotEntity extends Omit<BaseEntity, "_id"> {
     _id: string;
+    telegramId: string;
+    isRoot?: boolean;
     username?: string;
     token?: EncryptedBotToken;
     modules: string[];
@@ -20,7 +22,9 @@ export interface BotsSubjects {
     Bot: BotEntity;
 }
 
-export function botIdOfToken(token: string): string {
+export const newRootBotId = "root";
+
+export function telegramIdOfToken(token: string): string {
     return token.split(":", 1).join("");
 }
 
