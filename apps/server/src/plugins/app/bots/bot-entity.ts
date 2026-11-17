@@ -14,6 +14,7 @@ export interface BotEntity extends Omit<BaseEntity, "_id"> {
     username?: string;
     token?: EncryptedBotToken;
     modules: string[];
+    startModule?: string;
     createdBy?: ObjectId;
     disabledAt?: Date;
 }

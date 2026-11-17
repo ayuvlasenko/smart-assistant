@@ -27,6 +27,13 @@ const en = {
     backButton: "‹ Back",
     copyLinkButton: "📋 Copy link",
     modulesTitle: "Modules of {{bot}}",
+    startLabel: "On /start",
+    startWelcome: "welcome message",
+    startModuleButton: "🏁 On /start",
+    startModuleTitle: "What /start opens in {{bot}}",
+    startModuleText:
+        "Pick a module of the bot that has a start screen. A user who can't open it gets the welcome message.",
+    startWelcomeButton: "Welcome message",
     ownerInviteTitle: "Owner link of {{bot}}",
     ownerInviteText:
         "Send this link to the owner of the bot. The first user who opens it becomes an admin of the bot. The link works once.",
@@ -79,6 +86,13 @@ export const botsLocales: Locales<typeof en> = {
         backButton: "‹ Назад",
         copyLinkButton: "📋 Скопіювати посилання",
         modulesTitle: "Модулі {{bot}}",
+        startLabel: "На /start",
+        startWelcome: "вітальне повідомлення",
+        startModuleButton: "🏁 На /start",
+        startModuleTitle: "Що відкриває /start у {{bot}}",
+        startModuleText:
+            "Виберіть модуль бота, який має стартовий екран. Користувач, який не може його відкрити, отримає вітальне повідомлення.",
+        startWelcomeButton: "Вітальне повідомлення",
         ownerInviteTitle: "Посилання власника {{bot}}",
         ownerInviteText:
             "Надішліть це посилання власнику бота. Перший користувач, який його відкриє, стане адміністратором бота. Посилання працює один раз.",
@@ -130,6 +144,13 @@ export const botsLocales: Locales<typeof en> = {
         backButton: "‹ Назад",
         copyLinkButton: "📋 Скопировать ссылку",
         modulesTitle: "Модули {{bot}}",
+        startLabel: "На /start",
+        startWelcome: "приветствие",
+        startModuleButton: "🏁 На /start",
+        startModuleTitle: "Что открывает /start в {{bot}}",
+        startModuleText:
+            "Выберите модуль бота, у которого есть стартовый экран. Пользователь, который не может его открыть, получит приветствие.",
+        startWelcomeButton: "Приветствие",
         ownerInviteTitle: "Ссылка владельца {{bot}}",
         ownerInviteText:
             "Отправьте эту ссылку владельцу бота. Первый пользователь, который её откроет, станет администратором бота. Ссылка работает один раз.",

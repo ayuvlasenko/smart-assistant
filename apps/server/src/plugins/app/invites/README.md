@@ -44,6 +44,7 @@ sequenceDiagram
         S->>I: find by token, explain the refusal
     end
     H->>U: welcome, access updated, or refusal
+    H->>U: the start module of the bot, after new grants
 ```
 
 The activation is one atomic update: the filter checks the status and that the user is not in `activations` yet, and the same update pushes the user. Two users who race for the last place of an invite cannot both get it. The grants are written in a second update, so a failure between the two leaves the place taken and the user without grants; the user repairs it by opening the link again.
@@ -54,6 +55,8 @@ The activation is one atomic update: the filter checks the status and that the u
 | `alreadyActivated`           | The user is in `activations` and the invite is active or full | The same; the grants are given again                           |
 | `notFound`                   | No invite has the token                                       | Nothing to a banned user, `inviteNotFound` to others           |
 | `expired`, `revoked`, `full` | The invite exists and cannot be used by this user             | `inviteUnavailable`                                            |
+
+After `activated` and `alreadyActivated` the handler gives the context the user with the new grants through `ctx.refreshUser` and opens [the start module](../telegram/README.md#the-start-module) of the bot, so a user who came by a link lands in the feature the bot is for. A bot without a start module, or grants that do not open it, leave only the reply.
 
 A user who is already in the bot can open a link too: the invite adds its grants to the grants the user has. Grants only grow through invites; removing one is a change in MongoDB for now. `alreadyActivated` gives the grants again only while the invite still works, so revoking or letting an invite expire stops its old users from getting their grants back through it.
 

@@ -106,12 +106,36 @@ export class BotsRepository {
                                 { $concatArrays: ["$modules", [module]] },
                             ],
                         },
+                        startModule: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $in: [module, "$modules"] },
+                                        { $eq: ["$startModule", module] },
+                                    ],
+                                },
+                                "$$REMOVE",
+                                "$startModule",
+                            ],
+                        },
                         updatedAt: "$$NOW",
                         version: { $add: ["$version", 1] },
                     },
                 },
             ],
             { returnDocument: "after" },
+        );
+    }
+
+    setStartModule(
+        _id: string,
+        startModule: string | undefined,
+    ): Promise<BotEntity | null> {
+        return this.update(
+            _id,
+            startModule === undefined
+                ? { $unset: { startModule: "" } }
+                : { $set: { startModule } },
         );
     }
 
@@ -134,7 +158,9 @@ export class BotsRepository {
 
     private update(
         _id: string,
-        change: { $set: Partial<BotEntity> } | { $unset: { disabledAt: "" } },
+        change:
+            | { $set: Partial<BotEntity> }
+            | { $unset: Partial<Record<"disabledAt" | "startModule", "">> },
     ): Promise<BotEntity | null> {
         return this.collection().findOneAndUpdate(
             { _id },

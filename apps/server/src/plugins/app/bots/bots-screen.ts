@@ -65,6 +65,10 @@ export async function renderBot(
                 t("bots:modulesLabel"),
                 modulesOf(t, botsService, bot),
             ),
+            formatLabeled(
+                t("bots:startLabel"),
+                startModuleOf(t, botsService, bot),
+            ),
             ...(bot.disabledAt
                 ? []
                 : [
@@ -79,6 +83,11 @@ export async function renderBot(
                 scene.screenButton(t("bots:modulesButton"), "modules", {
                     botId: bot._id,
                 }),
+                scene.screenButton(t("bots:startModuleButton"), "startModule", {
+                    botId: bot._id,
+                }),
+            ],
+            [
                 ...(isRoot || !botsService.isServed(bot._id)
                     ? []
                     : [
@@ -88,14 +97,14 @@ export async function renderBot(
                               bot._id,
                           ),
                       ]),
-            ],
-            [
                 scene.button(t("bots:webhookButton"), "webhook", bot._id),
-                ...(isRoot
-                    ? []
-                    : [scene.button(t("bots:tokenButton"), "token", bot._id)]),
             ],
-            ...(isRoot ? [] : [[moveButton(t, scene, bot)]]),
+            isRoot
+                ? []
+                : [
+                      scene.button(t("bots:tokenButton"), "token", bot._id),
+                      moveButton(t, scene, bot),
+                  ],
             [
                 scene.backButton(t("bots:backButton")),
                 ...(isRoot ? [] : [switchButton(t, scene, bot)]),
@@ -131,6 +140,54 @@ export async function renderBotModules(
                         module.name,
                     ),
                 ]),
+            [scene.backButton(t("bots:backButton"))],
+        ],
+    );
+}
+
+export async function renderBotStartModule(
+    { ctx, scene, botsService }: BotsView,
+    botId: string,
+): Promise<TelegramMessageContent> {
+    const { t } = ctx;
+    const bot = await botsService.find(ctx.user, botId);
+
+    if (!bot) {
+        return renderMissing(t, scene);
+    }
+
+    return buildBotsMessage(
+        [
+            formatBold(
+                t("bots:startModuleTitle", {
+                    bot: labelOf(t, botsService, bot),
+                }),
+            ),
+            escapeTelegramHtml(t("bots:startModuleText")),
+        ],
+        [
+            ...botsService
+                .listStartModules(bot)
+                .map((module) => [
+                    scene.button(
+                        formatChoice(
+                            module.title(t),
+                            bot.startModule === module.name,
+                        ),
+                        "pickStart",
+                        module.name,
+                    ),
+                ]),
+            [
+                scene.button(
+                    formatChoice(
+                        t("bots:startWelcomeButton"),
+                        bot.startModule === undefined,
+                    ),
+                    "pickStart",
+                    null,
+                ),
+            ],
             [scene.backButton(t("bots:backButton"))],
         ],
     );
@@ -231,6 +288,22 @@ function modulesOf(
         .map(({ title }) => title(t));
 
     return titles.length ? titles.join(", ") : t("bots:none");
+}
+
+function startModuleOf(
+    t: Translate,
+    botsService: BotsService,
+    bot: BotEntity,
+): string {
+    const module = botsService
+        .listStartModules(bot)
+        .find(({ name }) => name === bot.startModule);
+
+    return module ? module.title(t) : t("bots:startWelcome");
+}
+
+function formatChoice(title: string, isChosen: boolean): string {
+    return `${isChosen ? "🔘" : "⚪"} ${title}`;
 }
 
 function formatLabeled(label: string, value: string): string {

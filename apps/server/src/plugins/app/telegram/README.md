@@ -46,6 +46,7 @@ A domain owns its bot code. Its handlers plugin, such as `invites-handlers.ts`, 
 - `router.command(name, handler, { guard, description })` registers a command. The name is snake case, such as `new_invite`, and `router.command` rejects any other name. A command with a `description` shows in the menu of every chat whose user passes its `guard`.
 - `router.on(filter, handler)` and `router.when(predicate, handler)` match other updates, such as a photo. The router tries a deep link, then a command, then these routes in the order of registration.
 - `router.deepLink(name, handler, { guard, allowBanned })` handles a link into the bot. Build its URL with `telegramBotService.resolveDeepLinkUrl(botId, { name, value })`, never by hand; a scene takes the bot from `ctx.user.botId`. Code that already has the username of the bot calls `buildTelegramDeepLinkUrl(username, { name, value })`. See [Deep links](#deep-links).
+- `telegramStartEntries.register(module, handler, { guard })` declares what `/start` opens in a bot whose start module is that module, usually the handler of the main command of the module. See [The start module](#the-start-module).
 - When a command or a deep link starts a scene or shows it again, the engine deletes the message of the command after the update, so the chat keeps only the scene. A command that starts no scene stays in the chat. See [Scene instances](#scene-instances).
 - Send every user-facing text through `ctx.t`. A domain keeps its texts in `<domain>-locales.ts` for `en`, `uk` and `ru`, declares its namespace in `ResourceNamespaceMap`, and registers it with `I18nService.addLocales`.
 - Log update ids, types and outcomes, never message text, callback data or tokens: `/start <token>` arrives as message text.
@@ -732,7 +733,25 @@ flowchart LR
     route -->|no| welcome["/start command"]
 ```
 
-A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. It reads the username of the bot with `getMe`; `buildTelegramDeepLinkUrl(username, link)` from that file builds the same URL from a known username without a request, as the owner link of the [bots](../bots/README.md) domain does. A payload without a known name falls through to the `/start` command. A banned user gets only the links registered with `allowBanned`.
+A domain registers its link with `router.deepLink(name, handler, options)`; a name is registered once, like a command. `TelegramBotService.resolveDeepLinkUrl(botId, { name, value })` builds the URL into that bot and throws when the payload does not fit Telegram's limits, so the format lives in `telegram-deep-links.ts` and nowhere else. It reads the username of the bot with `getMe`; `buildTelegramDeepLinkUrl(username, link)` from that file builds the same URL from a known username without a request, as the owner link of the [bots](../bots/README.md) domain does. A payload without a known name falls through to the `/start` command, which opens [the start module](#the-start-module) of the bot or replies with the welcome text. A banned user gets only the links registered with `allowBanned`.
+
+## The start module
+
+**Problem.** `/start` is the first message of every user, and Telegram sends it for the button `Start`. In a bot with one feature, such as planning poker, a welcome text makes the user look for the command of that feature.
+
+**Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text.
+
+**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramBot.startModule` carries it from the snapshot of the registry, so `/start` reads no database.
+
+**Walk-through.**
+
+1. `poker-handlers.ts` calls `telegramStartEntries.register("poker", openPoker, { guard })` with the handler and the guard of `/poker`.
+2. The root admin picks `Planning poker` for a bot in `/bots`.
+3. A user sends `/start`. No deep link matches, so the router runs the `/start` command of `telegram-system-handlers.ts`.
+4. The command calls `telegramStartEntries.open(ctx)`. It finds the entry of the start module of the bot, checks the guard and runs the handler, which starts the `poker` scene.
+5. `open` returns `false` for a bot without a start module and for a user whom the guard refuses. The command then replies with `telegram:welcome`.
+
+**Edge cases.** A deep link wins over the start module: `/start invite_…` runs the invite, and the invite opens the entry itself after it gives the grants. The grants of that update are new, so the handler calls `ctx.refreshUser(user)` first: `ctx.user` and `ctx.t` then belong to the newer document, and the guard of the entry sees the new grants. `refreshUser` throws for a document of another user. The other pods take a new start module on their next refresh of the bots, up to 10 seconds.
 
 ## Access and the command menu
 
@@ -797,6 +816,7 @@ A guard is a `(user) => boolean` from `telegram-guard.ts`. The transport knows o
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                     | [Inputs](#inputs)                                           |
 | `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                        |                                                             |
 | `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                 | [Blocking scenes](#blocking-scenes)                         |
+| `telegram-start-entries.ts`                                        | What `/start` opens per module                                         | [The start module](#the-start-module)                       |
 | `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs             | [Bots and webhooks](#bots-and-webhooks)                     |
 | `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                 |                                                             |

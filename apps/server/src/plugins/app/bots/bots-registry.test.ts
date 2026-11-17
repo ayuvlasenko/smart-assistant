@@ -88,6 +88,7 @@ void describe("BotsRegistry", () => {
             telegramId: testTelegramBotId,
             token: process.env.TELEGRAM_BOT_TOKEN,
             modules: ["bots"],
+            startModule: undefined,
         });
         assert.notEqual(child._id, "42");
         assert.deepEqual(botsRegistry.find(child._id), {
@@ -95,6 +96,7 @@ void describe("BotsRegistry", () => {
             telegramId: "42",
             token: "42:child-token",
             modules: [],
+            startModule: undefined,
         });
     });
 

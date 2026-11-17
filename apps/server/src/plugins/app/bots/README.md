@@ -26,12 +26,13 @@ The root bot is the bot of `TELEGRAM_BOT_TOKEN`. Its token lives only in the ser
 
 `/bots` in the root bot starts the `bots` scene with the key `bots`, a TTL of 24 h and the guard `read Bot`. Every change emits `bots.botChanged`, and `bots-handlers.ts` publishes the topic `bots` in the root bot, so the screens of every admin redraw.
 
-| Screen        | Params           | Shows                                                                                                                       | Leads to                                             |
-| ------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `list`        |                  | Every bot with its status and modules; `➕ Add bot`                                                                         | `bot`, the token input                               |
-| `bot`         | `botId`          | `telegramId`, status, modules and the webhook from `getWebhookInfo`; the root bot has no `🔄 Token`, `🔀 Move` and `⏸ Stop` | `modules`, `ownerInvite`, the token inputs, `‹ Back` |
-| `modules`     | `botId`          | A checkbox per module; a press toggles the module                                                                           | `‹ Back`                                             |
-| `ownerInvite` | `botId`, `token` | The owner link of the bot and `📋 Copy link`                                                                                | `‹ Back`                                             |
+| Screen        | Params           | Shows                                                                                                                       | Leads to                                                            |
+| ------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `list`        |                  | Every bot with its status and modules; `➕ Add bot`                                                                         | `bot`, the token input                                              |
+| `bot`         | `botId`          | `telegramId`, status, modules and the webhook from `getWebhookInfo`; the root bot has no `🔄 Token`, `🔀 Move` and `⏸ Stop` | `modules`, `startModule`, `ownerInvite`, the token inputs, `‹ Back` |
+| `modules`     | `botId`          | A checkbox per module; a press toggles the module                                                                           | `‹ Back`                                                            |
+| `startModule` | `botId`          | The modules of the bot that have a start entry, and `Welcome message`; a press picks what `/start` opens                    | `‹ Back`                                                            |
+| `ownerInvite` | `botId`, `token` | The owner link of the bot and `📋 Copy link`                                                                                | `‹ Back`                                                            |
 
 The inputs `token` and `moveToken` ask for a token with `cleanup: true`, so the message with the token is deleted once the step accepts it. `tokenBotId` in the state keeps the bot that the token is for; without it, `token` adds a new bot.
 
@@ -88,6 +89,7 @@ The root bot moves without the scene. When `TELEGRAM_BOT_TOKEN` holds a token of
     "username": "poker_team_bot",
     "token": { "iv": "…", "tag": "…", "data": "…" },
     "modules": ["poker"],
+    "startModule": "poker",
     "createdBy": "66f1c2…",
     "version": 3,
     "createdAt": "2026-11-03T12:00:00Z",
@@ -109,6 +111,10 @@ The root record has `isRoot`, and no `token` and no `username`. `BotTokenCipher`
 ## Modules
 
 A bot runs the core and the modules in its `modules`. A module is a feature domain that registers its access section with the subjects it owns, and access closes those subjects in the bots that do not have the module, see [Modules](../access/README.md#modules). The core is on in every bot: `access`, `users`, `settings` and `invites`.
+
+## What start opens
+
+`🏁 On /start` picks the start module of a bot: `/start` then opens the start entry of that module instead of the welcome text, see [The start module](../telegram/README.md#the-start-module). The screen offers the modules that are on in the bot and have a start entry, and `Welcome message`, which removes the choice. `BotsService.setStartModule` ignores any other module. `toggleModule` removes `startModule` in the same update that turns the module off, so a bot never points to a module it does not have.
 
 ## Files
 

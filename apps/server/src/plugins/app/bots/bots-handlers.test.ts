@@ -14,7 +14,10 @@ import { Env } from "../../../env.js";
 import { BotsBot, buildBotsBot } from "../../../test/bots-bot.js";
 import { createLogCollector } from "../../../test/log-collector.js";
 import { buildTestMongo } from "../../../test/mongo.js";
-import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
+import {
+    buildTelegramApiServiceMock,
+    TelegramApiServiceMock,
+} from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
@@ -25,7 +28,14 @@ import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { AccessService, adminGrant } from "../access/access-service.js";
 import pingHandlersPlugin from "../ping/ping-handlers.js";
 import { pingLocales } from "../ping/ping-locales.js";
+import pokerHandlersPlugin, {
+    pokerJoinGrant,
+} from "../poker/poker-handlers.js";
+import { pokerLocales } from "../poker/poker-locales.js";
+import pokerRoomsRepositoryPlugin from "../poker/poker-rooms-repository.js";
+import pokerRoomsServicePlugin from "../poker/poker-rooms-service.js";
 import { resolveTelegramWebhookUrl } from "../telegram/telegram-bot-service.js";
+import { telegramLocales } from "../telegram/telegram-locales.js";
 import { telegramWebhookSecret } from "../telegram/telegram-webhook-secret.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotsSubjects } from "./bot-entity.js";
@@ -182,6 +192,70 @@ void describe("/bots", () => {
         await bot.pressButton(admin, `✅ ${pingLocales.en.section}`);
 
         assert.deepEqual(bot.botsRegistry.modulesOf(childId), []);
+    });
+
+    void it("picks what /start opens in one bot only, and forgets a module that is turned off", async (t) => {
+        const bot = await buildBot(t, {
+            plugins: [
+                pingHandlersPlugin,
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const admin = buildTelegramPrivateChat({ id: 987657021 });
+        const player = buildTelegramPrivateChat({ id: 987657022 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const pokerTitle = pokerLocales.en.section;
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.startModuleButton);
+
+        assert.deepEqual(await bot.readButtonLabels(admin.id), [
+            `⚪ ${pokerTitle}`,
+            `🔘 ${en.startWelcomeButton}`,
+            en.backButton,
+        ]);
+
+        await bot.pressButton(admin, `⚪ ${pokerTitle}`);
+
+        assert.equal(bot.telegramBots.find(childId)?.startModule, "poker");
+        assert.ok(
+            (await bot.readButtonLabels(admin.id)).includes(`🔘 ${pokerTitle}`),
+        );
+
+        for (const botId of [childId, testBotId]) {
+            await mongo.collection("users").insertOne(
+                buildUserEntity({
+                    botId,
+                    telegramId: String(player.id),
+                    grants: [pokerJoinGrant],
+                }),
+            );
+            nextUpdateId += 1;
+            await sendTo(bot, botId, player, "/start", nextUpdateId);
+        }
+
+        assert.ok(
+            readTextsOf(bot.childApis.get("42"), player)
+                .at(-1)
+                ?.includes(pokerLocales.en.listEmpty),
+        );
+        assert.deepEqual(readTextsOf(bot.telegramApiService, player), [
+            telegramLocales.en.welcome,
+        ]);
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+
+        assert.equal(bot.telegramBots.find(childId)?.startModule, undefined);
+        assert.equal(
+            (await bot.botsService.setStartModule(actor, childId, "poker"))
+                ?.startModule,
+            undefined,
+        );
     });
 
     void it("stops a bot after a second press, removes its webhook and serves it no more", async (t) => {
@@ -482,6 +556,16 @@ async function sendTo(
             },
         }),
     );
+}
+
+function readTextsOf(
+    api: TelegramApiServiceMock | undefined,
+    chat: Chat.PrivateChat,
+): string[] {
+    return (api?.sendMessage.mock.calls ?? [])
+        .map(({ arguments: [args] }) => args)
+        .filter(({ chat_id: chatId }) => chatId === chat.id)
+        .map(({ text }) => text);
 }
 
 function readDeletedIds(bot: BotsBot): number[] {

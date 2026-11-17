@@ -54,6 +54,7 @@ import telegramSceneEnginePlugin, {
 import telegramSessionStorePlugin, {
     TelegramSessionStoreOptions,
 } from "../plugins/app/telegram/telegram-session-store.js";
+import telegramStartEntriesPlugin from "../plugins/app/telegram/telegram-start-entries.js";
 import telegramSystemHandlersPlugin from "../plugins/app/telegram/telegram-system-handlers.js";
 import telegramUpdateHandlerPlugin, {
     TelegramUpdateHandler,
@@ -176,6 +177,7 @@ export async function buildTelegramBotServiceTestApp({
     app.register(telegramSceneEnginePlugin);
     app.register(telegramChatsPlugin);
     app.register(telegramRouterPlugin);
+    app.register(telegramStartEntriesPlugin);
     app.register(telegramSystemHandlersPlugin);
     app.register(telegramCommandMenusPlugin);
     app.register(telegramPlugin);

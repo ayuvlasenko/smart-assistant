@@ -17,6 +17,7 @@ import {
     renderBotModules,
     renderBotOwnerInvite,
     renderBotsList,
+    renderBotStartModule,
 } from "./bots-screen.js";
 import {
     BotAddResult,
@@ -73,6 +74,13 @@ export function createBotsScene(
                     await renderBotModules(viewOf(ctx, scene), botId),
                 ],
             },
+            startModule: {
+                params: botsScreens.startModule,
+                guard: canUpdate,
+                render: async (ctx, scene, { botId }) => [
+                    await renderBotStartModule(viewOf(ctx, scene), botId),
+                ],
+            },
             ownerInvite: {
                 params: botsScreens.ownerInvite,
                 guard: canUpdate,
@@ -100,6 +108,19 @@ export function createBotsScene(
                 handle: async (ctx, scene, module) => {
                     if (scene.screen.name === "modules") {
                         await botsService.toggleModule(
+                            ctx.user,
+                            scene.screen.params.botId,
+                            module,
+                        );
+                    }
+                },
+            },
+            pickStart: {
+                value: botsButtonValues.pickStart,
+                guard: canUpdate,
+                handle: async (ctx, scene, module) => {
+                    if (scene.screen.name === "startModule") {
+                        await botsService.setStartModule(
                             ctx.user,
                             scene.screen.params.botId,
                             module,

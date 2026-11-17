@@ -14,12 +14,14 @@ export const botsScreens = {
     list: Type.Object({}),
     bot: Type.Object({ botId: Type.String() }),
     modules: Type.Object({ botId: Type.String() }),
+    startModule: Type.Object({ botId: Type.String() }),
     ownerInvite: Type.Object({ botId: Type.String(), token: Type.String() }),
 };
 
 export const botsButtonValues = {
     add: Type.Null(),
     toggle: Type.String(),
+    pickStart: Type.Union([Type.String(), Type.Null()]),
     ownerInvite: Type.String(),
     webhook: Type.String(),
     token: Type.String(),

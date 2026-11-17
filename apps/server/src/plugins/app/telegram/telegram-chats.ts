@@ -343,7 +343,8 @@ export class TelegramChats {
                     user,
                     session,
                     log,
-                    t: this.i18nService.getT(user.languageCode),
+                    translatorOf: ({ languageCode }) =>
+                        this.i18nService.getT(languageCode),
                     timeZone: user.timeZone ?? this.config.TIME_ZONE,
                     responder,
                 });

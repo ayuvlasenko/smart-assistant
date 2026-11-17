@@ -10,6 +10,7 @@ import {
 import { AppLogger } from "../app-logger.js";
 import { InviteEntity } from "../invites/invite-entity.js";
 import { InvitesService } from "../invites/invites-service.js";
+import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotEntity, BotsSubjects } from "./bot-entity.js";
 import { BotsConnector } from "./bots-connector.js";
@@ -40,6 +41,7 @@ export class BotsService {
     private readonly botsRepository: BotsRepository;
     private readonly botsRegistry: BotsRegistry;
     private readonly botsConnector: BotsConnector;
+    private readonly startEntries: TelegramStartEntries;
     private readonly invitesService: InvitesService;
     private readonly access: AccessControl<BotsSubjects>;
     private readonly eventEmitter: Emittery<BotsEvents>;
@@ -49,6 +51,7 @@ export class BotsService {
         botsRepository: BotsRepository,
         botsRegistry: BotsRegistry,
         botsConnector: BotsConnector,
+        startEntries: TelegramStartEntries,
         invitesService: InvitesService,
         access: AccessControl<BotsSubjects>,
         eventEmitter: Emittery<BotsEvents>,
@@ -57,6 +60,7 @@ export class BotsService {
         this.botsRepository = botsRepository;
         this.botsRegistry = botsRegistry;
         this.botsConnector = botsConnector;
+        this.startEntries = startEntries;
         this.invitesService = invitesService;
         this.access = access;
         this.eventEmitter = eventEmitter;
@@ -75,6 +79,15 @@ export class BotsService {
         return this.access
             .listModules()
             .filter(({ name }) => name !== botsModule);
+    }
+
+    listStartModules(bot: BotEntity): AccessSection[] {
+        const withStartEntry = this.startEntries.listModules();
+
+        return this.listModules().filter(
+            ({ name }) =>
+                bot.modules.includes(name) && withStartEntry.includes(name),
+        );
     }
 
     list(actor: UserEntity): Promise<BotEntity[]> {
@@ -172,6 +185,42 @@ export class BotsService {
             "Bot modules changed",
         );
         await this.emitChanged(botId);
+
+        return bot;
+    }
+
+    async setStartModule(
+        actor: UserEntity,
+        botId: string,
+        module: string | null,
+    ): Promise<BotEntity | null> {
+        this.access.assert(actor, "update", "Bot");
+
+        const current = await this.botsRepository.findOneById(botId);
+
+        if (
+            !current ||
+            (module !== null &&
+                !this.listStartModules(current).some(
+                    ({ name }) => name === module,
+                ))
+        ) {
+            return current;
+        }
+
+        const bot = await this.botsRepository.setStartModule(
+            botId,
+            module ?? undefined,
+        );
+
+        if (bot) {
+            this.botsRegistry.put(bot);
+            this.log.info(
+                { botId, startModule: bot.startModule, userId: actor._id },
+                "Bot start module changed",
+            );
+            await this.emitChanged(botId);
+        }
 
         return bot;
     }
@@ -344,6 +393,9 @@ export default fp(
                 fastify.getDecorator<BotsRepository>("botsRepository"),
                 fastify.getDecorator<BotsRegistry>("botsRegistry"),
                 fastify.getDecorator<BotsConnector>("botsConnector"),
+                fastify.getDecorator<TelegramStartEntries>(
+                    "telegramStartEntries",
+                ),
                 fastify.getDecorator<InvitesService>("invitesService"),
                 fastify
                     .getDecorator<AccessService>("accessService")
@@ -365,6 +417,7 @@ export default fp(
             "bots-repository",
             "emittery",
             "invites-service",
+            "telegram-start-entries",
         ],
     },
 );

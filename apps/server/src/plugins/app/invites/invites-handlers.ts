@@ -9,6 +9,8 @@ import { TelegramContext } from "../telegram/telegram-context.js";
 import { TelegramCommandMessageUpdate } from "../telegram/telegram-filters.js";
 import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
+import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
+import { UserEntity } from "../users/user-entity.js";
 import { InvitesSubjects } from "./invite-entity.js";
 import { InvitesEvents } from "./invites-events.js";
 import { invitesLocales } from "./invites-locales.js";
@@ -36,6 +38,9 @@ export default fp(
         const router = fastify.getDecorator<TelegramRouter>("telegramRouter");
         const sceneEngine = fastify.getDecorator<TelegramSceneEngine>(
             "telegramSceneEngine",
+        );
+        const startEntries = fastify.getDecorator<TelegramStartEntries>(
+            "telegramStartEntries",
         );
         const events =
             fastify.getDecorator<Emittery<InvitesEvents>>("eventEmitter");
@@ -96,13 +101,7 @@ export default fp(
             switch (result.status) {
                 case "activated":
                 case "alreadyActivated":
-                    await ctx.reply(
-                        ctx.t(
-                            ctx.user.isBanned
-                                ? "telegram:welcome"
-                                : "invites:accessUpdated",
-                        ),
-                    );
+                    await welcome(ctx, result.user);
                     return;
                 case "notFound":
                     if (!ctx.user.isBanned) {
@@ -114,6 +113,19 @@ export default fp(
                 case "full":
                     await ctx.reply(ctx.t("invites:inviteUnavailable"));
             }
+        }
+
+        async function welcome(
+            ctx: TelegramContext<TelegramCommandMessageUpdate>,
+            user: UserEntity,
+        ): Promise<void> {
+            const wasBanned = ctx.user.isBanned;
+
+            ctx.refreshUser(user);
+            await ctx.reply(
+                ctx.t(wasBanned ? "telegram:welcome" : "invites:accessUpdated"),
+            );
+            await startEntries.open(ctx);
         }
     },
     {
@@ -127,6 +139,7 @@ export default fp(
             "telegram-chats",
             "telegram-router",
             "telegram-scene-engine",
+            "telegram-start-entries",
         ],
     },
 );

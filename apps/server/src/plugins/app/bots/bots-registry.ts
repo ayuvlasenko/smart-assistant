@@ -16,6 +16,7 @@ export interface RegisteredBot {
     telegramId: string;
     token: string;
     modules: readonly string[];
+    startModule?: string;
 }
 
 export const botsModule = "bots";
@@ -166,6 +167,7 @@ export class BotsRegistry {
                 telegramId: telegramIdOfToken(this.rootToken),
                 token: this.rootToken,
                 modules: [...bot.modules, botsModule],
+                startModule: bot.startModule,
             };
         }
 
@@ -189,6 +191,7 @@ export class BotsRegistry {
                   telegramId: bot.telegramId,
                   token,
                   modules: bot.modules,
+                  startModule: bot.startModule,
               }
             : undefined;
     }

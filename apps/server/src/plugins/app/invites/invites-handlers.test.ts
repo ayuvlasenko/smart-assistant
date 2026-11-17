@@ -17,8 +17,15 @@ import {
     buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
+import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
+import pokerHandlersPlugin, {
+    pokerJoinGrant,
+} from "../poker/poker-handlers.js";
+import { pokerLocales } from "../poker/poker-locales.js";
+import pokerRoomsRepositoryPlugin from "../poker/poker-rooms-repository.js";
+import pokerRoomsServicePlugin from "../poker/poker-rooms-service.js";
 import { telegramLocales } from "../telegram/telegram-locales.js";
 import { InvitesSubjects } from "./invite-entity.js";
 import { invitesLocales } from "./invites-locales.js";
@@ -84,6 +91,50 @@ void describe("Invites bootstrap", () => {
             "cancel",
             "ping",
             "invites",
+        ]);
+    });
+});
+
+void describe("Invites and the start module", () => {
+    void it("opens the start module of the bot for a user whose invite gives the access to it", async (t) => {
+        const bot = await buildInvitesBot({
+            databaseName,
+            mongoClient,
+            t,
+            plugins: [
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const guest = buildTelegramPrivateChat({ id: 987654841 });
+        const pinger = buildTelegramPrivateChat({ id: 987654842 });
+        const admin = buildUserEntity({ grants: [adminGrant] });
+        const testBot = await bot.botsRepository.setStartModule(
+            bot.botsRegistry.rootId,
+            "poker",
+        );
+
+        assert.ok(testBot);
+        bot.botsRegistry.put(testBot);
+
+        const pokerInvite = await bot.invitesService.create(admin, {
+            grants: [pokerJoinGrant],
+        });
+        const pingInvite = await bot.invitesService.create(admin, {
+            grants: [pingGrant],
+        });
+
+        await sendAsStranger(bot, guest, `/start invite_${pokerInvite.token}`);
+        await sendAsStranger(bot, pinger, `/start invite_${pingInvite.token}`);
+
+        const guestTexts = readSentTextsTo(bot, guest);
+
+        assert.equal(guestTexts.length, 2);
+        assert.equal(guestTexts[0], telegramLocales.en.welcome);
+        assert.ok(guestTexts[1]?.includes(pokerLocales.en.listEmpty));
+        assert.deepEqual(readSentTextsTo(bot, pinger), [
+            telegramLocales.en.welcome,
         ]);
     });
 });
