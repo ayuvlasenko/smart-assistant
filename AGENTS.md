@@ -99,6 +99,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep test setup direct. When a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, look for a simpler behavior boundary or a small explicit test helper.
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
+- A test never writes to the database that `DATABASE_URL` names: in CI it is the shared dev database of the previews. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
 - When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
 ## Infrastructure

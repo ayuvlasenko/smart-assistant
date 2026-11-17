@@ -6,6 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
 import { Env } from "../env.js";
 import { requestIdOptions } from "../request-logging.js";
+import { createTestDatabaseName } from "./mongo.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
@@ -31,7 +32,10 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
     const telegramApiService =
         opts.telegramApiService ?? buildTelegramApiServiceMock({ t });
 
-    app.register(fp(serviceApp), { telegramApiService });
+    app.register(fp(serviceApp), {
+        telegramApiService,
+        database: createTestDatabaseName(),
+    });
 
     await withEnv(
         {
@@ -51,6 +55,7 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
                 keyPrefix,
             );
         } finally {
+            await app.mongo.db?.dropDatabase();
             await app.close();
         }
     });
