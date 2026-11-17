@@ -30,6 +30,12 @@ void describe("LogNormalizer", () => {
         });
     });
 
+    void it("keeps a value under a key in which the secret word is only a part", () => {
+        const record = { tokens: 3, tokenCount: 2, routingKey: "poker" };
+
+        assert.deepEqual(new LogNormalizer().normalize(record), record);
+    });
+
     void it("masks a bot token inside a string", () => {
         const record = new LogNormalizer().normalize({
             url: `https://api.telegram.org/bot${botToken}/getMe`,
@@ -93,15 +99,15 @@ void describe("LogNormalizer", () => {
 
     void it("cuts a long string and a long list and says how much it cut", () => {
         const record = new LogNormalizer().normalize({
-            text: "a".repeat(4_010),
-            items: Array.from({ length: 53 }, (_, index) => index),
+            text: "a".repeat(10_010),
+            items: Array.from({ length: 103 }, (_, index) => index),
         });
 
         assert.equal(
             record.text,
-            `${"a".repeat(4_000)}…[truncated 10 characters]`,
+            `${"a".repeat(10_000)}…[truncated 10 characters]`,
         );
-        assert.equal((record.items as unknown[]).length, 51);
+        assert.equal((record.items as unknown[]).length, 101);
         assert.equal(
             (record.items as unknown[]).at(-1),
             "[truncated 3 more items]",
@@ -121,7 +127,7 @@ void describe("LogNormalizer", () => {
         assert.deepEqual(Object.keys(record), ["botId", "response", "note"]);
         assert.equal(record.botId, "42");
         assert.equal(record.note, "kept");
-        assert.ok(size < 16_384, `the record takes ${size} characters`);
+        assert.ok(size < 65_536, `the record takes ${size} characters`);
     });
 
     void it("leaves the keys of a serializer as they are", () => {

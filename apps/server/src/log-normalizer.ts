@@ -15,9 +15,9 @@ const circularValue = "[Circular]";
 const truncatedValue = "[Truncated]";
 const truncatedKey = "[truncated]";
 const failedValue = "[log record could not be normalized]";
-const maxRecordSize = 16_384;
+const maxRecordSize = 65_536;
 
-const secretKeyParts = [
+const secretKeyEndings = [
     "token",
     "secret",
     "password",
@@ -28,15 +28,21 @@ const secretKeyParts = [
     "privatekey",
     "encryptionkey",
     "accesskey",
-    "credential",
+    "credentials",
+    "jwt",
 ];
 
 const botTokenPattern = /\d{6,12}:[\w-]{30,128}/g;
 
 const limitTiers: LogValueLimits[] = [
-    { maxDepth: 8, maxEntries: 50, maxNodes: 2_000, maxStringLength: 4_000 },
-    { maxDepth: 5, maxEntries: 20, maxNodes: 500, maxStringLength: 1_000 },
-    { maxDepth: 3, maxEntries: 5, maxNodes: 100, maxStringLength: 200 },
+    {
+        maxDepth: 10,
+        maxEntries: 100,
+        maxNodes: 20_000,
+        maxStringLength: 10_000,
+    },
+    { maxDepth: 5, maxEntries: 20, maxNodes: 2_000, maxStringLength: 1_000 },
+    { maxDepth: 3, maxEntries: 5, maxNodes: 200, maxStringLength: 200 },
 ];
 
 export class LogNormalizer {
@@ -235,7 +241,7 @@ class LogValueWalk {
 function isSecretKey(key: string): boolean {
     const name = key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-    return secretKeyParts.some((part) => name.includes(part));
+    return secretKeyEndings.some((ending) => name.endsWith(ending));
 }
 
 function describeOpaqueValue(value: object): string | undefined {
