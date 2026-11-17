@@ -162,4 +162,54 @@ void describe("LoggerNormalizer", () => {
         assert.match(output, /"msg":"Request failed"/);
         assert.match(output, /"type":"Error"/);
     });
+
+    void it("keeps a bot token out of the message of a log line", async () => {
+        const logs = createLoggerCollector();
+        const app = Fastify({
+            logger: {
+                ...buildLoggerOptions("info"),
+                stream: logs.logger.stream,
+            },
+        });
+        const url = `https://api.telegram.org/bot${botToken}/getMe`;
+
+        app.log.error(new Error(`bare ${url}`));
+        app.log.error({ err: new Error(`nested ${url}`) });
+        app.log.info(`text ${url}`);
+        app.log.info({ botId: "42" }, `text with fields ${url}`);
+        await app.close();
+
+        const entries = logs.readEntries();
+
+        assert.ok(!JSON.stringify(entries).includes(botToken));
+        assert.deepEqual(
+            entries.map(({ msg }) => msg),
+            [
+                "bare https://api.telegram.org/bot[REDACTED]/getMe",
+                "nested https://api.telegram.org/bot[REDACTED]/getMe",
+                "text https://api.telegram.org/bot[REDACTED]/getMe",
+                "text with fields https://api.telegram.org/bot[REDACTED]/getMe",
+            ],
+        );
+    });
+
+    void it("cuts a long message of a log line", async () => {
+        const logs = createLoggerCollector();
+        const app = Fastify({
+            logger: {
+                ...buildLoggerOptions("info"),
+                stream: logs.logger.stream,
+            },
+        });
+
+        app.log.error(new Error("x".repeat(50_000)));
+        await app.close();
+
+        const [entry] = logs.readEntries();
+
+        assert.equal(
+            entry?.msg,
+            `${"x".repeat(10_000)}…[truncated 40000 characters]`,
+        );
+    });
 });

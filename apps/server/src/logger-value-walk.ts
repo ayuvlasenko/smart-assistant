@@ -52,6 +52,18 @@ export class LoggerValueWalk {
         return this.visit(value, depth);
     }
 
+    visitString(value: string): string {
+        const masked = value.replace(botTokenPattern, redactedValue);
+        const cut =
+            masked.length > this.limits.maxStringLength
+                ? `${masked.slice(0, this.limits.maxStringLength)}…[truncated ${masked.length - this.limits.maxStringLength} characters]`
+                : masked;
+
+        this.size += cut.length;
+
+        return cut;
+    }
+
     private visit(value: unknown, depth: number): unknown {
         if (typeof value === "string") {
             return this.visitString(value);
@@ -163,18 +175,6 @@ export class LoggerValueWalk {
         }
 
         return visited;
-    }
-
-    private visitString(value: string): string {
-        const masked = value.replace(botTokenPattern, redactedValue);
-        const cut =
-            masked.length > this.limits.maxStringLength
-                ? `${masked.slice(0, this.limits.maxStringLength)}…[truncated ${masked.length - this.limits.maxStringLength} characters]`
-                : masked;
-
-        this.size += cut.length;
-
-        return cut;
     }
 }
 
