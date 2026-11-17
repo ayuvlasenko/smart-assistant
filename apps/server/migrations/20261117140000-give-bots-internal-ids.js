@@ -45,6 +45,7 @@ async function startMove(bots, { _id, telegramId, ...fields }, newId) {
 
     await bots.insertOne({
         ...fields,
+        ...(newId === rootBotId ? { isRoot: true } : {}),
         _id: newId,
         movedFrom: _id,
         movedTelegramId: telegramId,
