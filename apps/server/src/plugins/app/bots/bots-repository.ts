@@ -1,7 +1,7 @@
 import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { MongoServerError, ObjectId } from "mongodb";
+import { Filter, MongoServerError, ObjectId } from "mongodb";
 import { BotEntity, EncryptedBotToken, newRootBotId } from "./bot-entity.js";
 import { BotTelegramIdTakenError } from "./bots-errors.js";
 
@@ -91,7 +91,7 @@ export class BotsRepository {
     }
 
     updateModules(_id: string, modules: string[]): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { modules } });
+        return this.update({ _id }, { $set: { modules } });
     }
 
     toggleModule(_id: string, module: string): Promise<BotEntity | null> {
@@ -133,23 +133,33 @@ export class BotsRepository {
         startModule: string | undefined,
     ): Promise<BotEntity | null> {
         return this.update(
-            _id,
+            { _id },
             startModule === undefined
                 ? { $unset: { startModule: "" } }
                 : { $set: { startModule } },
         );
     }
 
-    async updateToken(
+    replaceToken(
+        _id: string,
+        telegramId: string,
+        token: EncryptedBotToken,
+        username: string,
+    ): Promise<BotEntity | null> {
+        return this.update({ _id, telegramId }, { $set: { token, username } });
+    }
+
+    async moveToTelegramBot(
         _id: string,
         telegramId: string,
         token: EncryptedBotToken,
         username: string,
     ): Promise<BotEntity | null> {
         try {
-            return await this.update(_id, {
-                $set: { telegramId, token, username },
-            });
+            return await this.update(
+                { _id },
+                { $set: { telegramId, token, username } },
+            );
         } catch (err) {
             if (isDuplicateKeyError(err)) {
                 throw new BotTelegramIdTakenError(telegramId);
@@ -160,21 +170,21 @@ export class BotsRepository {
     }
 
     disable(_id: string, now: Date): Promise<BotEntity | null> {
-        return this.update(_id, { $set: { disabledAt: now } });
+        return this.update({ _id }, { $set: { disabledAt: now } });
     }
 
     enable(_id: string): Promise<BotEntity | null> {
-        return this.update(_id, { $unset: { disabledAt: "" } });
+        return this.update({ _id }, { $unset: { disabledAt: "" } });
     }
 
     private update(
-        _id: string,
+        filter: Filter<BotEntity>,
         change:
             | { $set: Partial<BotEntity> }
             | { $unset: Partial<Record<"disabledAt" | "startModule", "">> },
     ): Promise<BotEntity | null> {
         return this.collection().findOneAndUpdate(
-            { _id },
+            filter,
             {
                 ...change,
                 $currentDate: { updatedAt: true },

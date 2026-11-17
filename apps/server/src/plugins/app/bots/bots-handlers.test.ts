@@ -39,6 +39,7 @@ import { telegramLocales } from "../telegram/telegram-locales.js";
 import { telegramWebhookSecret } from "../telegram/telegram-webhook-secret.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotsSubjects } from "./bot-entity.js";
+import { BotsConnector } from "./bots-connector.js";
 import { botsLocales } from "./bots-locales.js";
 
 let databaseName!: string;
@@ -525,6 +526,44 @@ void describe("/bots", () => {
             bot.childApis.get("42")?.deleteWebhook.mock.callCount(),
             0,
         );
+    });
+
+    void it("refuses a new token when the bot moves to another Telegram bot after the token is checked", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657020 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const botsConnector =
+            bot.app.getDecorator<BotsConnector>("botsConnector");
+        const readProfile = botsConnector.readProfile.bind(botsConnector);
+
+        t.mock.method(
+            botsConnector,
+            "readProfile",
+            async (token: string) => {
+                const profile = await readProfile(token);
+
+                await bot.botsRepository.moveToTelegramBot(
+                    childId,
+                    "44",
+                    bot.botsRegistry.encrypt(otherToken),
+                    "child_44_bot",
+                );
+
+                return profile;
+            },
+            { times: 1 },
+        );
+
+        assert.deepEqual(
+            await bot.botsService.replaceToken(actor, childId, childToken),
+            { status: "otherBot" },
+        );
+
+        const moved = await bot.botsRegistry.find(childId);
+
+        assert.equal(moved?.telegramId, "44");
+        assert.equal(moved.token, otherToken);
     });
 
     void it("keeps the bots away from the admin of any other bot", async (t) => {

@@ -239,13 +239,7 @@ export class BotsService {
             return { status: "invalidToken" };
         }
 
-        const current = await this.botsRepository.findOneById(botId);
-
-        if (profile.telegramId !== current?.telegramId) {
-            return { status: "otherBot" };
-        }
-
-        const bot = await this.botsRepository.updateToken(
+        const bot = await this.botsRepository.replaceToken(
             botId,
             profile.telegramId,
             this.botsRegistry.encrypt(token),
@@ -367,7 +361,7 @@ export class BotsService {
         token: string,
     ): Promise<BotEntity | null | "taken"> {
         try {
-            return await this.botsRepository.updateToken(
+            return await this.botsRepository.moveToTelegramBot(
                 botId,
                 profile.telegramId,
                 this.botsRegistry.encrypt(token),
