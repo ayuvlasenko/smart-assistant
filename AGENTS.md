@@ -102,7 +102,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
 - A test never writes to the database that `DATABASE_URL` names: in CI it is the shared dev database of the previews. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
-- Create a test database through `buildTestMongo`, directly or through `buildTestApp`: it runs every migration, so the database has the indexes of production. A database made any other way has no index, and a test of a unique constraint passes there without the constraint.
+- Create a test database through `useTestMongo` in a test file, or through `buildTestApp`: both use `buildTestMongo`, which runs every migration, so the database has the indexes of production. A database made any other way has no index, and a test of a unique constraint passes there without the constraint. `useTestMongo` empties every collection before each test; do not add a `beforeEach` that empties a hand-picked list.
 - When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
 ## Infrastructure

@@ -1,19 +1,11 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { Env } from "../../../env.js";
 import { BotsBot, buildBotsBot } from "../../../test/bots-bot.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
@@ -42,34 +34,13 @@ import { BotsSubjects } from "./bot-entity.js";
 import { BotsConnector } from "./bots-connector.js";
 import { botsLocales } from "./bots-locales.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
+const testMongo = useTestMongo();
 
 const en = botsLocales.en;
 const childToken = "42:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const childLabel = "@child_42_bot";
 const otherToken = "44:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
 let nextUpdateId = 5_000_000;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("bots").deleteMany({});
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("invites").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
 
 void describe("/bots", () => {
     void it("adds a bot from its token, deletes the token message and shows a link for its owner", async (t) => {
@@ -88,7 +59,7 @@ void describe("/bots", () => {
         assert.ok(stored);
         assert.notEqual(stored._id, "42");
 
-        const invite = await mongo
+        const invite = await testMongo.mongo
             .collection("invites")
             .findOne({ botId: stored._id });
 
@@ -232,7 +203,7 @@ void describe("/bots", () => {
         );
 
         for (const botId of [childId, testBotId]) {
-            await mongo.collection("users").insertOne(
+            await testMongo.mongo.collection("users").insertOne(
                 buildUserEntity({
                     botId,
                     telegramId: String(player.id),
@@ -350,7 +321,7 @@ void describe("/bots", () => {
             null,
         );
         assert.equal(
-            await mongo
+            await testMongo.mongo
                 .collection("invites")
                 .countDocuments({ botId: childId }),
             1,
@@ -381,7 +352,7 @@ void describe("/bots", () => {
         await bot.pressButton(admin, childLabel);
         await bot.pressButton(admin, en.ownerInviteButton);
 
-        const invite = await mongo
+        const invite = await testMongo.mongo
             .collection("invites")
             .findOne({ botId: childId }, { sort: { createdAt: -1 } });
 
@@ -397,7 +368,7 @@ void describe("/bots", () => {
 
     void it("refuses a token that it can't store, one that Telegram rejects and one of another bot", async (t) => {
         const bot = await buildBot(t);
-        const keyless = await buildBotsBot({ databaseName, mongoClient, t });
+        const keyless = await buildBotsBot({ testMongo, t });
         const admin = buildTelegramPrivateChat({ id: 987657006 });
         const actor = await allowAdmin(bot, admin);
         const rejectedToken = "43:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -618,8 +589,7 @@ function buildBot(
     options: Partial<Parameters<typeof buildBotsBot>[0]> = {},
 ): Promise<BotsBot> {
     return buildBotsBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         env: { BOTS_ENCRYPTION_KEY: randomBytes(32).toString("base64") },
         ...options,
@@ -647,7 +617,7 @@ async function allowAdmin(
     chat: Chat.PrivateChat,
 ): Promise<UserEntity> {
     await bot.allowUser(chat.id);
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne(
             { botId: testBotId, telegramId: String(chat.id) },

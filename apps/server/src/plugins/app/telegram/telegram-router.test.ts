@@ -1,9 +1,8 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { TelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
@@ -19,34 +18,14 @@ import { telegramLocales } from "./telegram-locales.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { defineScene, next as nextStep } from "./telegram-scene.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramRouter", () => {
     void it("runs global middlewares in registration order around the route", async (t) => {
         const calls: string[] = [];
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.use(async (_ctx, next) => {
@@ -86,8 +65,7 @@ void describe("TelegramRouter", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.use(async () => {
@@ -113,8 +91,7 @@ void describe("TelegramRouter", () => {
         const calls: string[] = [];
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.on(
@@ -157,8 +134,7 @@ void describe("TelegramRouter", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.use(async (_ctx, next) => {
@@ -184,8 +160,7 @@ void describe("TelegramRouter", () => {
         const calls: string[] = [];
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.command("test", async () => {
@@ -207,8 +182,7 @@ void describe("TelegramRouter", () => {
         await assert.rejects(
             () =>
                 buildTelegramBotServiceTestApp({
-                    databaseName,
-                    mongoClient,
+                    testMongo,
                     t,
                     registerRoutes: (router) => {
                         router.command("start", async () => undefined);
@@ -224,8 +198,7 @@ void describe("TelegramRouter", () => {
                 assert.rejects(
                     () =>
                         buildTelegramBotServiceTestApp({
-                            databaseName,
-                            mongoClient,
+                            testMongo,
                             t,
                             registerRoutes: (router) => {
                                 router.command(name, async () => undefined);
@@ -241,8 +214,7 @@ void describe("TelegramRouter", () => {
 
     void it("accepts a command name in snake case", async (t) => {
         const bot = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.command("new_invite_2", async () => undefined);
@@ -255,8 +227,7 @@ void describe("TelegramRouter", () => {
     void it("routes by an async predicate that reads the context", async (t) => {
         const calls: string[] = [];
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.when(
@@ -303,8 +274,7 @@ void describe("TelegramRouter", () => {
             },
         });
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 router.scene(echoScene);
@@ -331,8 +301,7 @@ void describe("TelegramRouter", () => {
 
     void it("rejects routes registered after the app is ready", async (t) => {
         const { app } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
         const router = app.getDecorator<TelegramRouter>("telegramRouter");

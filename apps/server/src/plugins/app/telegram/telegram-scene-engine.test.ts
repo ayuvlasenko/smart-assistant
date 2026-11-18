@@ -5,20 +5,12 @@ import {
     Type,
 } from "@sinclair/typebox";
 import { Redis } from "ioredis";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { loggerRequestSerializers } from "../../../logger-request.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramPrivateChat,
     testTelegramBotId,
@@ -70,26 +62,7 @@ const sceneRecordSchema = Type.Object({
     state: Type.Record(Type.String(), Type.Unknown()),
 });
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramSceneEngine inputs", () => {
     void it("walks through the steps and completes with the validated payload", async (t) => {
@@ -255,8 +228,7 @@ void describe("TelegramSceneEngine inputs", () => {
     void it("logs and skips an invalid stored scene", async (t) => {
         const logs = createLoggerCollector();
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             logger: { ...logs.logger, serializers: loggerRequestSerializers },
             registerRoutes: (router, sceneEngine) => {
@@ -1257,8 +1229,7 @@ void describe("TelegramSceneEngine storage", () => {
     void it("keeps the session lock while a slow update runs", async (t) => {
         const calls: string[] = [];
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             sessionStoreOptions: { lockTtlMilliseconds: 150 },
             registerRoutes: (router) => {
@@ -1286,8 +1257,7 @@ void describe("TelegramSceneEngine storage", () => {
     void it("doesn't save the session after the lock is lost", async (t) => {
         const chat = buildTelegramPrivateChat({ id: 987654391 });
         const bot: TelegramSceneBot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 const profileScene = defineProfileScene([]);
@@ -1339,8 +1309,7 @@ void describe("TelegramSceneEngine storage", () => {
     void it("clears a stored scene that is no longer registered", async (t) => {
         const logs = createLoggerCollector();
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             logger: logs.logger,
             registerRoutes: (router, sceneEngine) => {
@@ -1413,8 +1382,7 @@ async function buildProfileBot(
     sessionStoreOptions?: TelegramSessionStoreOptions,
 ): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         sessionStoreOptions,
         registerRoutes: (router, sceneEngine) => {
@@ -1541,8 +1509,7 @@ async function buildCounterBot(
     lifetime: SceneLifetime = { ttl: 60_000 },
 ): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             const profileScene = defineProfileScene([]);
@@ -1693,8 +1660,7 @@ async function buildWizardBot(
     lifetime: SceneLifetime = { ttl: 60_000 },
 ): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             const profileScene = defineProfileScene([]);
@@ -1739,8 +1705,7 @@ async function buildWizardBot(
 
 async function buildNotesBot(t: TestContext): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             const notesScene = defineScene({
@@ -1949,8 +1914,7 @@ async function buildHandOverBot(
     });
 
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             router.scene(itemScene);

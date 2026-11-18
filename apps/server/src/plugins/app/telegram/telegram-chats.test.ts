@@ -1,22 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import Emittery from "emittery";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { loggerRequestSerializers } from "../../../logger-request.js";
 import {
     createLoggerCollector,
     LoggerEntry,
 } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramPrivateChat,
@@ -36,34 +28,14 @@ interface RoomEvents {
     "test.roomRevealed": TestRoom;
 }
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramChats", () => {
     void it("refuses to start with an invalid time zone", async (t) => {
         await assert.rejects(
             () =>
                 buildTelegramBotServiceTestApp({
-                    databaseName,
-                    mongoClient,
+                    testMongo,
                     t,
                     env: { TIME_ZONE: "Mars/Base" },
                 }),
@@ -324,7 +296,7 @@ void describe("TelegramChats", () => {
         await bot.sendText(bob, "/board");
         await bot.sendText(carl, "/board");
         boards.blockedUserId = bob.id;
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne(
                 { telegramId: String(carl.id) },
@@ -465,8 +437,7 @@ async function buildBoardBot(
     });
 
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         logger: logger
             ? { ...logger, serializers: loggerRequestSerializers }
@@ -543,8 +514,7 @@ async function buildRoomBot(
         },
     });
     const bot = await buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         logger: logger
             ? { ...logger, serializers: loggerRequestSerializers }

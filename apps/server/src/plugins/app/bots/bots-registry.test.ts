@@ -1,10 +1,9 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
@@ -28,27 +27,7 @@ import { BotEntity } from "./bot-entity.js";
 import { BotTokenCipher } from "./bot-token-cipher.js";
 import { BotData, BotsRepository } from "./bots-repository.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("bots").deleteMany({});
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("BotsRegistry", () => {
     void it("serves the root bot from the env and the active bots from the database", async (t) => {
@@ -56,8 +35,7 @@ void describe("BotsRegistry", () => {
         const cipher = new BotTokenCipher(key);
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 modules: [],
                 env: { BOTS_ENCRYPTION_KEY: key },
@@ -102,8 +80,7 @@ void describe("BotsRegistry", () => {
         const logs = createLoggerCollector();
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 logger: logs.logger,
                 env: {
@@ -138,8 +115,7 @@ void describe("BotsRegistry", () => {
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 logger: logs.logger,
                 env: { BOTS_ENCRYPTION_KEY: key },
@@ -168,8 +144,7 @@ void describe("BotsRegistry", () => {
         const key = randomBytes(32).toString("base64");
         const { botsRegistry, botsRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 env: { BOTS_ENCRYPTION_KEY: key },
             });
@@ -193,14 +168,12 @@ void describe("BotsRegistry", () => {
     void it("keeps the root bot and its data when the root token becomes a token of another bot", async (t) => {
         const logs = createLoggerCollector();
         const first = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
         const rootId = first.botsRegistry.rootId;
         const second = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             logger: logs.logger,
             env: { TELEGRAM_BOT_TOKEN: "777000111:other-root-token" },
@@ -211,7 +184,10 @@ void describe("BotsRegistry", () => {
             (await second.botsRegistry.find(rootId))?.telegramId,
             "777000111",
         );
-        assert.equal(await mongo.collection("bots").countDocuments({}), 1);
+        assert.equal(
+            await testMongo.mongo.collection("bots").countDocuments({}),
+            1,
+        );
         assert.ok(
             logs
                 .readEntries()
@@ -225,7 +201,7 @@ void describe("BotsRegistry", () => {
 
 void describe("Bot modules", () => {
     void it("closes the commands and the old buttons of a module that is off, also for an admin", async (t) => {
-        const bot = await buildPokerBot({ databaseName, mongoClient, t });
+        const bot = await buildPokerBot({ testMongo, t });
         const admin = buildTelegramPrivateChat({ id: 987656001 });
 
         await allowAdmin(bot, admin);
@@ -249,8 +225,7 @@ void describe("Bot modules", () => {
 
     void it("leaves only the commands of the core to an admin of a bot without modules", async (t) => {
         const { app, botsRegistry } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             modules: [],
             plugins: [
@@ -302,7 +277,7 @@ async function allowAdmin(
     chat: Chat.PrivateChat,
 ): Promise<void> {
     await bot.allowUser(chat.id);
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne(
             { telegramId: String(chat.id) },

@@ -1,15 +1,7 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
@@ -20,27 +12,7 @@ import { usersLocales } from "../users/users-locales.js";
 import settingsHandlersPlugin from "./settings-handlers.js";
 import { settingsLocales } from "./settings-locales.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("settings").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 const en = settingsLocales.en;
 
@@ -223,8 +195,7 @@ void describe("Settings menu", () => {
 
 function buildBot(t: TestContext): Promise<PokerBot> {
     return buildPokerBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         plugins: [settingsHandlersPlugin],
     });
@@ -237,7 +208,7 @@ async function allowAdmin(
     const chat = buildTelegramPrivateChat({ id });
 
     await bot.allowUser(id);
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne(
             { telegramId: String(id) },
@@ -256,7 +227,7 @@ async function openBotSettings(
 }
 
 async function readUser(chat: Chat.PrivateChat): Promise<UserEntity> {
-    const user = await mongo
+    const user = await testMongo.mongo
         .collection<UserEntity>("users")
         .findOne({ telegramId: String(chat.id) });
 

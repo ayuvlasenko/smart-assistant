@@ -1,15 +1,7 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
@@ -32,26 +24,7 @@ const cardStateSchema = Type.Object({
     view: viewSchema,
 });
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("Telegram scene messages", () => {
     void it("sends the message when the scene starts and edits it when the state changes", async (t) => {
@@ -435,8 +408,7 @@ async function buildPanelBot(
     });
 
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             router.scene(panelScene);
@@ -450,8 +422,7 @@ async function buildPanelBot(
 
 async function buildCardBot(t: TestContext): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             const cardScene = defineCardScene(sceneEngine);

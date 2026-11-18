@@ -1,14 +1,6 @@
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { UserEntity } from "../users/user-entity.js";
@@ -19,26 +11,7 @@ import {
     UserSettingsService,
 } from "./user-settings-service.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 const theme: UserChoiceSetting = {
     kind: "choice",
@@ -140,8 +113,7 @@ void describe("UserSettingsService", () => {
 
 async function buildUserSettings(t: TestContext): Promise<UserSettingsService> {
     const { app } = await buildTelegramBotServiceTestApp({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
     });
 
@@ -153,13 +125,13 @@ async function insertUser(
 ): Promise<UserEntity> {
     const user = buildUserEntity({ telegramId: "987655401", ...overrides });
 
-    await mongo.collection<UserEntity>("users").insertOne(user);
+    await testMongo.mongo.collection<UserEntity>("users").insertOne(user);
 
     return user;
 }
 
 async function readUser(user: UserEntity): Promise<UserEntity> {
-    const stored = await mongo
+    const stored = await testMongo.mongo
         .collection<UserEntity>("users")
         .findOne({ _id: user._id });
 

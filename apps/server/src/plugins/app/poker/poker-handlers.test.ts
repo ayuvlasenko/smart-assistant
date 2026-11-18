@@ -1,16 +1,9 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { Env } from "../../../env.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -26,28 +19,7 @@ import { pokerLocales } from "./poker-locales.js";
 import { PokerRoomEntity, PokerRound } from "./poker-room-entity.js";
 import { pokerMaxParticipantsSetting } from "./poker-rooms-service.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("pokerRooms").deleteMany({});
-    await mongo.collection("settings").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 const en = pokerLocales.en;
 
@@ -179,13 +151,15 @@ void describe("Poker rooms", () => {
 
         const room = await readRoom();
 
-        await mongo.collection<PokerRoomEntity>("pokerRooms").insertMany(
-            Array.from({ length: 5 }, (_, index) => ({
-                ...room,
-                _id: new ObjectId(),
-                token: `${room.token}${index}`,
-            })),
-        );
+        await testMongo.mongo
+            .collection<PokerRoomEntity>("pokerRooms")
+            .insertMany(
+                Array.from({ length: 5 }, (_, index) => ({
+                    ...room,
+                    _id: new ObjectId(),
+                    token: `${room.token}${index}`,
+                })),
+            );
         await bot.sendText(creator, "/poker");
         await bot.pressButton(creator, "›");
         await bot.pressButton(creator, en.newRoomButton);
@@ -798,7 +772,7 @@ void describe("Poker rooms", () => {
         const creator = buildTelegramPrivateChat({ id: 987655161 });
 
         await createRoomThroughForm(bot, creator);
-        await mongo
+        await testMongo.mongo
             .collection("pokerRooms")
             .updateMany({}, { $set: { lastActivityAt: new Date(0) } });
         await bot.sendText(creator, "/poker");
@@ -816,7 +790,7 @@ void describe("Poker rooms", () => {
 });
 
 function buildBot(t: TestContext): Promise<PokerBot> {
-    return buildPokerBot({ databaseName, mongoClient, t });
+    return buildPokerBot({ testMongo, t });
 }
 
 async function allowWith(
@@ -825,7 +799,7 @@ async function allowWith(
     grants: string[],
 ): Promise<void> {
     await bot.allowUser(chat.id);
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne({ telegramId: String(chat.id) }, { $set: { grants } });
 }
@@ -873,7 +847,7 @@ async function joinRoom(
 }
 
 async function readRoom(): Promise<PokerRoomEntity> {
-    const room = await mongo
+    const room = await testMongo.mongo
         .collection<PokerRoomEntity>("pokerRooms")
         .findOne();
 
@@ -914,8 +888,8 @@ async function seedHistory(voters: number, rounds: number): Promise<void> {
         }),
     );
 
-    await mongo.collection("users").insertMany(users);
-    await mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
+    await testMongo.mongo.collection("users").insertMany(users);
+    await testMongo.mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
         { _id: room._id },
         {
             $push: {

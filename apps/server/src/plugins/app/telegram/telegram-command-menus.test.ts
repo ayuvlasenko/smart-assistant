@@ -1,10 +1,9 @@
 import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramBotServiceTestApp,
@@ -18,34 +17,13 @@ import { TelegramGuard } from "./telegram-guard.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramStartEntries } from "./telegram-start-entries.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("bots").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramCommandMenus on start", () => {
     void it("sets localized commands for every language on production", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.command("help", async () => undefined, {
@@ -85,8 +63,7 @@ void describe("TelegramCommandMenus on start", () => {
 
         const { botsRegistry, child, telegramCommandMenus } =
             await buildTwoBotsTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 telegramApiService: failing,
                 logger: logs.logger,
@@ -111,8 +88,7 @@ void describe("TelegramCommandMenus on start", () => {
     void it("doesn't touch commands on preview", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 environment: "preview",
             });
@@ -445,13 +421,15 @@ void describe("TelegramCommandMenus chat menus", () => {
 async function insertUser(overrides: Partial<UserEntity>): Promise<UserEntity> {
     const user = buildUserEntity(overrides);
 
-    await mongo.collection<UserEntity>("users").insertOne(user);
+    await testMongo.mongo.collection<UserEntity>("users").insertOne(user);
 
     return user;
 }
 
 async function readUser({ _id }: UserEntity): Promise<UserEntity> {
-    const user = await mongo.collection<UserEntity>("users").findOne({ _id });
+    const user = await testMongo.mongo
+        .collection<UserEntity>("users")
+        .findOne({ _id });
 
     assert.ok(user);
 
@@ -462,8 +440,7 @@ function buildMenuAppOptions(
     t: BuildTelegramBotServiceTestAppOptions["t"],
 ): BuildTelegramBotServiceTestAppOptions {
     return {
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router) => {
             router.command("help", async () => undefined, {

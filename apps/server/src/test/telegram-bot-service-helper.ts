@@ -5,7 +5,6 @@ import Fastify, {
 } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
-import { MongoClient } from "mongodb";
 import { randomBytes } from "node:crypto";
 import { TestContext } from "node:test";
 import { options as appOptions } from "../app.js";
@@ -73,6 +72,7 @@ import mongoPlugin from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
+import { TestMongo } from "./mongo.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
@@ -80,8 +80,7 @@ import {
 import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
 
 export interface BuildTelegramBotServiceTestAppOptions {
-    databaseName: string;
-    mongoClient: MongoClient;
+    testMongo: TestMongo;
     t: TestContext;
     telegramApiService?: TelegramApiServiceMock;
     telegramApiFactory?: TelegramApiFactory;
@@ -115,8 +114,7 @@ export interface TelegramBotServiceTestApp {
 }
 
 export async function buildTelegramBotServiceTestApp({
-    databaseName,
-    mongoClient,
+    testMongo,
     t,
     telegramApiService = buildTelegramApiServiceMock({ t }),
     telegramApiFactory,
@@ -147,8 +145,8 @@ export async function buildTelegramBotServiceTestApp({
         },
     });
     app.register(mongoPlugin, {
-        client: mongoClient,
-        database: databaseName,
+        client: testMongo.client,
+        database: testMongo.databaseName,
     });
     app.register(valkeyPlugin);
     app.register(requestContextPlugin, requestContextAutoConfig);

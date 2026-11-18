@@ -1,15 +1,7 @@
 import { ForbiddenError } from "@casl/ability";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
 import { testBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -25,29 +17,8 @@ import {
     PokerRoomDraft,
 } from "./poker-rooms-service.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
+const testMongo = useTestMongo();
 let nextTelegramId = 987655000;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("pokerRooms").deleteMany({});
-    await mongo.collection("settings").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
 
 void describe("PokerRoomsService create and join", () => {
     void it("creates a room with the creator as its first participant", async (t) => {
@@ -931,7 +902,7 @@ void describe("PokerRoomsService list", () => {
 });
 
 function buildBot(t: TestContext): Promise<PokerBot> {
-    return buildPokerBot({ databaseName, mongoClient, t });
+    return buildPokerBot({ testMongo, t });
 }
 
 async function createUser(
@@ -948,7 +919,7 @@ async function createUser(
         languageCode: "en",
     });
 
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne({ _id: user._id }, { $set: { grants } });
 
@@ -986,7 +957,7 @@ async function joinMember(
 }
 
 async function findRoom(room: PokerRoomEntity): Promise<PokerRoomEntity> {
-    const stored = await mongo
+    const stored = await testMongo.mongo
         .collection<PokerRoomEntity>("pokerRooms")
         .findOne({ _id: room._id });
 
@@ -996,7 +967,7 @@ async function findRoom(room: PokerRoomEntity): Promise<PokerRoomEntity> {
 }
 
 async function makeIdle(room: PokerRoomEntity): Promise<void> {
-    await mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
+    await testMongo.mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
         { _id: room._id },
         {
             $set: {
