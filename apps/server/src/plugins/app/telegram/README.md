@@ -338,7 +338,7 @@ sequenceDiagram
 
 **Duplicates.** Before anything else, the handler sets `telegram:<telegramId>:update:<update_id>` with `SET NX` for one hour. Every Telegram bot counts its own `update_id`, so the key carries its Telegram id. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
 
-**Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
+**Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). A request that ended with a network error reaches the handler only after two repeats, see [Network errors](#network-errors). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
 **Logs.** Every update ends with one line, `Update handled`, with the result label of `telegram_updates_total`, the time in `durationMs` and `route`: `command:<name>`, `deepLink:<name>`, `scene` for a button press or an input text, or `route` for an `on` or `when` route. When the bot stays silent because a guard refused the user, `refusedRoute` names the command or the deep link. Every line of the update carries `botId`, `updateId` and `telegramUserId`, and `userId` once the user is loaded, also the lines that a handler writes through `ctx.log`. The request ends with one `request completed` line with the status and `responseTime`, and both lines share `reqId`.
 
@@ -420,8 +420,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 **Edge cases.**
 
 - The signal aborts a wait and a request with its reason, such as `LockHoldTimeoutError`. The call leaves its queue, and the update ends as `lock_hold_timeout`. A delivery counts as `delivery_failed`.
-- A network error or a timeout of the request is not repeated: a repeated `sendMessage` can send the message twice.
-- A request that ends without an answer of Telegram, by a network error, a timeout or the signal, logs `Telegram API request got no answer` with `method`, the `result` label of `telegram_api_requests_total` and the error. The call then throws that error.
+- A request that ended with a network error goes back to step 3 and takes its tokens again, see [Network errors](#network-errors).
 - When Valkey fails, the call fails, and so do the session and the lock.
 - With several pods the global limit and the shares stay exact, because the buckets and the `waiting:*` sets are shared. A pod only picks which of its own calls to release.
 - A call that joins while the loop waits for Valkey wakes the loop, so the next take includes its class at once.
@@ -431,6 +430,28 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 **Metrics.** `telegram_rate_limit_wait_seconds{method, priority}` measures the wait for the tokens; its p95 for `interactive` shows a limit that is too tight. `telegram_api_requests_total{result="rate_limited"}` counts every `429`, and any growth means the numbers are above the real limits. The `error_code` label of `telegram_api_requests_total` keeps the Bot API code of a failed request, so a `400` of `editMessageText`, a message that had to be sent again, stays apart from a `403` of a user who blocked the bot. `telegram_api_retry_after_seconds{method}` shows the `retry_after` values. `result="aborted"` counts the requests that the signal of the scope stopped.
 
 **A new Bot API method.** A method that sends, edits or deletes a message gets a line in `telegramRateLimits` with the limits it counts against. A method without a line has no limits, and only its `429` makes it wait. A new kind of limit is a new `TelegramRateLimit`: its rate, burst, optional `shares`, and `scopeOf`, which turns the params of the call into the key of the bucket or skips the bucket.
+
+## Network errors
+
+**Problem.** A request to the Bot API can end without an answer: the connection breaks, and `fetch` throws `fetch failed`. The update of the user then ends with `telegram:error`. In the 30 days before 2026-11-17, 2 of about 390 requests of production ended so, both with `read ECONNRESET` right after the pod opened a new connection. A test opened 1,397 new connections to `api.telegram.org` from the network of the pods and saw no reset, so the cause is not known. After such an error the bot does not know whether Telegram ran the request, and the Bot API has no parameter that marks a request as a repeat.
+
+**Idea.** `TelegramApiService.call` repeats a request that ended with a network error, for every method: a message that arrives twice is better than a message that never arrives. When Telegram did not run the first request, the repeat is the only one that arrives. When Telegram ran it and only the answer was lost, the first message is in the chat either way. Without the repeat the user gets `telegram:error` after it, and with the repeat a second message that the scene knows.
+
+**Walk-through.** The pod sends `editMessageText`, and the connection is reset.
+
+1. `fetch` throws. `send` counts the request as `network_error` in `telegram_api_requests_total` and logs `Telegram API request got no answer` with `method`, the `result` label and the error.
+2. `call` waits 200 ms, takes the tokens of the method again and sends the request again.
+3. After a second error `call` waits 1 s and sends the request a third time. A third error goes to the caller, and the update ends with `telegram:error`.
+
+**Edge cases.**
+
+- A request that ran into its timeout of 10 s is not repeated: it has already taken 10 s of the 60 s for which an update may hold its session lock. It is counted and logged like a network error.
+- The signal of the scope ends a request and the pause before a repeat with its reason. The request is counted as `aborted` and logged with the same line.
+- A repeated `send*` whose first request did run leaves two messages in the chat. The scene records only the second one, so a button of the first answers `telegram:buttonExpired`.
+- A repeated edit whose first request did run gets `message is not modified`, and `TelegramResponder.edit` takes that answer as a success.
+- A repeated delete whose first request did run gets an error answer, and `TelegramResponder.deleteMessage` returns `false` as for any message that is already gone.
+- We have not measured what Telegram answers to a second `answerCallbackQuery` for one press. `TelegramResponder` throws on an answer that is not `ok`, so such a repeat may end the update with `telegram:error`.
+- `telegram_api_requests_total{result="network_error"}` counts every attempt, so one call that fails three times adds 3.
 
 ## Scene instances
 
@@ -795,39 +816,39 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 
 ## Files
 
-| File                                                               | Owns                                                                   | Section                                                     |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `telegram-update-handler.ts`                                       | One webhook update from start to end                                   | [An incoming update](#an-incoming-update)                   |
-| `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver`   | [Updates for other users](#updates-for-other-users)         |
-| `telegram-delivery-permits.ts`                                     | How many deliveries of a bot run at once in the pod                    | [Updates for other users](#updates-for-other-users)         |
-| `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                             | [Session and lock](#session-and-lock)                       |
-| `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events            | [Buttons](#buttons)                                         |
-| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists               | [Screens and messages](#screens-and-messages)               |
-| `telegram-bots.ts`                                                 | The bots the server serves, each with its Bot API client               | [Bots and webhooks](#bots-and-webhooks)                     |
-| `telegram-webhook-secret.ts`                                       | The secret token of the webhook of a bot                               | [Bots and webhooks](#bots-and-webhooks)                     |
-| `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, timeout, logs    | [Rate limits](#rate-limits)                                 |
-| `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                      | [Rate limits](#rate-limits)                                 |
-| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                             | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-deep-links.ts`                                           | The deep link payload                                                  | [Deep links](#deep-links)                                   |
-| `telegram-guard.ts`                                                | The guard type                                                         | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                            | [Scene instances](#scene-instances)                         |
-| `telegram-scene-engine.ts`                                         | Start, find, hand over and end instances; route presses and input text | [Scene instances](#scene-instances)                         |
-| `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                   | [Scene instances](#scene-instances)                         |
-| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them               | [Scene instances](#scene-instances)                         |
-| `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                    | [Buttons](#buttons)                                         |
-| `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler        | [Buttons](#buttons)                                         |
-| `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                            | [Screens and messages](#screens-and-messages)               |
-| `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position, and their handover      | [Screens and messages](#screens-and-messages)               |
-| `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                           | [Inputs](#inputs)                                           |
-| `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                     | [Inputs](#inputs)                                           |
-| `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                        |                                                             |
-| `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                 | [Blocking scenes](#blocking-scenes)                         |
-| `telegram-start-entries.ts`                                        | What `/start` opens per module                                         | [The start module](#the-start-module)                       |
-| `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs             | [Bots and webhooks](#bots-and-webhooks)                     |
-| `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat               | [Access and the command menu](#access-and-the-command-menu) |
-| `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                 |                                                             |
-| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                      |                                                             |
-| `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                            |                                                             |
+| File                                                               | Owns                                                                         | Section                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `telegram-update-handler.ts`                                       | One webhook update from start to end                                         | [An incoming update](#an-incoming-update)                   |
+| `telegram-chats.ts`                                                | Running code inside one user's chat: an update, `publish`, `deliver`         | [Updates for other users](#updates-for-other-users)         |
+| `telegram-delivery-permits.ts`                                     | How many deliveries of a bot run at once in the pod                          | [Updates for other users](#updates-for-other-users)         |
+| `telegram-session-store.ts`, `telegram-session.ts`                 | The session hash, its lock and the indexes                                   | [Session and lock](#session-and-lock)                       |
+| `telegram-context.ts`                                              | What a handler can do in the chat; emits the message events                  | [Buttons](#buttons)                                         |
+| `telegram-responder.ts`                                            | Bot API calls for one chat, also before a context exists                     | [Screens and messages](#screens-and-messages)               |
+| `telegram-bots.ts`                                                 | The bots the server serves, each with its Bot API client                     | [Bots and webhooks](#bots-and-webhooks)                     |
+| `telegram-webhook-secret.ts`                                       | The secret token of the webhook of a bot                                     | [Bots and webhooks](#bots-and-webhooks)                     |
+| `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, repeats, timeout, logs | [Rate limits](#rate-limits)                                 |
+| `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                            | [Rate limits](#rate-limits)                                 |
+| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                                   | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
+| `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
+| `telegram-scene-engine.ts`                                         | Start, find, hand over and end instances; route presses and input text       | [Scene instances](#scene-instances)                         |
+| `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                         | [Scene instances](#scene-instances)                         |
+| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them                     | [Scene instances](#scene-instances)                         |
+| `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                          | [Buttons](#buttons)                                         |
+| `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler              | [Buttons](#buttons)                                         |
+| `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                                  | [Screens and messages](#screens-and-messages)               |
+| `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position, and their handover            | [Screens and messages](#screens-and-messages)               |
+| `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                                 | [Inputs](#inputs)                                           |
+| `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                           | [Inputs](#inputs)                                           |
+| `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                              |                                                             |
+| `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                       | [Blocking scenes](#blocking-scenes)                         |
+| `telegram-start-entries.ts`                                        | What `/start` opens per module                                               | [The start module](#the-start-module)                       |
+| `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs                   | [Bots and webhooks](#bots-and-webhooks)                     |
+| `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat                     | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                       |                                                             |
+| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                            |                                                             |
+| `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                                  |                                                             |
 
 To read the code in order:
 
