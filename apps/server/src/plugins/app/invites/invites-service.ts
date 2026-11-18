@@ -13,6 +13,7 @@ import {
 } from "../access/access-service.js";
 import { AppLogger } from "../app-logger.js";
 import { BotsRegistry } from "../bots/bots-registry.js";
+import { Page, PageRequest } from "../page.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
@@ -28,7 +29,7 @@ import {
 import { InvitesEvents } from "./invites-events.js";
 import { InviteData, InvitesRepository } from "./invites-repository.js";
 
-export interface InviteDraft {
+export interface NewInvite {
     grants: string[];
     maxUses?: number;
     expiresAt?: Date;
@@ -42,11 +43,6 @@ export type InviteActivationResult =
       }
     | { status: "notFound" | "expired" | "revoked" | "full" };
 
-export interface InvitesPage<TItem> {
-    items: TItem[];
-    total: number;
-}
-
 export interface InviteUser {
     userId: ObjectId;
     activatedAt: Date;
@@ -56,11 +52,6 @@ export interface InviteUser {
 export interface InvitesBootstrap {
     invite: "none" | "created" | "reopened" | "kept" | "unusable";
     revoked: number;
-}
-
-export interface InvitesPageRequest {
-    skip: number;
-    limit: number;
 }
 
 const inviteTokenBytes = 16;
@@ -86,7 +77,7 @@ export class InvitesService {
         this.eventEmitter = eventEmitter;
     }
 
-    async create(actor: UserEntity, draft: InviteDraft): Promise<InviteEntity> {
+    async create(actor: UserEntity, draft: NewInvite): Promise<InviteEntity> {
         const grants = [...new Set(draft.grants)];
         const data = {
             botId: actor.botId,
@@ -179,8 +170,8 @@ export class InvitesService {
 
     async list(
         actor: UserEntity,
-        { skip, limit }: InvitesPageRequest,
-    ): Promise<InvitesPage<InviteEntity>> {
+        { skip, limit }: PageRequest,
+    ): Promise<Page<InviteEntity>> {
         const filter = await this.access.accessibleBy(actor, "read", "Invite");
         const [items, total] = await Promise.all([
             this.invitesRepository.findPage({
@@ -198,8 +189,8 @@ export class InvitesService {
     async listUsers(
         actor: UserEntity,
         invite: InviteEntity,
-        { skip, limit }: InvitesPageRequest,
-    ): Promise<InvitesPage<InviteUser>> {
+        { skip, limit }: PageRequest,
+    ): Promise<Page<InviteUser>> {
         await this.access.assert(actor, "read", subject("Invite", invite));
 
         const activations = invite.activations

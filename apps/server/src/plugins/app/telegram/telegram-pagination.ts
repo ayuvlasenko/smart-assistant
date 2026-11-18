@@ -1,9 +1,5 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
-
-export interface TelegramPage<TItem> {
-    items: TItem[];
-    total: number;
-}
+import { Page } from "../page.js";
 
 export type TelegramPageButton = (
     text: string,
@@ -14,7 +10,7 @@ export function pageOf<TItem>(
     items: readonly TItem[],
     page: number,
     pageSize: number,
-): TelegramPage<TItem> {
+): Page<TItem> {
     return {
         items: items.slice(page * pageSize, (page + 1) * pageSize),
         total: items.length,

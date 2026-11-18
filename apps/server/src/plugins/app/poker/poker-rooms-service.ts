@@ -9,6 +9,7 @@ import {
     AccessControl,
     AccessService,
 } from "../access/access-service.js";
+import { Page, PageRequest } from "../page.js";
 import {
     NumberSetting,
     SettingsService,
@@ -57,15 +58,8 @@ export type PokerJoinResult =
     | { status: "closed" }
     | { status: "full" };
 
-export interface PokerRoomsPageRequest {
+export interface PokerRoomsPageRequest extends PageRequest {
     status: PokerRoomStatus;
-    skip: number;
-    limit: number;
-}
-
-export interface PokerRoomsPage {
-    items: PokerRoomEntity[];
-    total: number;
 }
 
 type PokerRoomTransition = (
@@ -210,7 +204,7 @@ export class PokerRoomsService {
     async list(
         actor: UserEntity,
         { status, skip, limit }: PokerRoomsPageRequest,
-    ): Promise<PokerRoomsPage> {
+    ): Promise<Page<PokerRoomEntity>> {
         const query = {
             filter: {
                 $and: [
