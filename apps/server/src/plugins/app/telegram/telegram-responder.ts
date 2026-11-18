@@ -16,7 +16,7 @@ import {
     TelegramApiClient,
     TelegramMethodArgs,
 } from "./telegram-api-service.js";
-import { TelegramApiError } from "./telegram-errors.js";
+import { TelegramApiError, unwrapTelegramResponse } from "./telegram-errors.js";
 
 export type TelegramReplyOptions = Omit<
     TelegramMethodArgs<"sendMessage">[0],
@@ -75,27 +75,21 @@ export class TelegramResponder {
         text: string,
         options: TelegramReplyOptions = {},
     ): Promise<Message.TextMessage> {
-        const result = await this.telegramApiService.sendMessage({
-            ...options,
-            chat_id: this.requireChatId(),
-            text,
-        });
-
-        if (!result.ok) {
-            throw new TelegramApiError("sendMessage", result);
-        }
-
-        return result.result;
+        return unwrapTelegramResponse(
+            "sendMessage",
+            await this.telegramApiService.sendMessage({
+                ...options,
+                chat_id: this.requireChatId(),
+                text,
+            }),
+        );
     }
 
     async send(content: TelegramMessageContent): Promise<Message> {
-        const result = await this.sendContent(this.requireChatId(), content);
-
-        if (!result.ok) {
-            throw new TelegramApiError(`send ${content.kind} message`, result);
-        }
-
-        return result.result;
+        return unwrapTelegramResponse<Message>(
+            `send ${content.kind} message`,
+            await this.sendContent(this.requireChatId(), content),
+        );
     }
 
     async edit(
@@ -189,14 +183,13 @@ export class TelegramResponder {
             );
         }
 
-        const result = await this.telegramApiService.answerCallbackQuery({
-            callback_query_id: this.callbackQuery.id,
-            ...(text === undefined ? {} : { text }),
-        });
-
-        if (!result.ok) {
-            throw new TelegramApiError("answerCallbackQuery", result);
-        }
+        unwrapTelegramResponse(
+            "answerCallbackQuery",
+            await this.telegramApiService.answerCallbackQuery({
+                callback_query_id: this.callbackQuery.id,
+                ...(text === undefined ? {} : { text }),
+            }),
+        );
 
         this.isCallbackAnswered = true;
     }

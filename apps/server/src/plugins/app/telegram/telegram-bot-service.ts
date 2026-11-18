@@ -14,7 +14,7 @@ import {
     buildTelegramDeepLinkUrl,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
-import { TelegramApiError } from "./telegram-errors.js";
+import { TelegramApiError, unwrapTelegramResponse } from "./telegram-errors.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
@@ -96,17 +96,16 @@ export class TelegramBotService {
 
     async setWebhook(bot: TelegramBot): Promise<string> {
         const url = resolveTelegramWebhookUrl(this.config, bot.telegramId);
-        const result = await bot.api.setWebhook({
-            url,
-            secret_token: telegramWebhookSecret(
-                this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                bot.telegramId,
-            ),
-        });
-
-        if (!result.ok) {
-            throw new TelegramApiError("setWebhook", result);
-        }
+        unwrapTelegramResponse(
+            "setWebhook",
+            await bot.api.setWebhook({
+                url,
+                secret_token: telegramWebhookSecret(
+                    this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    bot.telegramId,
+                ),
+            }),
+        );
 
         this.log.info(
             { botId: bot.id, url },
@@ -117,23 +116,16 @@ export class TelegramBotService {
     }
 
     async deleteWebhook(bot: TelegramBot): Promise<void> {
-        const result = await bot.api.deleteWebhook();
-
-        if (!result.ok) {
-            throw new TelegramApiError("deleteWebhook", result);
-        }
+        unwrapTelegramResponse("deleteWebhook", await bot.api.deleteWebhook());
 
         this.log.info({ botId: bot.id }, "Telegram webhook deleted");
     }
 
     async readWebhook(bot: TelegramBot): Promise<WebhookInfo> {
-        const result = await bot.api.getWebhookInfo();
-
-        if (!result.ok) {
-            throw new TelegramApiError("getWebhookInfo", result);
-        }
-
-        return result.result;
+        return unwrapTelegramResponse(
+            "getWebhookInfo",
+            await bot.api.getWebhookInfo(),
+        );
     }
 
     async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
@@ -226,13 +218,7 @@ export class TelegramBotService {
     }
 
     private async fetchUsername(bot: TelegramBot): Promise<string> {
-        const result = await bot.api.getMe();
-
-        if (!result.ok) {
-            throw new TelegramApiError("getMe", result);
-        }
-
-        return result.result.username;
+        return unwrapTelegramResponse("getMe", await bot.api.getMe()).username;
     }
 }
 

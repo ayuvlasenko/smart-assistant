@@ -16,25 +16,7 @@ export type TelegramMethodResult<TMethod extends TelegramMethod> = ReturnType<
 >;
 export type TelegramApiClient = Pick<
     TelegramApiService,
-    | "getMe"
-    | "setWebhook"
-    | "deleteWebhook"
-    | "getWebhookInfo"
-    | "sendMessage"
-    | "answerCallbackQuery"
-    | "setMyCommands"
-    | "deleteMyCommands"
-    | "editMessageReplyMarkup"
-    | "deleteMessages"
-    | "sendRichMessage"
-    | "sendPhoto"
-    | "sendVideo"
-    | "sendDocument"
-    | "sendAnimation"
-    | "sendAudio"
-    | "editMessageText"
-    | "editMessageMedia"
-    | "deleteMessage"
+    keyof TelegramApiService
 >;
 
 export type TelegramApiPriority = "interactive" | "background";
@@ -153,12 +135,9 @@ export class TelegramApiService {
         return this.call("deleteMessage", ...args);
     }
 
-    private async call<
-        TFile = never,
-        TMethod extends TelegramMethod = TelegramMethod,
-    >(
+    private async call<TMethod extends TelegramMethod>(
         method: TMethod,
-        ...args: TelegramMethodArgs<TMethod, TFile>
+        ...args: TelegramMethodArgs<TMethod>
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const [params] = args;
         const scope = telegramApiScope.getStore() ?? {
