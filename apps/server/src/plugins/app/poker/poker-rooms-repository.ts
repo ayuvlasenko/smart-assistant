@@ -1,7 +1,7 @@
-import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Filter, ObjectId } from "mongodb";
+import { Collection, Filter, ObjectId } from "mongodb";
+import { readMongoDb } from "../../external/mongo.js";
 import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
@@ -27,10 +27,10 @@ export interface PokerRoomsPageOptions extends PokerRoomsQuery {
 }
 
 export class PokerRoomsRepository {
-    readonly mongo: Required<FastifyMongoObject>;
+    private readonly rooms: Collection<PokerRoomEntity>;
 
-    constructor(mongo: Required<FastifyMongoObject>) {
-        this.mongo = mongo;
+    constructor(rooms: Collection<PokerRoomEntity>) {
+        this.rooms = rooms;
     }
 
     async create(data: PokerRoomData, now: Date): Promise<PokerRoomEntity> {
@@ -45,20 +45,20 @@ export class PokerRoomsRepository {
             updatedAt: now,
         };
 
-        await this.collection().insertOne(room);
+        await this.rooms.insertOne(room);
 
         return room;
     }
 
     findOne(filter: Filter<PokerRoomEntity>): Promise<PokerRoomEntity | null> {
-        return this.collection().findOne(filter);
+        return this.rooms.findOne(filter);
     }
 
     findOneByToken(
         botId: string,
         token: string,
     ): Promise<PokerRoomEntity | null> {
-        return this.collection().findOne({ botId, token });
+        return this.rooms.findOne({ botId, token });
     }
 
     findPage({
@@ -66,7 +66,7 @@ export class PokerRoomsRepository {
         limit,
         ...query
     }: PokerRoomsPageOptions): Promise<PokerRoomEntity[]> {
-        return this.collection()
+        return this.rooms
             .find(queryFilter(query))
             .sort({ lastActivityAt: -1, _id: -1 })
             .skip(skip)
@@ -75,7 +75,7 @@ export class PokerRoomsRepository {
     }
 
     count(query: PokerRoomsQuery): Promise<number> {
-        return this.collection().countDocuments(queryFilter(query));
+        return this.rooms.countDocuments(queryFilter(query));
     }
 
     save(
@@ -83,7 +83,7 @@ export class PokerRoomsRepository {
         patch: PokerRoomPatch,
         now: Date,
     ): Promise<PokerRoomEntity | null> {
-        return this.collection().findOneAndUpdate(
+        return this.rooms.findOneAndUpdate(
             { _id: room._id, version: room.version },
             {
                 $set: { ...patch, lastActivityAt: now, updatedAt: now },
@@ -91,10 +91,6 @@ export class PokerRoomsRepository {
             },
             { returnDocument: "after" },
         );
-    }
-
-    private collection() {
-        return this.mongo.db.collection<PokerRoomEntity>("pokerRooms");
     }
 }
 
@@ -124,14 +120,10 @@ function statusFilter(
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        if (!fastify.mongo.db) {
-            throw new Error("MongoDB is not connected");
-        }
-
         fastify.decorate(
             "pokerRoomsRepository",
             new PokerRoomsRepository(
-                fastify.mongo as Required<FastifyMongoObject>,
+                readMongoDb(fastify).collection<PokerRoomEntity>("pokerRooms"),
             ),
         );
     },

@@ -4,6 +4,7 @@ import underPressure, {
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
+import { readMongoDb } from "./mongo.js";
 
 export const autoConfig = (
     fastify: FastifyInstance,
@@ -23,11 +24,7 @@ export const autoConfig = (
         },
         healthCheck: async () => {
             try {
-                if (!fastify.mongo.db) {
-                    throw new Error("Database connection is not available");
-                }
-
-                await fastify.mongo.db.collection("test").findOne({});
+                await readMongoDb(fastify).collection("test").findOne({});
 
                 const valkey = fastify.getDecorator<Redis>("valkey");
                 await valkey.ping();

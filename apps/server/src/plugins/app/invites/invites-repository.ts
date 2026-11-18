@@ -1,7 +1,7 @@
-import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { ClientSession, Document, Filter, ObjectId } from "mongodb";
+import { Collection, Document, Filter, ObjectId } from "mongodb";
+import { readMongoDb } from "../../external/mongo.js";
 import { InviteEntity } from "./invite-entity.js";
 
 export type InviteData = Pick<InviteEntity, "botId" | "token" | "grants"> &
@@ -15,26 +15,23 @@ export interface InvitesPageOptions {
 }
 
 export class InvitesRepository {
-    readonly mongo: Required<FastifyMongoObject>;
+    private readonly invites: Collection<InviteEntity>;
 
-    constructor(mongo: Required<FastifyMongoObject>) {
-        this.mongo = mongo;
+    constructor(invites: Collection<InviteEntity>) {
+        this.invites = invites;
     }
 
-    async create(
-        data: InviteData,
-        session?: ClientSession,
-    ): Promise<InviteEntity> {
+    async create(data: InviteData): Promise<InviteEntity> {
         const invite = buildInvite(data);
 
-        await this.collection().insertOne(invite, { session });
+        await this.invites.insertOne(invite);
 
         return invite;
     }
 
     async createIfMissing(data: InviteData): Promise<boolean> {
         const { token, ...fields } = buildInvite(data);
-        const result = await this.collection().updateOne(
+        const result = await this.invites.updateOne(
             { token },
             { $setOnInsert: fields },
             { upsert: true },
@@ -43,26 +40,16 @@ export class InvitesRepository {
         return result.upsertedCount > 0;
     }
 
-    findOneById(
-        _id: ObjectId,
-        session?: ClientSession,
-    ): Promise<InviteEntity | null> {
-        return this.collection().findOne({ _id }, { session });
+    findOneById(_id: ObjectId): Promise<InviteEntity | null> {
+        return this.invites.findOne({ _id });
     }
 
-    findOne(
-        filter: Filter<InviteEntity>,
-        session?: ClientSession,
-    ): Promise<InviteEntity | null> {
-        return this.collection().findOne(filter, { session });
+    findOne(filter: Filter<InviteEntity>): Promise<InviteEntity | null> {
+        return this.invites.findOne(filter);
     }
 
-    findOneByToken(
-        botId: string,
-        token: string,
-        session?: ClientSession,
-    ): Promise<InviteEntity | null> {
-        return this.collection().findOne({ botId, token }, { session });
+    findOneByToken(botId: string, token: string): Promise<InviteEntity | null> {
+        return this.invites.findOne({ botId, token });
     }
 
     activate(
@@ -70,9 +57,8 @@ export class InvitesRepository {
         token: string,
         userId: ObjectId,
         now: Date,
-        session?: ClientSession,
     ): Promise<InviteEntity | null> {
-        return this.collection().findOneAndUpdate(
+        return this.invites.findOneAndUpdate(
             {
                 botId,
                 token,
@@ -84,22 +70,18 @@ export class InvitesRepository {
                 $set: { updatedAt: now },
                 $inc: { version: 1 },
             },
-            { session, returnDocument: "after" },
+            { returnDocument: "after" },
         );
     }
 
-    revoke(
-        _id: ObjectId,
-        now: Date,
-        session?: ClientSession,
-    ): Promise<InviteEntity | null> {
-        return this.collection().findOneAndUpdate(
+    revoke(_id: ObjectId, now: Date): Promise<InviteEntity | null> {
+        return this.invites.findOneAndUpdate(
             { _id, revokedAt: { $exists: false } },
             {
                 $set: { revokedAt: now, updatedAt: now },
                 $inc: { version: 1 },
             },
-            { session, returnDocument: "after" },
+            { returnDocument: "after" },
         );
     }
 
@@ -107,9 +89,8 @@ export class InvitesRepository {
         botId: string,
         now: Date,
         exceptToken?: string,
-        session?: ClientSession,
     ): Promise<number> {
-        const result = await this.collection().updateMany(
+        const result = await this.invites.updateMany(
             {
                 botId,
                 createdBy: { $exists: false },
@@ -122,56 +103,42 @@ export class InvitesRepository {
                 $set: { revokedAt: now, updatedAt: now },
                 $inc: { version: 1 },
             },
-            { session },
         );
 
         return result.modifiedCount;
     }
 
-    async reopen(
-        _id: ObjectId,
-        now: Date,
-        session?: ClientSession,
-    ): Promise<void> {
-        await this.collection().updateOne(
+    async reopen(_id: ObjectId, now: Date): Promise<void> {
+        await this.invites.updateOne(
             { _id },
             {
                 $unset: { revokedAt: "" },
                 $set: { updatedAt: now },
                 $inc: { version: 1 },
             },
-            { session },
         );
     }
 
-    findPage(
-        { filter, skip, limit, now }: InvitesPageOptions,
-        session?: ClientSession,
-    ): Promise<InviteEntity[]> {
-        return this.collection()
-            .aggregate<InviteEntity>(
-                [
-                    { $match: filter },
-                    { $addFields: { isActive: isActiveExpression(now) } },
-                    { $sort: { isActive: -1, createdAt: -1, _id: -1 } },
-                    { $skip: skip },
-                    { $limit: limit },
-                    { $project: { isActive: 0 } },
-                ],
-                { session },
-            )
+    findPage({
+        filter,
+        skip,
+        limit,
+        now,
+    }: InvitesPageOptions): Promise<InviteEntity[]> {
+        return this.invites
+            .aggregate<InviteEntity>([
+                { $match: filter },
+                { $addFields: { isActive: isActiveExpression(now) } },
+                { $sort: { isActive: -1, createdAt: -1, _id: -1 } },
+                { $skip: skip },
+                { $limit: limit },
+                { $project: { isActive: 0 } },
+            ])
             .toArray();
     }
 
-    count(
-        filter: Filter<InviteEntity>,
-        session?: ClientSession,
-    ): Promise<number> {
-        return this.collection().countDocuments(filter, { session });
-    }
-
-    private collection() {
-        return this.mongo.db.collection<InviteEntity>("invites");
+    count(filter: Filter<InviteEntity>): Promise<number> {
+        return this.invites.countDocuments(filter);
     }
 }
 
@@ -215,14 +182,10 @@ function isActiveExpression(now: Date): Document {
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        if (!fastify.mongo.db) {
-            throw new Error("MongoDB is not connected");
-        }
-
         fastify.decorate(
             "invitesRepository",
             new InvitesRepository(
-                fastify.mongo as Required<FastifyMongoObject>,
+                readMongoDb(fastify).collection<InviteEntity>("invites"),
             ),
         );
     },
