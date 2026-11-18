@@ -147,12 +147,16 @@ export class TelegramSceneButtons {
         value: unknown,
     ): boolean {
         if (this.isConfirming(instance, name, value)) {
-            instance.record.confirming = undefined;
+            this.cancelConfirmation(instance);
             return true;
         }
 
         instance.record.confirming = { name, value };
         return false;
+    }
+
+    cancelConfirmation(instance: TelegramSceneInstance): void {
+        instance.record.confirming = undefined;
     }
 
     forgetInputButtons(instance: TelegramSceneInstance): void {

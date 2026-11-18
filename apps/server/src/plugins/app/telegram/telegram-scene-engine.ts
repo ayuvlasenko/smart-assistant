@@ -584,7 +584,7 @@ export class TelegramSceneEngine {
             instance,
             { silent: true },
         );
-        instance.record.confirming = undefined;
+        this.buttons.cancelConfirmation(instance);
         move();
     }
 
