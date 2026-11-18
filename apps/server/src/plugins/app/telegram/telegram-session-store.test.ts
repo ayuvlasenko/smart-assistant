@@ -127,8 +127,8 @@ void describe("TelegramSessionStore", () => {
         });
 
         assert.deepEqual(sortMatches(await store.findIndexed(botId, "room")), [
-            { userId: 1, entry: "scene-b" },
-            { userId: 2, entry: "scene-c" },
+            { telegramUserId: 1, entry: "scene-b" },
+            { telegramUserId: 2, entry: "scene-c" },
         ]);
         assert.deepEqual(await store.findIndexed(botId, "other"), []);
     });

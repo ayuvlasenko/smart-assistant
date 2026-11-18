@@ -15,7 +15,7 @@ export interface TelegramSessionStoreOptions {
 }
 
 export interface TelegramSessionIndexMatch {
-    userId: number;
+    telegramUserId: number;
     entry: string;
 }
 
@@ -43,10 +43,10 @@ export class TelegramSessionStore {
 
     async withSession<T>(
         botTelegramId: string,
-        userId: number,
+        telegramUserId: number,
         handle: (session: TelegramSession, signal: AbortSignal) => Promise<T>,
     ): Promise<T> {
-        const sessionKey = sessionKeyOf(botTelegramId, userId);
+        const sessionKey = sessionKeyOf(botTelegramId, telegramUserId);
         await using lock = await this.lockService.acquire(
             `${sessionKey}:lock`,
             this.lockOptions,
@@ -57,7 +57,7 @@ export class TelegramSessionStore {
         try {
             result = await handle(session, lock.signal);
         } catch (err) {
-            await this.save(lock, botTelegramId, userId, session).catch(
+            await this.save(lock, botTelegramId, telegramUserId, session).catch(
                 (saveErr: unknown) => {
                     throw new AggregateError(
                         [err, saveErr],
@@ -68,7 +68,7 @@ export class TelegramSessionStore {
             throw err;
         }
 
-        await this.save(lock, botTelegramId, userId, session);
+        await this.save(lock, botTelegramId, telegramUserId, session);
 
         return result;
     }
@@ -83,10 +83,10 @@ export class TelegramSessionStore {
 
         return members.flatMap((member) => {
             const separator = member.indexOf(":");
-            const userId = Number(member.slice(0, separator));
+            const telegramUserId = Number(member.slice(0, separator));
 
-            return separator > 0 && Number.isSafeInteger(userId)
-                ? [{ userId, entry: member.slice(separator + 1) }]
+            return separator > 0 && Number.isSafeInteger(telegramUserId)
+                ? [{ telegramUserId, entry: member.slice(separator + 1) }]
                 : [];
         });
     }
@@ -94,7 +94,7 @@ export class TelegramSessionStore {
     private async save(
         lock: Lock,
         botTelegramId: string,
-        userId: number,
+        telegramUserId: number,
         session: TelegramSession,
     ): Promise<void> {
         if (!session.hasChanges) {
@@ -109,10 +109,12 @@ export class TelegramSessionStore {
                 expiringSets: indexes.map(({ name, adds, removals }) => ({
                     key: indexKeyOf(botTelegramId, name),
                     adds: adds.map(({ entry, expiresAt }) => ({
-                        member: `${userId}:${entry}`,
+                        member: `${telegramUserId}:${entry}`,
                         expiresAt,
                     })),
-                    removals: removals.map((entry) => `${userId}:${entry}`),
+                    removals: removals.map(
+                        (entry) => `${telegramUserId}:${entry}`,
+                    ),
                 })),
             },
             { ifEquals: this.lockService.heldCondition(lock) },
@@ -124,8 +126,8 @@ export class TelegramSessionStore {
     }
 }
 
-function sessionKeyOf(botTelegramId: string, userId: number): string {
-    return `telegram:${botTelegramId}:session:${userId}`;
+function sessionKeyOf(botTelegramId: string, telegramUserId: number): string {
+    return `telegram:${botTelegramId}:session:${telegramUserId}`;
 }
 
 function indexKeyOf(botTelegramId: string, name: string): string {

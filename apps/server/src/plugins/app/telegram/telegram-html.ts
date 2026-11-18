@@ -53,10 +53,10 @@ export function formatTelegramHtmlTime(date: Date, timeZone: string): string {
 }
 
 export function formatTelegramHtmlMention(
-    userId: number,
+    telegramUserId: number,
     name: string,
 ): string {
-    return `<a href="tg://user?id=${userId}">${escapeTelegramHtml(name)}</a>`;
+    return `<a href="tg://user?id=${telegramUserId}">${escapeTelegramHtml(name)}</a>`;
 }
 
 function fitTelegramHtmlLines(lines: string[]): string[] {

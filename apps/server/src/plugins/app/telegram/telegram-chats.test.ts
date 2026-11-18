@@ -469,9 +469,9 @@ async function buildRoomBot(
 ): Promise<TelegramSceneBot> {
     const roomEvents = new Emittery<RoomEvents>();
     const roomTargets = ({ id, participantIds }: TestRoom) =>
-        participantIds.map((userId) => ({
+        participantIds.map((telegramUserId) => ({
             botId: testBotId,
-            userId,
+            telegramUserId,
             key: id,
         }));
     const roomScene = defineScene({
@@ -551,7 +551,7 @@ async function readWatchers(
         .getDecorator<TelegramSessionStore>("telegramSessionStore")
         .findIndexed(testTelegramBotId, telegramSceneTopicIndex(topic));
 
-    return matches.map(({ userId }) => userId);
+    return matches.map(({ telegramUserId }) => telegramUserId);
 }
 
 function readDeliveryCounts(

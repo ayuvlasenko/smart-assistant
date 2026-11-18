@@ -206,7 +206,7 @@ Never write to the session of another user. Change the scenes of other users thr
 1. The domain service saves the change and emits `<domain>.<entity>Changed` on `eventEmitter`, narrowed with `fastify.getDecorator<Emittery<<Domain>Events>>("eventEmitter")`. The events of a domain live in `<domain>-events.ts`.
 2. The handlers plugin subscribes with `on` and calls one of these:
     - `telegramChats.publish(botId, topics)` when any user of the bot may look at the data. The event carries the bot id, taken from the entity or the actor. The scene declares the topics it shows now with `watch(state)`, and a screen adds its own with `watch(params, state)`, such as `<domain>.<entity>:<id>`.
-    - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. Each target names the bot, the user id and the scene key. The optional `handle` runs under the user's session lock without an incoming update.
+    - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. Each target names the bot, the Telegram user id and the scene key. The optional `handle` runs under the user's session lock without an incoming update.
 3. Both return at once and run in the background, and the engine draws the screens afterwards. So a handler only changes the state or sends a notification. Tests wait for both with `telegramChats.idle()`.
 
 See [Updates for other users](#updates-for-other-users) for how the engine finds and redraws the scenes.
@@ -315,7 +315,7 @@ sequenceDiagram
     H->>H: find or create user, follow name and language
     H->>H: sync the chat command menu
     H->>C: withUpdate(update, user)
-    C->>S: withSession(telegramId, userId)
+    C->>S: withSession(telegramId, telegramUserId)
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
@@ -736,7 +736,7 @@ sequenceDiagram
     end
 ```
 
-Every target names the bot, the user id and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
+Every target names the bot, the Telegram user id (`telegramUserId`) and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
 
 **Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod. A pod runs at most 25 deliveries of a bot at once, `telegramDeliveryLimit`, the number of messages the bot may send in a second. A delivery takes a permit from `TelegramDeliveryPermits` before it takes the session lock, and the other deliveries wait without a lock. So a recipient of a large `publish` holds the lock for the time of 25 tokens at most, 1 s at the full rate and 5 s while interactive calls take their share, and not until the whole queue is sent. The permits count in the memory of one pod, and the tokens come from the bucket that all pods share. So when several pods deliver for one bot at the same time, that time grows with their number: up to 4 s and 20 s with the four pods of production.
 
