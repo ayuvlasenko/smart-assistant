@@ -189,6 +189,56 @@ void describe("TelegramContext", () => {
         });
     });
 
+    void it("takes a keyboard that Telegram calls not modified as edited", async (t) => {
+        const telegramApiService = buildTelegramApiServiceMock({ t });
+        const context = buildContext(
+            t,
+            buildTelegramTextMessageUpdate(),
+            telegramApiService,
+        );
+
+        telegramApiService.editMessageReplyMarkup.mock.mockImplementationOnce(
+            async () => ({
+                ok: false,
+                error_code: 400,
+                description: "Bad Request: message is not modified",
+            }),
+        );
+
+        await context.editKeyboard(5, { inline_keyboard: [] });
+
+        assert.equal(
+            telegramApiService.editMessageReplyMarkup.mock.callCount(),
+            1,
+        );
+    });
+
+    void it("throws when Telegram rejects the edit of a keyboard", async (t) => {
+        const telegramApiService = buildTelegramApiServiceMock({ t });
+        const context = buildContext(
+            t,
+            buildTelegramTextMessageUpdate(),
+            telegramApiService,
+        );
+
+        telegramApiService.editMessageReplyMarkup.mock.mockImplementationOnce(
+            async () => ({
+                ok: false,
+                error_code: 400,
+                description: "Bad Request: message to edit not found",
+            }),
+        );
+
+        await assert.rejects(
+            () => context.editKeyboard(5, { inline_keyboard: [] }),
+            {
+                name: "TelegramApiError",
+                method: "editMessageReplyMarkup",
+                errorCode: 400,
+            },
+        );
+    });
+
     void it("answers the callback query of the update", async (t) => {
         const telegramApiService = buildTelegramApiServiceMock({ t });
         const context = buildContext(

@@ -227,7 +227,10 @@ export class TelegramResponder {
             reply_markup: markup,
         });
 
-        if (!result.ok) {
+        if (
+            !result.ok &&
+            !result.description.includes(notModifiedDescription)
+        ) {
             throw new TelegramApiError("editMessageReplyMarkup", result);
         }
     }
