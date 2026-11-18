@@ -1228,6 +1228,7 @@ void describe("TelegramSceneEngine command messages", () => {
 void describe("TelegramSceneEngine storage", () => {
     void it("keeps the session lock while a slow update runs", async (t) => {
         const calls: string[] = [];
+        const slowStarted = Promise.withResolvers<void>();
         const bot = await buildTelegramSceneBot({
             testMongo,
             t,
@@ -1235,6 +1236,7 @@ void describe("TelegramSceneEngine storage", () => {
             registerRoutes: (router) => {
                 router.on(text("slow"), async () => {
                     calls.push("slow:start");
+                    slowStarted.resolve();
                     await setTimeout(500);
                     calls.push("slow:end");
                 });
@@ -1248,7 +1250,7 @@ void describe("TelegramSceneEngine storage", () => {
         await bot.allowUser(chat.id);
         await Promise.all([
             bot.sendText(chat, "slow"),
-            setTimeout(50).then(() => bot.sendText(chat, "fast")),
+            slowStarted.promise.then(() => bot.sendText(chat, "fast")),
         ]);
 
         assert.deepEqual(calls, ["slow:start", "slow:end", "fast"]);

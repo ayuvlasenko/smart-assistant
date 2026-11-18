@@ -33,6 +33,8 @@ import { TelegramMethodResult } from "../plugins/app/telegram/telegram-api-servi
 import { telegramWebhookSecret } from "../plugins/app/telegram/telegram-webhook-secret.js";
 import { TELEGRAM_SECRET_HEADER } from "../routes/api/telegram/telegram.js";
 
+let nextUpdateId = 1_000_000_000;
+
 export const testBotId = newRootBotId;
 export const testTelegramBotId = telegramIdOfToken(
     process.env.TELEGRAM_BOT_TOKEN ?? "",
@@ -59,7 +61,7 @@ export function buildTelegramTextMessageUpdate(
     options: BuildTelegramTextMessageUpdateOptions = {},
 ): TelegramTextMessageUpdate {
     return {
-        update_id: options.update_id ?? 1,
+        update_id: options.update_id ?? takeUpdateId(),
         message: buildTelegramTextMessage(options.message),
     };
 }
@@ -708,10 +710,16 @@ function buildTelegramUpdate<
 >(
     key: TKey,
     value: TValue,
-    update_id = 1,
+    update_id = takeUpdateId(),
 ): Update & { [Key in TKey]-?: TValue } {
     return {
         update_id,
         [key]: value,
     } as unknown as Update & { [Key in TKey]-?: TValue };
+}
+
+function takeUpdateId(): number {
+    nextUpdateId += 1;
+
+    return nextUpdateId;
 }

@@ -352,15 +352,35 @@ async function readKeyboardsByMessage(
         }
     }
 
-    for (const call of telegramApiService.deleteMessage.mock.calls) {
-        const response = await call.result;
-
-        if (response?.ok && call.arguments[0].chat_id === chatId) {
-            keyboards.delete(call.arguments[0].message_id);
-        }
+    for (const messageId of await readRemovedMessageIds(
+        telegramApiService,
+        chatId,
+    )) {
+        keyboards.delete(messageId);
     }
 
     return keyboards;
+}
+
+async function readRemovedMessageIds(
+    telegramApiService: TelegramApiServiceMock,
+    chatId: number,
+): Promise<number[]> {
+    const removed: number[] = [];
+
+    for (const call of telegramApiService.deleteMessage.mock.calls) {
+        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
+            removed.push(call.arguments[0].message_id);
+        }
+    }
+
+    for (const call of telegramApiService.deleteMessages.mock.calls) {
+        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
+            removed.push(...call.arguments[0].message_ids);
+        }
+    }
+
+    return removed;
 }
 
 function findLatestButton(
