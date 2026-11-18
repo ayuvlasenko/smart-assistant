@@ -3,13 +3,15 @@ import { Type } from "@sinclair/typebox";
 import { ObjectId } from "mongodb";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+} from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
 import { readPokerDeck } from "./poker-decks.js";
 import {
-    buildPokerMessage,
     describePokerParticipants,
     validatePokerTitle,
 } from "./poker-format.js";
@@ -67,7 +69,7 @@ export function createPokerRoomScene(
             );
 
             return [
-                buildPokerMessage(
+                buildTelegramHtmlMessage(
                     [
                         escapeTelegramHtml(
                             ctx.t(

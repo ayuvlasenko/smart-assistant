@@ -1,13 +1,13 @@
 import {
+    buildTelegramHtmlMessage,
     escapeTelegramHtml,
+    formatTelegramHtmlBold,
     measureTelegramHtml,
     telegramMessageTextLimit,
 } from "../telegram/telegram-html.js";
 import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
-    buildPokerMessage,
-    formatBold,
     formatPokerAgreementIcon,
     formatPokerDistribution,
     formatPokerHeader,
@@ -39,7 +39,7 @@ export function renderPokerHistory(
     );
     const pageRounds = pages[page] ?? [];
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         [
             ...header,
             ...(pageRounds.length
@@ -78,7 +78,7 @@ function describeRound(
     ].join(" ");
 
     return [
-        `${formatBold(name)} ${escapeTelegramHtml(result)}`,
+        `${formatTelegramHtmlBold(name)} ${escapeTelegramHtml(result)}`,
         ...formatPokerDistribution(summary, labels),
     ];
 }

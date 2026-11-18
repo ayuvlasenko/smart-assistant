@@ -1,12 +1,9 @@
-import { InlineKeyboardButton } from "@grammyjs/types";
 import { ObjectId } from "mongodb";
 import { Translate } from "../i18n-service.js";
 import {
     escapeTelegramHtml,
-    measureTelegramHtml,
-    telegramMessageTextLimit,
+    formatTelegramHtmlBold,
 } from "../telegram/telegram-html.js";
-import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { UserEntity } from "../users/user-entity.js";
 import { PokerDeckName } from "./poker-decks.js";
 import {
@@ -21,7 +18,6 @@ import {
 
 const nameGraphemes = 20;
 const maxListedVoters = 10;
-const cutMarker = "…";
 const agreementIcons: Record<PokerAgreement, string> = {
     none: "—",
     unanimous: "🎯",
@@ -30,28 +26,12 @@ const agreementIcons: Record<PokerAgreement, string> = {
 };
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-export function buildPokerMessage(
-    lines: string[],
-    keyboard: InlineKeyboardButton[][],
-): TelegramMessageContent {
-    return {
-        kind: "text",
-        parse_mode: "HTML",
-        text: fitTelegramText(lines).join("\n"),
-        keyboard: keyboard.filter((row) => row.length),
-    };
-}
-
-export function formatBold(text: string): string {
-    return `<b>${escapeTelegramHtml(text)}</b>`;
-}
-
 export function formatPokerHeader(
     room: PokerRoomEntity,
     timeZone: string,
     status: string,
 ): string {
-    return `${formatBold(formatPokerRoomTitle(room, timeZone))} · ${escapeTelegramHtml(status)}`;
+    return `${formatTelegramHtmlBold(formatPokerRoomTitle(room, timeZone))} · ${escapeTelegramHtml(status)}`;
 }
 
 export function formatPokerDistribution(
@@ -60,7 +40,7 @@ export function formatPokerDistribution(
 ): string[] {
     return summary.distribution.map(
         (votes) =>
-            `${formatBold(votes.card)} — ${escapeTelegramHtml(formatPokerVoters(votes, labels))}`,
+            `${formatTelegramHtmlBold(votes.card)} — ${escapeTelegramHtml(formatPokerVoters(votes, labels))}`,
     );
 }
 
@@ -203,34 +183,6 @@ export function validatePokerTitle(
     return [...graphemes.segment(text.trim())].length > max
         ? t("poker:titleTooLong", { max })
         : undefined;
-}
-
-export function inRowsOf<TItem>(size: number, items: TItem[]): TItem[][] {
-    const rows: TItem[][] = [];
-
-    for (let index = 0; index < items.length; index += size) {
-        rows.push(items.slice(index, index + size));
-    }
-
-    return rows;
-}
-
-function fitTelegramText(lines: string[]): string[] {
-    if (measureTelegramHtml(lines.join("\n")) <= telegramMessageTextLimit) {
-        return lines;
-    }
-
-    const fitted = [...lines];
-
-    while (
-        fitted.length &&
-        measureTelegramHtml([...fitted, cutMarker].join("\n")) >
-            telegramMessageTextLimit
-    ) {
-        fitted.pop();
-    }
-
-    return [...fitted, cutMarker];
 }
 
 function truncateName(name: string): string {

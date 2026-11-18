@@ -1,17 +1,16 @@
 import { AccessControl, AccessSection } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+    formatTelegramHtmlLabeled,
+} from "../telegram/telegram-html.js";
 import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { UserEntity } from "../users/user-entity.js";
 import { InvitesSubjects } from "./invite-entity.js";
-import {
-    buildInvitesMessage,
-    formatBold,
-    formatGrants,
-    formatLabeled,
-    pageButtonOf,
-} from "./invite-format.js";
+import { formatGrants, pageButtonOf } from "./invite-format.js";
 import { InvitesView } from "./invites-schemas.js";
 
 const sectionsPageSize = 6;
@@ -21,7 +20,7 @@ export function renderInviteForm(view: InvitesView): TelegramMessageContent {
     const { ctx, scene } = view;
     const { t } = ctx;
 
-    return buildInvitesMessage(describeDraft(view), [
+    return buildTelegramHtmlMessage(describeDraft(view), [
         [
             scene.screenButton(t("invites:accessButton"), "sections", {
                 page: 0,
@@ -51,7 +50,7 @@ export async function renderInviteFormSections(
         sectionsPageSize,
     );
 
-    return buildInvitesMessage(
+    return buildTelegramHtmlMessage(
         [
             ...describeDraft(view),
             "",
@@ -93,8 +92,8 @@ export async function renderInviteFormSection(
     const { grants } = scene.state.draft;
     const sectionGrants = pageOf(section.grants, page, grantsPageSize);
 
-    return buildInvitesMessage(
-        [...describeDraft(view), "", formatBold(section.title(t))],
+    return buildTelegramHtmlMessage(
+        [...describeDraft(view), "", formatTelegramHtmlBold(section.title(t))],
         [
             ...sectionGrants.items.map((grant) => [
                 scene.button(
@@ -120,7 +119,7 @@ export function renderInviteFormValidFor(
     const { ctx, scene } = view;
     const { t } = ctx;
 
-    return buildInvitesMessage(
+    return buildTelegramHtmlMessage(
         [
             ...describeDraft(view),
             "",
@@ -146,15 +145,18 @@ function describeDraft({ ctx, scene, access }: InvitesView): string[] {
     const { draft } = scene.state;
 
     return [
-        formatBold(t("invites:formTitle")),
-        formatLabeled(
+        formatTelegramHtmlBold(t("invites:formTitle")),
+        formatTelegramHtmlLabeled(
             t("invites:accessLabel"),
             draft.grants.length
                 ? formatGrants(access, t, draft.grants)
                 : t("invites:nothingSelected"),
         ),
-        formatLabeled(t("invites:usersLabel"), formatMaxUses(t, draft.maxUses)),
-        formatLabeled(
+        formatTelegramHtmlLabeled(
+            t("invites:usersLabel"),
+            formatMaxUses(t, draft.maxUses),
+        ),
+        formatTelegramHtmlLabeled(
             t("invites:validForLabel"),
             formatValidFor(t, draft.validForDays),
         ),

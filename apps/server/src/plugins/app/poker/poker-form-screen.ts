@@ -1,12 +1,13 @@
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+    formatTelegramHtmlLabeled,
+} from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { pokerDeckNames, readPokerDeck } from "./poker-decks.js";
-import {
-    buildPokerMessage,
-    formatBold,
-    formatPokerDeckName,
-} from "./poker-format.js";
+import { formatPokerDeckName } from "./poker-format.js";
 import { PokerDraft, PokerView } from "./poker-schemas.js";
 
 export function renderPokerForm({
@@ -16,7 +17,7 @@ export function renderPokerForm({
     const { t } = ctx;
     const { draft } = scene.state;
 
-    return buildPokerMessage(describeDraft(t, draft), [
+    return buildTelegramHtmlMessage(describeDraft(t, draft), [
         [
             scene.screenButton(t("poker:deckButton"), "deck"),
             scene.button(t("poker:titleButton"), "askTitle", null),
@@ -38,14 +39,14 @@ export function renderPokerDeckChoice({
 }: PokerView): TelegramMessageContent {
     const { t } = ctx;
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         [
             ...describeDraft(t, scene.state.draft),
             "",
             escapeTelegramHtml(t("poker:chooseDeck")),
             ...pokerDeckNames.map(
                 (name) =>
-                    `${formatBold(formatPokerDeckName(t, name))}: ${escapeTelegramHtml(readPokerDeck(name).cards.join(" "))}`,
+                    `${formatTelegramHtmlBold(formatPokerDeckName(t, name))}: ${escapeTelegramHtml(readPokerDeck(name).cards.join(" "))}`,
             ),
         ],
         [
@@ -59,18 +60,17 @@ export function renderPokerDeckChoice({
 
 function describeDraft(t: Translate, draft: PokerDraft): string[] {
     return [
-        formatBold(t("poker:formTitle")),
-        formatLabeled(t("poker:deckLabel"), formatPokerDeckName(t, draft.deck)),
-        formatLabeled(t("poker:titleLabel"), formatTitle(t, draft)),
-        formatLabeled(
+        formatTelegramHtmlBold(t("poker:formTitle")),
+        formatTelegramHtmlLabeled(
+            t("poker:deckLabel"),
+            formatPokerDeckName(t, draft.deck),
+        ),
+        formatTelegramHtmlLabeled(t("poker:titleLabel"), formatTitle(t, draft)),
+        formatTelegramHtmlLabeled(
             t("poker:autoRevealLabel"),
             t(draft.autoReveal ? "poker:autoRevealAll" : "poker:autoRevealOff"),
         ),
     ];
-}
-
-function formatLabeled(label: string, value: string): string {
-    return `${escapeTelegramHtml(label)}: ${escapeTelegramHtml(value)}`;
 }
 
 function formatTitle(t: Translate, draft: PokerDraft): string {

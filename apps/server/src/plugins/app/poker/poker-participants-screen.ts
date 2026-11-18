@@ -1,13 +1,13 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
 import { ObjectId } from "mongodb";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+} from "../telegram/telegram-html.js";
 import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import {
-    buildPokerMessage,
-    formatBold,
-    formatPokerHeader,
-} from "./poker-format.js";
+import { formatPokerHeader } from "./poker-format.js";
 import {
     findPokerParticipant,
     isPokerParticipantIdle,
@@ -27,7 +27,7 @@ export function renderPokerParticipants(
     const { t } = ctx;
     const participants = pageOf(room.participants, page, participantsPageSize);
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         [
             describeHeader(view),
             "",
@@ -60,7 +60,7 @@ export function renderPokerParticipant(
     const participant = findPokerParticipant(room, new ObjectId(userId));
 
     if (!participant) {
-        return buildPokerMessage(
+        return buildTelegramHtmlMessage(
             [
                 describeHeader(view),
                 "",
@@ -70,11 +70,11 @@ export function renderPokerParticipant(
         );
     }
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         [
             describeHeader(view),
             "",
-            formatBold(readLabel(view, participant)),
+            formatTelegramHtmlBold(readLabel(view, participant)),
             ...describeParticipant(view, participant).map(escapeTelegramHtml),
         ],
         [

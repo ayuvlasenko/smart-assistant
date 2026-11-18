@@ -1,6 +1,9 @@
-import { InlineKeyboardButton } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+} from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { SettingsView } from "./settings-schemas.js";
 import {
@@ -17,12 +20,12 @@ export async function renderOwnSettings(
     const { t } = ctx;
     const sections = await userSettingsService.listSections(ctx.user.botId);
 
-    return buildSettingsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(t("settings:title")),
+            formatTelegramHtmlBold(t("settings:title")),
             ...sections.flatMap((section) => [
                 "",
-                formatBold(section.title(t)),
+                formatTelegramHtmlBold(section.title(t)),
                 ...section.settings.map((setting) =>
                     escapeTelegramHtml(
                         `${setting.title(t)}: ${formatOwnValue(t, setting, view)}`,
@@ -55,8 +58,12 @@ export function renderOwnSettingChoice(
     const { t } = ctx;
     const chosen = readUserChoice(setting, ctx.user);
 
-    return buildSettingsMessage(
-        [formatBold(t("settings:title")), "", formatBold(setting.title(t))],
+    return buildTelegramHtmlMessage(
+        [
+            formatTelegramHtmlBold(t("settings:title")),
+            "",
+            formatTelegramHtmlBold(setting.title(t)),
+        ],
         [
             ...setting
                 .options(ctx.user.botId)
@@ -106,12 +113,12 @@ export async function renderBotSettings(
             ),
         ]);
 
-    return buildSettingsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(t("settings:botTitle")),
+            formatTelegramHtmlBold(t("settings:botTitle")),
             ...sections.flatMap((section) => [
                 "",
-                formatBold(section.title(t)),
+                formatTelegramHtmlBold(section.title(t)),
                 ...section.settings.map((setting) =>
                     escapeTelegramHtml(
                         `${setting.title(t)}: ${values.get(setting.name) ?? ""}`,
@@ -134,8 +141,12 @@ export async function renderSettingsChoices(
         setting.options(ctx.user.botId),
     ]);
 
-    return buildSettingsMessage(
-        [formatBold(t("settings:botTitle")), "", formatBold(setting.title(t))],
+    return buildTelegramHtmlMessage(
+        [
+            formatTelegramHtmlBold(t("settings:botTitle")),
+            "",
+            formatTelegramHtmlBold(setting.title(t)),
+        ],
         [
             ...options.map((option) => [
                 scene.button(
@@ -147,22 +158,6 @@ export async function renderSettingsChoices(
             [scene.backButton(t("settings:backButton"))],
         ],
     );
-}
-
-function buildSettingsMessage(
-    lines: string[],
-    keyboard: InlineKeyboardButton[][],
-): TelegramMessageContent {
-    return {
-        kind: "text",
-        parse_mode: "HTML",
-        text: lines.join("\n"),
-        keyboard: keyboard.filter((row) => row.length),
-    };
-}
-
-function formatBold(text: string): string {
-    return `<b>${escapeTelegramHtml(text)}</b>`;
 }
 
 function formatOwnValue(

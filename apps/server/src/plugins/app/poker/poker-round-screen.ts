@@ -1,16 +1,18 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
 import { isDeepStrictEqual } from "node:util";
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+} from "../telegram/telegram-html.js";
+import { inRowsOf } from "../telegram/telegram-keyboard.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
-    buildPokerMessage,
-    formatBold,
     formatPokerAgreement,
     formatPokerDistribution,
     formatPokerHeader,
     formatPokerStats,
-    inRowsOf,
 } from "./poker-format.js";
 import { pokerObserverIcon } from "./poker-participants-screen.js";
 import {
@@ -37,17 +39,17 @@ export function renderPokerRound(
     const lines = isVoting ? describeVoting(view) : describeRevealed(view);
 
     if (panel === "menu") {
-        return buildPokerMessage(lines, readMenuKeyboard(view));
+        return buildTelegramHtmlMessage(lines, readMenuKeyboard(view));
     }
 
     if (panel === "autoReveal") {
-        return buildPokerMessage(
+        return buildTelegramHtmlMessage(
             [...lines, "", ...describeAutoReveal(view)],
             readAutoRevealKeyboard(view),
         );
     }
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         lines,
         isVoting ? readVotingKeyboard(view) : readRevealedKeyboard(view),
     );
@@ -222,7 +224,7 @@ function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {
     const { t } = ctx;
 
     return [
-        `${escapeTelegramHtml(t("poker:autoRevealLabel"))}: ${formatBold(formatAutoReveal(t, room))}`,
+        `${escapeTelegramHtml(t("poker:autoRevealLabel"))}: ${formatTelegramHtmlBold(formatAutoReveal(t, room))}`,
         escapeTelegramHtml(t("poker:autoRevealHint")),
     ];
 }
