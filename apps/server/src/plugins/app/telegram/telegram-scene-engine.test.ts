@@ -627,6 +627,7 @@ void describe("TelegramSceneEngine scenes", () => {
                 payload: {},
                 messageIds: [],
             },
+            topics: [],
         });
         await bot.sendText(chat, "/cancel");
         await bot.sendText(chat, "Ada");
@@ -638,6 +639,14 @@ void describe("TelegramSceneEngine scenes", () => {
             await bot.readSessionField(chat.id, "focus", focusSchema),
             undefined,
         );
+        const record = await bot.readSessionField(
+            chat.id,
+            "scene:stored",
+            sceneRecordSchema,
+        );
+
+        assert.equal(record?.name, "counter");
+        assert.ok(!("input" in record));
     });
 
     void it("ends a scene with its answer when the handler also cancels the answer", async (t) => {
@@ -693,6 +702,8 @@ void describe("TelegramSceneEngine scenes", () => {
                     },
                 ],
             },
+            messages: [],
+            topics: [],
         });
         await bot.sendCallback(chat, "stored:1", 7);
         await bot.sendCallback(chat, "stored:2", 7);
@@ -702,6 +713,13 @@ void describe("TelegramSceneEngine scenes", () => {
             telegramLocales.en.buttonExpired,
             telegramLocales.en.buttonExpired,
         ]);
+        const record = await bot.readSessionField(
+            chat.id,
+            "scene:stored",
+            sceneRecordSchema,
+        );
+
+        assert.equal(record?.name, "counter");
     });
 
     void it("expires a scene after its time to live", async (t) => {
@@ -1319,7 +1337,20 @@ void describe("TelegramSceneEngine storage", () => {
     });
 
     void it("clears a stored scene that is no longer registered", async (t) => {
-        const bot = await buildProfileBot(t);
+        const logs = createLoggerCollector();
+        const bot = await buildTelegramSceneBot({
+            databaseName,
+            mongoClient,
+            t,
+            logger: logs.logger,
+            registerRoutes: (router, sceneEngine) => {
+                registerProfileScene(
+                    router,
+                    sceneEngine,
+                    defineProfileScene([]),
+                );
+            },
+        });
         const chat = buildTelegramPrivateChat({ id: 987654367 });
 
         await bot.writeSessionField(chat.id, "focus", "stored");
@@ -1328,6 +1359,7 @@ void describe("TelegramSceneEngine storage", () => {
             startedAt: Date.now(),
             state: {},
             buttons: { nextId: 1, messages: [] },
+            messages: [],
             input: {
                 name: "main",
                 step: "first",
@@ -1335,9 +1367,14 @@ void describe("TelegramSceneEngine storage", () => {
                 payload: {},
                 messageIds: [],
             },
+            topics: [],
         });
 
         await bot.sendText(chat, "Ada");
+
+        assert.ok(
+            !JSON.stringify(logs.readEntries()).includes("Invalid cache value"),
+        );
 
         assert.equal(
             await bot.readSessionField(
