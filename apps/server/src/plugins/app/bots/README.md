@@ -115,7 +115,7 @@ A bot runs the core and the modules in its `modules`. A module is a feature doma
 
 ## What start opens
 
-`🏁 On /start` picks the start module of a bot: `/start` then opens the start entry of that module instead of the welcome text, see [The start module](../telegram/README.md#the-start-module). The screen offers the modules that are on in the bot and have a start entry, and `Welcome message`, which removes the choice. `BotsService.setStartModule` ignores any other module. A change sets the menus of the bot again, because the menu shows `/start` with the description of the entry. `toggleModule` removes `startModule` in the same update that turns the module off, so a bot never points to a module it does not have.
+`🏁 On /start` picks the start module of a bot: `/start` then opens the start entry of that module instead of the welcome text, see [The start module](../telegram/README.md#the-start-module). The screen offers the modules that are on in the bot and have a start entry, and `Welcome message`, which removes the choice. `BotsService.setStartModule` ignores any other module. A change sets the menus of the bot again, because the menu shows `/start` with the description of the entry. `toggleModule` removes `startModule` in the same update that turns the module off, and `BotsRepository.setStartModule` writes a module only while the bot has it, so a bot never points to a module it does not have, even when one admin turns the module off while another picks it.
 
 ## Files
 

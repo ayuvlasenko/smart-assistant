@@ -132,11 +132,13 @@ export class BotsRepository {
         _id: string,
         startModule: string | undefined,
     ): Promise<BotEntity | null> {
+        if (startModule === undefined) {
+            return this.update({ _id }, { $unset: { startModule: "" } });
+        }
+
         return this.update(
-            { _id },
-            startModule === undefined
-                ? { $unset: { startModule: "" } }
-                : { $set: { startModule } },
+            { _id, modules: startModule },
+            { $set: { startModule } },
         );
     }
 

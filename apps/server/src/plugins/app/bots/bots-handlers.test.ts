@@ -236,6 +236,50 @@ void describe("/bots", () => {
         );
     });
 
+    void it("keeps no start module when the module is turned off while it is picked", async (t) => {
+        const bot = await buildBot(t, {
+            plugins: [
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const actor = await allowAdmin(
+            bot,
+            buildTelegramPrivateChat({ id: 987657024 }),
+        );
+        const childId = await addChild(bot, actor);
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+
+        const findOneById = bot.botsRepository.findOneById.bind(
+            bot.botsRepository,
+        );
+
+        t.mock.method(
+            bot.botsRepository,
+            "findOneById",
+            async (botId: string) => {
+                const found = await findOneById(botId);
+
+                await bot.botsRepository.toggleModule(childId, "poker");
+
+                return found;
+            },
+            { times: 1 },
+        );
+
+        const picked = await bot.botsService.setStartModule(
+            actor,
+            childId,
+            "poker",
+        );
+
+        assert.ok(picked);
+        assert.equal(picked.startModule, undefined);
+        assert.deepEqual(picked.modules, []);
+    });
+
     void it("puts /start into the command menu of a bot when it opens a module", async (t) => {
         const bot = await buildBot(t, {
             plugins: [
