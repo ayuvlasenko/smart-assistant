@@ -5,9 +5,8 @@ import { setTimeout } from "node:timers/promises";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-    buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildTelegramSceneBot } from "../../../test/telegram-scene-bot.js";
@@ -194,14 +193,8 @@ async function createUser(
 }
 
 function buildCommandUpdate(telegramId: number, messageText: string) {
-    return buildTelegramTextMessageUpdate({
-        message: {
-            chat: buildTelegramPrivateChat({ id: telegramId }),
-            from: buildTelegramUser({ id: telegramId }),
-            entities: [
-                { length: messageText.length, offset: 0, type: "bot_command" },
-            ],
-            text: messageText,
-        },
-    });
+    return buildTelegramCommandUpdate(
+        buildTelegramPrivateChat({ id: telegramId }),
+        messageText,
+    );
 }

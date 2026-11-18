@@ -11,9 +11,8 @@ import {
     TelegramApiServiceMock,
 } from "../../../test/telegram-api-service-mock.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-    buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -685,21 +684,11 @@ async function sendTo(
     text: string,
     updateId: number,
 ): Promise<void> {
-    const [command = ""] = text.split(" ");
-
     await bot.telegramUpdateHandler.handle(
         await bot.telegramBots.get(botId),
-        buildTelegramTextMessageUpdate({
+        buildTelegramCommandUpdate(chat, text, {
             update_id: updateId,
-            message: {
-                message_id: updateId,
-                chat,
-                from: buildTelegramUser({ id: chat.id }),
-                text,
-                entities: [
-                    { type: "bot_command", offset: 0, length: command.length },
-                ],
-            },
+            message_id: updateId,
         }),
     );
 }

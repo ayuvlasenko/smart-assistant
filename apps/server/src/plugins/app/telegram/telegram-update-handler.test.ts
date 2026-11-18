@@ -12,6 +12,7 @@ import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-servi
 import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramChannelPostUpdate,
+    buildTelegramCommandUpdate,
     buildTelegramEditedMessageUpdate,
     buildTelegramPollUpdate,
     buildTelegramPrivateChat,
@@ -120,14 +121,10 @@ void describe("TelegramUpdateHandler", () => {
         );
         await telegramUpdateHandler.handle(
             await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                update_id: 2,
-                message: {
-                    chat: buildTelegramPrivateChat({ id: 987654343 }),
-                    entities: [{ length: 7, offset: 0, type: "bot_command" }],
-                    text: "/secret",
-                },
-            }),
+            buildTelegramCommandUpdate(
+                buildTelegramPrivateChat({ id: 987654343 }),
+                "/secret",
+            ),
         );
 
         assert.deepEqual(
@@ -1150,12 +1147,9 @@ function buildStartUpdate(
     messageText: string,
     updateId?: number,
 ) {
-    return buildTelegramTextMessageUpdate({
-        update_id: updateId,
-        message: {
-            chat: buildTelegramPrivateChat({ id: telegramId }),
-            entities: [{ length: 6, offset: 0, type: "bot_command" }],
-            text: messageText,
-        },
-    });
+    return buildTelegramCommandUpdate(
+        buildTelegramPrivateChat({ id: telegramId }),
+        messageText,
+        { update_id: updateId },
+    );
 }

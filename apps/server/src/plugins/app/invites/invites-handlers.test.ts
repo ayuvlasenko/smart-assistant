@@ -4,9 +4,8 @@ import { describe, it, TestContext } from "node:test";
 import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-    buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -495,24 +494,10 @@ async function sendAsStranger(
 ): Promise<void> {
     strangerUpdateId += 1;
 
-    const [command] = text.split(" ");
-
     await bot.telegramUpdateHandler.handle(
         await bot.telegramBots.root(),
-        buildTelegramTextMessageUpdate({
+        buildTelegramCommandUpdate(chat, text, {
             update_id: strangerUpdateId,
-            message: {
-                chat,
-                from: buildTelegramUser({ id: chat.id }),
-                text,
-                entities: [
-                    {
-                        type: "bot_command",
-                        offset: 0,
-                        length: command?.length ?? 0,
-                    },
-                ],
-            },
         }),
     );
 }

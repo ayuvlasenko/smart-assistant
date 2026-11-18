@@ -66,6 +66,32 @@ export function buildTelegramTextMessageUpdate(
     };
 }
 
+export interface BuildTelegramCommandUpdateOptions {
+    update_id?: number;
+    message_id?: number;
+}
+
+export function buildTelegramCommandUpdate(
+    chat: Chat.PrivateChat,
+    text: string,
+    { update_id, message_id }: BuildTelegramCommandUpdateOptions = {},
+): TelegramTextMessageUpdate {
+    const [command = ""] = text.split(" ", 1);
+
+    return buildTelegramTextMessageUpdate({
+        update_id,
+        message: {
+            ...(message_id === undefined ? {} : { message_id }),
+            chat,
+            from: buildTelegramUser({ id: chat.id }),
+            text,
+            entities: [
+                { type: "bot_command", offset: 0, length: command.length },
+            ],
+        },
+    });
+}
+
 export function buildTelegramEditedMessageUpdate(
     overrides: Partial<TelegramTextMessage & Update.Edited> = {},
 ): Update & {

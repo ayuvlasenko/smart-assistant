@@ -14,6 +14,7 @@ import {
 } from "./telegram-bot-service-helper.js";
 import {
     buildTelegramCallbackQueryUpdate,
+    buildTelegramCommandUpdate,
     buildTelegramTextMessage,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
@@ -177,26 +178,23 @@ export function buildSessionKey(
 
 function buildTextUpdate(chat: Chat.PrivateChat, text: string): Update {
     updateId += 1;
-    const [commandPart] = text.startsWith("/") ? text.split(" ") : [];
+
+    const ids = {
+        update_id: updateId,
+        message_id: userMessageIdOffset + updateId,
+    };
+
+    if (text.startsWith("/")) {
+        return buildTelegramCommandUpdate(chat, text, ids);
+    }
 
     return buildTelegramTextMessageUpdate({
-        update_id: updateId,
+        update_id: ids.update_id,
         message: {
-            message_id: userMessageIdOffset + updateId,
+            message_id: ids.message_id,
             chat,
             from: buildTelegramUser({ id: chat.id }),
             text,
-            ...(commandPart
-                ? {
-                      entities: [
-                          {
-                              type: "bot_command",
-                              offset: 0,
-                              length: commandPart.length,
-                          },
-                      ],
-                  }
-                : {}),
         },
     });
 }
