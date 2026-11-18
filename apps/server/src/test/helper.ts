@@ -5,7 +5,6 @@ import { TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
 import { Env } from "../env.js";
-import { requestIdOptions } from "../logger-request.js";
 import { buildTestMongo } from "./mongo.js";
 import {
     buildTelegramApiServiceMock,
@@ -24,7 +23,6 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
     const keyPrefix = createTestKeyPrefix();
     const app = Fastify({
         logger: opts.logger ?? false,
-        ...requestIdOptions,
         trustProxy: true,
         ...options,
     });
