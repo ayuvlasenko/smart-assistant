@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { Env } from "../../../env.js";
 import {
     AccessControl,
+    AccessSection,
     AccessService,
     adminGrant,
 } from "../access/access-service.js";
@@ -101,16 +102,34 @@ export class InvitesService {
             throw new InviteWithoutGrantsError();
         }
 
+        const grantable = await this.listGrantableSections(actor);
+
         for (const grant of grants) {
-            if (
-                !this.access.findGrant(grant) ||
-                !this.access.holds(actor, grant)
-            ) {
+            if (!isGrantIn(grantable, grant)) {
                 throw new InviteGrantNotAllowedError(grant);
             }
         }
 
         return this.insert(data);
+    }
+
+    async listGrantableSections(actor: UserEntity): Promise<AccessSection[]> {
+        const sections = await this.access.listEnabled(
+            actor.botId,
+            this.access.listSections(),
+        );
+
+        return sections.flatMap((section) => {
+            const grants = section.grants.filter((grant) =>
+                this.access.holds(actor, grant.name),
+            );
+
+            return grants.length ? [{ ...section, grants }] : [];
+        });
+    }
+
+    async canGrant(actor: UserEntity, grant: string): Promise<boolean> {
+        return isGrantIn(await this.listGrantableSections(actor), grant);
     }
 
     createOwnerInvite(botId: string): Promise<InviteEntity> {
@@ -344,6 +363,12 @@ export class InvitesService {
 
         return { status: status === "active" ? "full" : status };
     }
+}
+
+function isGrantIn(sections: AccessSection[], grant: string): boolean {
+    return sections.some(({ grants }) =>
+        grants.some(({ name }) => name === grant),
+    );
 }
 
 export default fp(

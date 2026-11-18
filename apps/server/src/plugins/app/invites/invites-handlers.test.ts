@@ -173,6 +173,25 @@ void describe("Invites scenes", () => {
         );
     });
 
+    void it("ignores an old grant button of a module that was turned off", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987654832 });
+
+        await createAdmin(bot, admin);
+        await bot.sendText(admin, "/invites");
+        await bot.pressButton(admin, en.newInviteButton);
+        await bot.pressButton(admin, en.accessButton);
+        await bot.pressButton(admin, "Ping (0/1)");
+        await bot.botsRepository.updateModules(bot.botsRegistry.rootId, [
+            "poker",
+        ]);
+        await bot.pressButton(admin, "⬜ Use /ping");
+
+        const [message] = await bot.readMessageTexts(admin.id);
+
+        assert.ok(message?.includes(en.nothingSelected));
+    });
+
     void it("lets a stranger in through the link and redraws the invite of the admin", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654814 });

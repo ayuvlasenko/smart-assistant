@@ -61,6 +61,20 @@ void describe("InvitesService create", () => {
         );
     });
 
+    void it("refuses a grant of a module that is off in the bot", async (t) => {
+        const bot = await buildInvitesBot({ testMongo, t, modules: ["poker"] });
+        const admin = await createUser(bot, "987654705", [adminGrant]);
+
+        await assert.rejects(
+            bot.invitesService.create(admin, { grants: [pingGrant] }),
+            new InviteGrantNotAllowedError(pingGrant),
+        );
+        assert.equal(
+            await bot.invitesService.canGrant(admin, pingGrant),
+            false,
+        );
+    });
+
     void it("lets an inviter give only the grants the inviter holds", async (t) => {
         const bot = await buildBot(t);
 

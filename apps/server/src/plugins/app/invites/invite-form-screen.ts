@@ -1,4 +1,4 @@
-import { AccessControl, AccessSection } from "../access/access-service.js";
+import { AccessSection } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import {
     buildTelegramHtmlMessage,
@@ -8,8 +8,6 @@ import {
 } from "../telegram/telegram-html.js";
 import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { UserEntity } from "../users/user-entity.js";
-import { InvitesSubjects } from "./invite-entity.js";
 import { formatGrants, pageButtonOf } from "./invite-format.js";
 import { InvitesView } from "./invites-schemas.js";
 
@@ -42,10 +40,10 @@ export async function renderInviteFormSections(
     view: InvitesView,
     page: number,
 ): Promise<TelegramMessageContent> {
-    const { ctx, scene, access } = view;
+    const { ctx, scene, invitesService } = view;
     const { t } = ctx;
     const sections = pageOf(
-        await listGrantableSections(access, ctx.user),
+        await invitesService.listGrantableSections(ctx.user),
         page,
         sectionsPageSize,
     );
@@ -80,9 +78,9 @@ export async function renderInviteFormSection(
     sectionName: string,
     page: number,
 ): Promise<TelegramMessageContent> {
-    const { ctx, scene, access } = view;
+    const { ctx, scene, invitesService } = view;
     const { t } = ctx;
-    const sections = await listGrantableSections(access, ctx.user);
+    const sections = await invitesService.listGrantableSections(ctx.user);
     const section = sections.find(({ name }) => name === sectionName);
 
     if (!section) {
@@ -169,24 +167,6 @@ function formatMaxUses(t: Translate, maxUses: number | null): string {
 
 function formatValidFor(t: Translate, days: number | null): string {
     return days === null ? t("invites:never") : String(days);
-}
-
-async function listGrantableSections(
-    access: AccessControl<InvitesSubjects>,
-    user: UserEntity,
-): Promise<AccessSection[]> {
-    const sections = await access.listEnabled(
-        user.botId,
-        access.listSections(),
-    );
-
-    return sections.flatMap((section) => {
-        const grants = section.grants.filter((grant) =>
-            access.holds(user, grant.name),
-        );
-
-        return grants.length ? [{ ...section, grants }] : [];
-    });
 }
 
 function countSelected(section: AccessSection, grants: string[]): number {
