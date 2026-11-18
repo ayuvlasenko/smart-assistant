@@ -4,11 +4,6 @@ import { FastifyBaseLogger } from "fastify";
 import { Translate } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import {
-    GuardedTelegramUpdate,
-    GuardedTelegramUpdates,
-    TelegramUpdateFilter,
-} from "./telegram-filters.js";
-import {
     TelegramMessageContent,
     TelegramReplyOptions,
     TelegramResponder,
@@ -16,8 +11,6 @@ import {
 } from "./telegram-responder.js";
 import { TelegramMessageMarkup } from "./telegram-scene-buttons.js";
 import { TelegramSession } from "./telegram-session.js";
-
-export type MaybeArray<T> = T | readonly T[];
 
 export interface TelegramContextOptions<TUpdate extends Update | undefined> {
     update: TUpdate;
@@ -79,24 +72,6 @@ export class TelegramContext<
 
         this.currentUser = user;
         this.translate = this.translatorOf(user);
-    }
-
-    has<TFilter extends TelegramUpdateFilter<Update>>(
-        filter: TFilter,
-    ): this is TelegramContext<
-        NonNullable<TUpdate> & GuardedTelegramUpdate<TFilter>
-    >;
-    has<const TFilters extends readonly TelegramUpdateFilter<Update>[]>(
-        filters: TFilters,
-    ): this is TelegramContext<
-        NonNullable<TUpdate> & GuardedTelegramUpdates<TFilters>
-    >;
-    has(filters: MaybeArray<TelegramUpdateFilter<Update>>): boolean {
-        const update = this.update;
-        const filterList: readonly TelegramUpdateFilter<Update>[] =
-            Array.isArray(filters) ? filters : [filters];
-
-        return !!update && filterList.some((filter) => filter(update));
     }
 
     async reply(

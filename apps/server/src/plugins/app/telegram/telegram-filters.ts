@@ -8,10 +8,6 @@ export type TelegramUpdateFilter<TUpdate extends Update> = (
 export type GuardedTelegramUpdate<TFilter> =
     TFilter extends TelegramUpdateFilter<infer TUpdate> ? TUpdate : never;
 
-export type GuardedTelegramUpdates<
-    TFilters extends readonly TelegramUpdateFilter<Update>[],
-> = GuardedTelegramUpdate<TFilters[number]>;
-
 export type TelegramTextMessageUpdate = Omit<
     Update,
     "callback_query" | "message"
