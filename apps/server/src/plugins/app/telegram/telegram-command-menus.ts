@@ -119,6 +119,23 @@ export class TelegramCommandMenus {
         }
     }
 
+    async syncBotById(botId: string): Promise<void> {
+        const bot = await this.telegramBots.find(botId);
+
+        if (!bot) {
+            return;
+        }
+
+        try {
+            await this.syncBot(bot);
+        } catch (err) {
+            this.log.error(
+                { err, botId },
+                "Failed to refresh the commands of a bot",
+            );
+        }
+    }
+
     async syncUser(user: UserEntity): Promise<void> {
         const bot = await this.telegramBots.find(user.botId);
 

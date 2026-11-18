@@ -108,21 +108,8 @@ export class BotsConnector {
         }
     }
 
-    async refreshCommands(botId: string): Promise<void> {
-        const bot = await this.telegramBots.find(botId);
-
-        if (!bot) {
-            return;
-        }
-
-        try {
-            await this.telegramCommandMenus.syncBot(bot);
-        } catch (err) {
-            this.log.error(
-                { err, botId },
-                "Failed to refresh the commands of a bot",
-            );
-        }
+    refreshCommands(botId: string): Promise<void> {
+        return this.telegramCommandMenus.syncBotById(botId);
     }
 }
 
