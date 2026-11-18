@@ -249,7 +249,7 @@ flowchart TD
     chats -->|withScenes| engine[TelegramSceneEngine]
     chats -->|"handler(ctx)"| router[TelegramRouter]
 
-    router -->|"middleware"| engine
+    router -->|"handle, before the routes"| engine
     router -->|"command / on / when"| domain["Domain handlers"]
 
     engine --> update[TelegramSceneUpdate]
@@ -618,7 +618,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 **Walk-through.**
 
 1. A handler calls `scene.ask("maxUses")`. The engine checks the guard of the scene and of the input, and that no other scene holds the focus. Then it writes `input` and runs `enter` of the first step, which usually sends the question.
-2. The engine runs as a middleware before the routes. For a message, it loads the instance from `focus`.
+2. The router hands every update to `TelegramSceneEngine.handle` before the routes. For a message, it loads the instance from `focus`.
 3. When the current step `accepts` the update, the step runs `handle` and returns a transition: `next`, `stay`, `goto`, `back`, `cancel` or `complete`. A transition can carry a `patch` for the payload, and `back` follows `history`.
 4. After the last step, or on `complete`, the engine decodes the payload with its schema, removes `input` and calls `complete` of the input.
 5. A text message that the step does not accept gets the `hint` of the step. A command is never input text: `message("text")` skips commands, so `/cancel` and every other command still reach the routes.
@@ -830,7 +830,7 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-webhook-secret.ts`                                       | The secret token of the webhook of a bot                                     | [Bots and webhooks](#bots-and-webhooks)                     |
 | `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, repeats, timeout, logs | [Rate limits](#rate-limits)                                 |
 | `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                            | [Rate limits](#rate-limits)                                 |
-| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                                   | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-router.ts`                                               | Commands, deep links, filters and routes                                     | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
