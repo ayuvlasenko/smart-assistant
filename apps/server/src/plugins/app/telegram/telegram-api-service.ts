@@ -50,6 +50,7 @@ const defaultRequestTimeoutMilliseconds = 10_000;
 const unscopedCallTimeoutMilliseconds = 60_000;
 const defaultRetryAfterSeconds = 1;
 const slowWaitMilliseconds = 1_000;
+const networkErrorRetryDelaysMilliseconds = [200, 1_000];
 
 export class TelegramApiService {
     private readonly baseUrl: string;
@@ -170,14 +171,30 @@ export class TelegramApiService {
             params,
         );
 
+        let networkErrors = 0;
+
         for (;;) {
             await this.waitForSlot(method, buckets, scope);
 
-            const result = await this.send<TMethod>(
-                method,
-                params,
-                scope.signal,
-            );
+            let result: ApiResponse<TelegramMethodResult<TMethod>>;
+
+            try {
+                result = await this.send<TMethod>(method, params, scope.signal);
+            } catch (err) {
+                const retryDelayMilliseconds =
+                    networkErrorRetryDelaysMilliseconds[networkErrors];
+
+                if (
+                    retryDelayMilliseconds === undefined ||
+                    !isNetworkError(err, scope.signal)
+                ) {
+                    throw err;
+                }
+
+                networkErrors += 1;
+                await sleep(retryDelayMilliseconds, scope.signal);
+                continue;
+            }
 
             if (result.ok || result.error_code !== 429) {
                 return result;
@@ -310,11 +327,22 @@ export class TelegramApiService {
             return;
         }
 
-        try {
-            await delay(delayMilliseconds, undefined, { signal });
-        } catch (err) {
-            signal.throwIfAborted();
-            throw err;
-        }
+        await sleep(delayMilliseconds, signal);
+    }
+}
+
+function isNetworkError(err: unknown, signal: AbortSignal): boolean {
+    return (
+        !signal.aborted &&
+        !(err instanceof DOMException && err.name === "TimeoutError")
+    );
+}
+
+async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+    try {
+        await delay(milliseconds, undefined, { signal });
+    } catch (err) {
+        signal.throwIfAborted();
+        throw err;
     }
 }

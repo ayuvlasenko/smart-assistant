@@ -61,7 +61,7 @@ void describe("TelegramApiService", () => {
         );
     });
 
-    void it("aborts a request that takes longer than the timeout", async (t) => {
+    void it("aborts a request that takes longer than the timeout and does not repeat it", async (t) => {
         mockFetchUntilAbort(t);
         const { rateLimiter } = await buildCacheServiceTestApp({ t });
         const metrics = new MetricsService();
@@ -82,9 +82,38 @@ void describe("TelegramApiService", () => {
         );
     });
 
-    void it("records and logs network failures with the method", async (t) => {
+    void it("repeats a request after a network error", async (t) => {
+        const { fetch, metrics, telegramApiService } = await buildApiService(
+            t,
+            [
+                new TypeError("fetch failed"),
+                { ok: true, result: { message_id: 7 } },
+            ],
+        );
+
+        const result = await telegramApiService.sendMessage({
+            chat_id: 1,
+            text: "hello",
+        });
+
+        assert.equal(result.ok, true);
+        assert.equal(fetch.mock.callCount(), 2);
+
+        const output = await metrics.metrics();
+
+        assert.match(
+            output,
+            /^telegram_api_requests_total\{method="sendMessage",result="network_error",error_code="",bot="123"\} 1$/m,
+        );
+        assert.match(
+            output,
+            /^telegram_api_requests_total\{method="sendMessage",result="ok",error_code="",bot="123"\} 1$/m,
+        );
+    });
+
+    void it("throws a network error after two repeats, and records and logs every attempt with the method", async (t) => {
         const logs = createLoggerCollector();
-        const { metrics, telegramApiService } = await buildApiService(
+        const { fetch, metrics, telegramApiService } = await buildApiService(
             t,
             [],
             logs,
@@ -93,9 +122,10 @@ void describe("TelegramApiService", () => {
         await assert.rejects(() => telegramApiService.getMe(), {
             message: "network down",
         });
+        assert.equal(fetch.mock.callCount(), 3);
         assert.match(
             await metrics.metrics(),
-            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code="",bot="123"\} 1$/m,
+            /^telegram_api_requests_total\{method="getMe",result="network_error",error_code="",bot="123"\} 3$/m,
         );
 
         const entry = logs
@@ -239,6 +269,22 @@ void describe("TelegramApiService", () => {
         );
     });
 
+    void it("stops waiting for a repeat when the signal of its scope aborts", async (t) => {
+        const { fetch, telegramApiService } = await buildApiService(t, []);
+        const controller = new AbortController();
+        const reason = new Error("lock lost");
+
+        const request = telegramApiScope.run(
+            { signal: controller.signal, priority: "interactive" },
+            () => telegramApiService.getMe(),
+        );
+        await setTimeout(100);
+        controller.abort(reason);
+
+        await assert.rejects(request, reason);
+        assert.equal(fetch.mock.callCount(), 1);
+    });
+
     void it("stops waiting when the signal of its scope aborts", async (t) => {
         const { telegramApiService } = await buildApiService(t, [
             rateLimitedResponse,
@@ -282,6 +328,10 @@ async function buildApiService(
 ) {
     const fetch = t.mock.method(globalThis, "fetch", async () => {
         const responseBody = responseBodies.shift() ?? responseBodies.at(-1);
+
+        if (responseBody instanceof Error) {
+            throw responseBody;
+        }
 
         if (!responseBody) {
             throw new Error("network down");
