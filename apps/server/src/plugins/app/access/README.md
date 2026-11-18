@@ -91,7 +91,7 @@ The modules of a bot come from the `modules` of its document in `bots`, see [Bot
 2. It adds `cannot manage PokerRoom` without conditions, because the bot does not have `poker`.
 3. The guard of `/poker` refuses, so the command is not in the menu of the chat and the bot stays silent on it. An old button of a poker scene gets an empty answer, `assert` throws, and `accessibleBy` returns the query that matches nothing.
 
-**Edge cases.** The `cannot` rule has no conditions, so it closes a check against a subject name too. A section registered without the second argument, such as `access`, is on in every bot. `isEnabled(botId, sectionName)` answers for a section name and `listEnabled(botId, sections)` for a list of sections, each with one read of the bot, so the invite form, the options of the default grants and the settings menu show only the sections that are on; the settings menu matches a settings section to the module of the same name, such as `poker`. A grant of a module that is off stays in `user.grants` and works again when the module comes back. The module relies on a guard on every entry point: `bots-registry.test.ts` checks that an admin of a bot without modules gets only the commands of the core.
+**Edge cases.** The `cannot` rule has no conditions, so it closes a check against a subject name too. A section registered without the second argument, such as `access`, is on in every bot. `listEnabled(botId, sections)` keeps the sections that are on, with one read of the bot, so the invite form, the options of the default grants and the settings menu show only the sections that are on; the settings menu matches a settings section to the module of the same name, such as `poker`. A grant of a module that is off stays in `user.grants` and works again when the module comes back. The module relies on a guard on every entry point: `bots-registry.test.ts` checks that an admin of a bot without modules gets only the commands of the core.
 
 ## Default grants
 
@@ -169,7 +169,7 @@ The new grant shows up in the invite form at once. `define` gets the user, so a 
 
 ## Files
 
-| File                | Owns                                                                                                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `access-service.ts` | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, `isEnabled`, `listEnabled`, the `admin` grant |
-| `access-locales.ts` | The titles of the access section and of the `admin` grant                                                                                                                      |
+| File                | Owns                                                                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access-service.ts` | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, `listEnabled`, the `admin` grant |
+| `access-locales.ts` | The titles of the access section and of the `admin` grant                                                                                                         |
