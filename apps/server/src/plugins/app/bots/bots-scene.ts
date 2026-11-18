@@ -30,6 +30,15 @@ export const botsTopic = "bots";
 
 const botsSceneTtlMilliseconds = 24 * 60 * 60 * 1000;
 const tokenPayload = Type.Object({ token: Type.String() });
+const tokenReplies = {
+    alreadyAdded: "bots:alreadyAdded",
+    invalidToken: "bots:invalidToken",
+    keyMissing: "bots:keyMissing",
+    moved: "bots:botMoved",
+    otherBot: "bots:otherBot",
+    replaced: "bots:tokenReplaced",
+    sameBot: "bots:sameBot",
+} as const;
 
 export function buildBotsState(): BotsState {
     return { tokenBotId: null };
@@ -202,7 +211,7 @@ export function createBotsScene(
                     const botId = scene.state.tokenBotId;
 
                     if (botId) {
-                        await completeMove(
+                        await completeTokenInput(
                             ctx,
                             scene,
                             await botsService.move(
@@ -230,8 +239,9 @@ export function createBotsScene(
                     const botId = scene.state.tokenBotId;
 
                     if (botId) {
-                        await completeReplacement(
+                        await completeTokenInput(
                             ctx,
+                            scene,
                             await botsService.replaceToken(
                                 ctx.user,
                                 botId,
@@ -241,7 +251,7 @@ export function createBotsScene(
                         return;
                     }
 
-                    await completeAddition(
+                    await completeTokenInput(
                         ctx,
                         scene,
                         await botsService.add(ctx.user, token.trim()),
@@ -256,69 +266,22 @@ function validateToken(text: string, t: Translate): string | undefined {
     return isBotToken(text.trim()) ? undefined : t("bots:tokenFormat");
 }
 
-async function completeAddition(
+async function completeTokenInput(
     ctx: TelegramContext,
     scene: BotsSceneControl,
-    result: BotAddResult,
+    result: BotAddResult | BotMoveResult | BotTokenResult,
 ): Promise<void> {
-    switch (result.status) {
-        case "added":
-            await scene.push("ownerInvite", {
-                botId: result.bot._id,
-                token: result.ownerInvite.token,
-            });
-            return;
-        case "alreadyAdded":
-            await ctx.reply(ctx.t("bots:alreadyAdded"));
-            await scene.push("bot", { botId: result.botId });
-            return;
-        case "invalidToken":
-            await ctx.reply(ctx.t("bots:invalidToken"));
-            return;
-        case "keyMissing":
-            await ctx.reply(ctx.t("bots:keyMissing"));
+    if (result.status === "added") {
+        await scene.push("ownerInvite", {
+            botId: result.bot._id,
+            token: result.ownerInvite.token,
+        });
+        return;
     }
-}
 
-async function completeMove(
-    ctx: TelegramContext,
-    scene: BotsSceneControl,
-    result: BotMoveResult,
-): Promise<void> {
-    switch (result.status) {
-        case "moved":
-            await ctx.reply(ctx.t("bots:botMoved"));
-            return;
-        case "sameBot":
-            await ctx.reply(ctx.t("bots:sameBot"));
-            return;
-        case "alreadyAdded":
-            await ctx.reply(ctx.t("bots:alreadyAdded"));
-            await scene.push("bot", { botId: result.botId });
-            return;
-        case "invalidToken":
-            await ctx.reply(ctx.t("bots:invalidToken"));
-            return;
-        case "keyMissing":
-            await ctx.reply(ctx.t("bots:keyMissing"));
-    }
-}
+    await ctx.reply(ctx.t(tokenReplies[result.status]));
 
-async function completeReplacement(
-    ctx: TelegramContext,
-    result: BotTokenResult,
-): Promise<void> {
-    switch (result.status) {
-        case "replaced":
-            await ctx.reply(ctx.t("bots:tokenReplaced"));
-            return;
-        case "otherBot":
-            await ctx.reply(ctx.t("bots:otherBot"));
-            return;
-        case "invalidToken":
-            await ctx.reply(ctx.t("bots:invalidToken"));
-            return;
-        case "keyMissing":
-            await ctx.reply(ctx.t("bots:keyMissing"));
+    if (result.status === "alreadyAdded") {
+        await scene.push("bot", { botId: result.botId });
     }
 }
