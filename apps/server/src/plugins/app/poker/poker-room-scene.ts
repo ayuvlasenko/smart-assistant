@@ -53,19 +53,19 @@ export function createPokerRoomScene(
     access: AccessControl<PokerSubjects>,
     resolveRoomUrl: PokerRoomUrlResolver,
 ): TelegramScene<typeof pokerRoomStateSchema> {
-    const load = (ctx: TelegramContext, scene: PokerRoomSceneControl) =>
-        pokerRoomsService.find(ctx.user, new ObjectId(scene.state.roomId));
+    const roomIdOf = (scene: PokerRoomSceneControl) =>
+        new ObjectId(scene.state.roomId);
     const renderRoom = async (
         ctx: TelegramContext,
         scene: PokerRoomSceneControl,
         renderOpen: (view: PokerRoomView) => TelegramMessageContent,
     ): Promise<TelegramMessageContent[]> => {
-        const room = await load(ctx, scene);
+        const room = await pokerRoomsService.find(ctx.user, roomIdOf(scene));
 
         if (!room) {
             const isRemoved = await pokerRoomsService.isRemoved(
                 ctx.user,
-                new ObjectId(scene.state.roomId),
+                roomIdOf(scene),
             );
 
             return [
@@ -164,35 +164,31 @@ export function createPokerRoomScene(
             vote: {
                 value: pokerRoomButtonValues.vote,
                 handle: async (ctx, scene, vote) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.vote(ctx.user, room, vote);
-                    }
+                    await pokerRoomsService.vote(
+                        ctx.user,
+                        roomIdOf(scene),
+                        vote,
+                    );
                 },
             },
             reveal: {
                 value: pokerRoomButtonValues.reveal,
                 handle: async (ctx, scene, round) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.reveal(ctx.user, room, round);
-                    }
+                    await pokerRoomsService.reveal(
+                        ctx.user,
+                        roomIdOf(scene),
+                        round,
+                    );
                 },
             },
             startRound: {
                 value: pokerRoomButtonValues.startRound,
                 handle: async (ctx, scene, options) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.startRound(
-                            ctx.user,
-                            room,
-                            options,
-                        );
-                    }
+                    await pokerRoomsService.startRound(
+                        ctx.user,
+                        roomIdOf(scene),
+                        options,
+                    );
                 },
             },
             askTitle: {
@@ -206,28 +202,21 @@ export function createPokerRoomScene(
             autoReveal: {
                 value: pokerRoomButtonValues.autoReveal,
                 handle: async (ctx, scene, autoReveal) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.changeAutoReveal(
-                            ctx.user,
-                            room,
-                            autoReveal,
-                        );
-                    }
+                    await pokerRoomsService.changeAutoReveal(
+                        ctx.user,
+                        roomIdOf(scene),
+                        autoReveal,
+                    );
                 },
             },
             role: {
                 value: pokerRoomButtonValues.role,
                 handle: async (ctx, scene, { userId, role }) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.changeRole(ctx.user, room, {
-                            userId: new ObjectId(userId),
-                            role,
-                        });
-                    }
+                    await pokerRoomsService.changeRole(
+                        ctx.user,
+                        roomIdOf(scene),
+                        { userId: new ObjectId(userId), role },
+                    );
 
                     if (scene.screen.name === "menu") {
                         await scene.reset();
@@ -242,14 +231,11 @@ export function createPokerRoomScene(
                 value: pokerRoomButtonValues.remove,
                 confirm: true,
                 handle: async (ctx, scene, userId) => {
-                    const room = await load(ctx, scene);
-                    const removed =
-                        room &&
-                        (await pokerRoomsService.removeParticipant(
-                            ctx.user,
-                            room,
-                            new ObjectId(userId),
-                        ));
+                    const removed = await pokerRoomsService.removeParticipant(
+                        ctx.user,
+                        roomIdOf(scene),
+                        new ObjectId(userId),
+                    );
 
                     if (removed && userId === ctx.user._id.toHexString()) {
                         await scene.end({ messages: "delete" });
@@ -272,11 +258,7 @@ export function createPokerRoomScene(
                 guard: access.guard("update", "PokerRoom"),
                 confirm: true,
                 handle: async (ctx, scene) => {
-                    const room = await load(ctx, scene);
-
-                    if (room) {
-                        await pokerRoomsService.close(ctx.user, room);
-                    }
+                    await pokerRoomsService.close(ctx.user, roomIdOf(scene));
                 },
             },
             hide: {
@@ -316,13 +298,13 @@ export function createPokerRoomScene(
                 ],
                 complete: async (ctx, scene, { title }) => {
                     const round = scene.state.titleRound;
-                    const room = await load(ctx, scene);
 
-                    if (room && round !== null) {
-                        await pokerRoomsService.renameRound(ctx.user, room, {
-                            round,
-                            title: title?.trim(),
-                        });
+                    if (round !== null) {
+                        await pokerRoomsService.renameRound(
+                            ctx.user,
+                            roomIdOf(scene),
+                            { round, title: title?.trim() },
+                        );
                     }
 
                     scene.state.titleRound = null;
