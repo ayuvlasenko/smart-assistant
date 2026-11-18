@@ -5,7 +5,6 @@ import fp from "fastify-plugin";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
-import { I18nService } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
@@ -15,7 +14,6 @@ import {
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
 import { TelegramApiError, unwrapTelegramResponse } from "./telegram-errors.js";
-import { telegramLocales } from "./telegram-locales.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 type TelegramBotConfig = Pick<
@@ -225,7 +223,6 @@ export class TelegramBotService {
 export default fp(
     async function (fastify: FastifyInstance) {
         const appLogger = fastify.getDecorator<AppLogger>("appLogger");
-        const i18nService = fastify.getDecorator<I18nService>("i18nService");
         const telegramBotService = new TelegramBotService(
             appLogger.child({ module: "telegram" }),
             fastify.getDecorator<TelegramBots>("telegramBots"),
@@ -234,8 +231,6 @@ export default fp(
             fastify.getDecorator<LockService>("lockService"),
             fastify.getDecorator<Env>("config"),
         );
-
-        i18nService.addLocales("telegram", telegramLocales);
 
         fastify.decorate("telegramBotService", telegramBotService);
 
@@ -249,7 +244,6 @@ export default fp(
             "@fastify/env",
             "app-logger",
             "cache",
-            "i18n-service",
             "lock-service",
             "telegram-bots",
             "telegram-command-menus",

@@ -12,6 +12,7 @@ import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
+import { telegramLocales } from "./telegram-locales.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
 import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
@@ -418,11 +419,15 @@ export class TelegramChats {
 export default fp(
     async function (fastify: FastifyInstance) {
         const appLogger = fastify.getDecorator<AppLogger>("appLogger");
+        const i18nService = fastify.getDecorator<I18nService>("i18nService");
+
+        i18nService.addLocales("telegram", telegramLocales);
+
         const telegramChats = new TelegramChats(
             fastify.getDecorator<TelegramSessionStore>("telegramSessionStore"),
             fastify.getDecorator<TelegramSceneEngine>("telegramSceneEngine"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
-            fastify.getDecorator<I18nService>("i18nService"),
+            i18nService,
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
             new TelegramDeliveryPermits(telegramDeliveryLimit),
