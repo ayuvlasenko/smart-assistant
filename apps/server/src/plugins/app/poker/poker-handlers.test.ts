@@ -638,6 +638,56 @@ void describe("Poker rooms", () => {
         assert.equal((await readRoom()).participants.length, 1);
     });
 
+    void it("lets the creator leave from the menu after a confirmation", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655183 });
+        const member = buildTelegramPrivateChat({ id: 987655184 });
+
+        await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
+        await bot.telegramChats.idle();
+
+        const listsRoom = async () =>
+            (await readListKeyboard(bot, creator))
+                .flat()
+                .some(({ text }) => text.startsWith("#1 "));
+
+        assert.ok(await listsRoom());
+
+        await bot.pressButton(creator, en.moreButton);
+
+        assert.deepEqual(
+            (await readRoomKeyboard(bot, creator))
+                .slice(-2)
+                .map((row) => row.map(({ text, style }) => ({ text, style }))),
+            [
+                [
+                    { text: en.autoRevealButton, style: undefined },
+                    { text: en.leaveButton, style: "danger" },
+                ],
+                [
+                    { text: en.backButton, style: undefined },
+                    { text: en.closeButton, style: "danger" },
+                ],
+            ],
+        );
+
+        await bot.pressButton(creator, en.leaveButton);
+
+        assert.equal((await readRoom()).participants.length, 2);
+
+        await bot.pressButton(creator, en.confirmRemoveButton);
+        await bot.telegramChats.idle();
+
+        const room = await readRoom();
+
+        assert.equal(room.participants.length, 1);
+        assert.equal(room.closedAt, undefined);
+        assert.equal((await bot.readMessageTexts(creator.id)).length, 1);
+        assert.ok(!(await listsRoom()));
+        assert.ok((await readCardRows(bot, member)).length > 0);
+    });
+
     void it("shows the history of the revealed rounds", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655151 });

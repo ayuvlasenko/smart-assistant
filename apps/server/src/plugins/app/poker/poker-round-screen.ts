@@ -183,7 +183,10 @@ function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
                 page: 0,
             }),
         ],
-        [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
+        [
+            scene.screenButton(t("poker:autoRevealButton"), "autoReveal"),
+            readLeaveButton(view),
+        ],
         [
             scene.backButton(t("poker:backButton")),
             {
@@ -214,6 +217,21 @@ function readWatchButton(view: PokerRoomView): InlineKeyboardButton {
             role: isWatching ? "voter" : "observer",
         },
     );
+}
+
+function readLeaveButton({ ctx, scene }: PokerRoomView): InlineKeyboardButton {
+    return {
+        ...scene.button(
+            ctx.t(
+                scene.isConfirming("remove")
+                    ? "poker:confirmRemoveButton"
+                    : "poker:leaveButton",
+            ),
+            "remove",
+            ctx.user._id.toHexString(),
+        ),
+        style: "danger",
+    };
 }
 
 function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {
