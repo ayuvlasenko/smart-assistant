@@ -46,8 +46,11 @@ export interface PokerSubjects {
 export type PokerRoomStatus = "open" | "closed";
 
 export const pokerRoomIdleMilliseconds = 24 * 60 * 60 * 1000;
+export const pokerRoomTitleLength = 64;
+export const pokerRoundTitleLength = 100;
 
 const idleAfterSkippedRounds = 2;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function readPokerRoomStatus(
     room: PokerRoomEntity,
@@ -145,4 +148,21 @@ export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
     ).length;
 
     return room.round.status === "voting" && target !== null && voted >= target;
+}
+
+export function isPokerTitleTooLong(text: string, max: number): boolean {
+    return [...graphemes.segment(text.trim())].length > max;
+}
+
+export function readPokerTitle(
+    text: string | undefined,
+    max: number,
+): string | undefined {
+    const title = text?.trim();
+
+    if (title && isPokerTitleTooLong(title, max)) {
+        throw new Error(`Poker title is longer than ${max} characters`);
+    }
+
+    return title || undefined;
 }

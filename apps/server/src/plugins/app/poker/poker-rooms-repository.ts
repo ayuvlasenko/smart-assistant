@@ -7,13 +7,7 @@ import {
     pokerRoomIdleMilliseconds,
     PokerRoomStatus,
 } from "./poker-room-entity.js";
-import { PokerRoomPatch } from "./poker-room-transitions.js";
-
-export type PokerRoomData = Pick<
-    PokerRoomEntity,
-    "botId" | "token" | "createdBy" | "deck" | "autoReveal" | "participants"
-> &
-    Partial<Pick<PokerRoomEntity, "title">>;
+import { NewPokerRoom, PokerRoomPatch } from "./poker-room-transitions.js";
 
 export interface PokerRoomsQuery {
     filter: Filter<PokerRoomEntity>;
@@ -33,13 +27,10 @@ export class PokerRoomsRepository {
         this.rooms = rooms;
     }
 
-    async create(data: PokerRoomData, now: Date): Promise<PokerRoomEntity> {
+    async create(data: NewPokerRoom, now: Date): Promise<PokerRoomEntity> {
         const room: PokerRoomEntity = {
             _id: new ObjectId(),
             ...data,
-            lastActivityAt: now,
-            round: { number: 1, status: "voting", votes: {}, startedAt: now },
-            rounds: [],
             version: 0,
             createdAt: now,
             updatedAt: now,

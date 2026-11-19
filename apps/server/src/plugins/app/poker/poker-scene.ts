@@ -8,7 +8,7 @@ import { defaultPokerDeckName } from "./poker-decks.js";
 import { renderPokerDeckChoice, renderPokerForm } from "./poker-form-screen.js";
 import { validatePokerTitle } from "./poker-format.js";
 import { renderPokerClosedList, renderPokerList } from "./poker-list-screen.js";
-import { PokerSubjects } from "./poker-room-entity.js";
+import { pokerRoomTitleLength, PokerSubjects } from "./poker-room-entity.js";
 import { buildPokerRoomState } from "./poker-room-scene.js";
 import { PokerRoomsService } from "./poker-rooms-service.js";
 import {
@@ -22,8 +22,6 @@ import {
 } from "./poker-schemas.js";
 
 const pokerSceneTtlMilliseconds = 7 * 24 * 60 * 60 * 1000;
-
-const roomTitleLength = 64;
 
 export function pokerRoomsTopic(userId: string): string {
     return `poker.rooms:${userId}`;
@@ -157,15 +155,15 @@ export function createPokerScene(
                         property: "title",
                         prompt: (t) =>
                             t("poker:roomTitlePrompt", {
-                                max: roomTitleLength,
+                                max: pokerRoomTitleLength,
                             }),
                         optional: true,
                         validate: (text, t) =>
-                            validatePokerTitle(text, t, roomTitleLength),
+                            validatePokerTitle(text, t, pokerRoomTitleLength),
                     }),
                 ],
                 complete: async (ctx, scene, { title }) => {
-                    scene.state.draft.title = title?.trim() ?? null;
+                    scene.state.draft.title = title ?? null;
                 },
             },
         },

@@ -1,12 +1,27 @@
 import { ObjectId } from "mongodb";
+import { BaseEntity } from "../../../entity.js";
+import { PokerDeckName, readPokerDeck } from "./poker-decks.js";
+import { pickPokerParticipantEmoji } from "./poker-participant-emojis.js";
 import {
     findPokerParticipant,
     isPokerAutoRevealDue,
+    PokerAutoReveal,
     PokerParticipant,
     PokerParticipantRole,
     PokerRoomEntity,
     PokerRound,
 } from "./poker-room-entity.js";
+
+export type NewPokerRoom = Omit<PokerRoomEntity, keyof BaseEntity>;
+
+export interface PokerRoomOpening {
+    botId: string;
+    token: string;
+    createdBy: ObjectId;
+    title?: string;
+    deck: PokerDeckName;
+    autoReveal: boolean;
+}
 
 export type PokerRoomPatch = Partial<
     Pick<
@@ -40,11 +55,45 @@ export interface PokerRoleChange {
     role: PokerParticipantRole;
 }
 
+export function openPokerRoom(
+    { autoReveal, title, ...opening }: PokerRoomOpening,
+    now: Date,
+): NewPokerRoom {
+    return {
+        ...opening,
+        ...(title === undefined ? {} : { title }),
+        autoReveal: autoReveal ? { missingVotes: 0 } : null,
+        lastActivityAt: now,
+        participants: [buildPokerParticipant([], opening.createdBy, now)],
+        round: { number: 1, status: "voting", votes: {}, startedAt: now },
+        rounds: [],
+    };
+}
+
+export function buildPokerParticipant(
+    participants: PokerParticipant[],
+    userId: ObjectId,
+    now: Date,
+): PokerParticipant {
+    return {
+        userId,
+        emoji: pickPokerParticipantEmoji(
+            participants.map(({ emoji }) => emoji),
+        ),
+        role: "voter",
+        joinedAt: now,
+    };
+}
+
 export function votePokerRound(
     room: PokerRoomEntity,
     userId: ObjectId,
     { round, card }: PokerVote,
 ): PokerRoomPatch | null {
+    if (!readPokerDeck(room.deck).cards.includes(card)) {
+        throw new Error(`Poker card "${card}" is not in the deck`);
+    }
+
     const voter = findPokerParticipant(room, userId);
 
     if (!isVotingRound(room, round) || !voter || voter.role === "observer") {
@@ -134,6 +183,16 @@ export function changePokerRole(
             ? withoutOpenVote(room, change.userId)
             : {}),
     };
+}
+
+export function changePokerAutoReveal(
+    autoReveal: PokerAutoReveal,
+): PokerRoomPatch {
+    return { autoReveal };
+}
+
+export function closePokerRoom(now: Date): PokerRoomPatch {
+    return { closedAt: now };
 }
 
 export function addPokerParticipant(

@@ -23,6 +23,7 @@ import {
 import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
+    pokerRoundTitleLength,
     PokerSubjects,
     readPokerRoomStatus,
 } from "./poker-room-entity.js";
@@ -37,8 +38,6 @@ import {
     PokerRoomUrlResolver,
     PokerRoomView,
 } from "./poker-schemas.js";
-
-const roundTitleLength = 100;
 
 export function pokerRoomTopic(roomId: string): string {
     return `poker.room:${roomId}`;
@@ -289,11 +288,11 @@ export function createPokerRoomScene(
                         property: "title",
                         prompt: (t) =>
                             t("poker:roundTitlePrompt", {
-                                max: roundTitleLength,
+                                max: pokerRoundTitleLength,
                             }),
                         optional: true,
                         validate: (text, t) =>
-                            validatePokerTitle(text, t, roundTitleLength),
+                            validatePokerTitle(text, t, pokerRoundTitleLength),
                     }),
                 ],
                 complete: async (ctx, scene, { title }) => {
@@ -303,7 +302,7 @@ export function createPokerRoomScene(
                         await pokerRoomsService.renameRound(
                             ctx.user,
                             roomIdOf(scene),
-                            { round, title: title?.trim() },
+                            { round, title },
                         );
                     }
 

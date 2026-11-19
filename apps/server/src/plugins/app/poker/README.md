@@ -265,7 +265,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Edge cases.** The redraw reads the room under the session lock of each participant, after the lock is free. When several votes come while an edit waits for the rate limiter, the next redraw already shows all of them, and the redraws after it find the same content hash and call no API. So each chat gets at most about one edit per second, whatever the number of votes. Two large active rooms can still reach the limit of the bot. Then the redraws wait for a delivery permit without a session lock, see [Updates for other users](../telegram/README.md#updates-for-other-users).
 
-**Metrics.** `poker-handlers.ts` counts every event in `poker_room_changes_total{change}`, such as `created`, `joined` or `voted`, and observes the number of participants after each join in `poker_room_participants`.
+**Metrics.** `poker-handlers.ts` counts every event in `poker_room_changes_total{change}`, such as `created`, `joined` or `voted`, and observes the number of participants after each join in `poker_room_participants`. A change that also reveals the round, such as the last missing vote, carries `autoRevealed` in its event and counts once as itself and once as `revealed`.
 
 ## The round summary
 
@@ -301,7 +301,7 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | File                                                                      | Owns                                                                                                         | Section                                                       |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal                   | [A room document](#a-room-document)                           |
-| `poker-room-transitions.ts`                                               | The changes of a room as pure functions                                                                      | [A room document](#a-room-document)                           |
+| `poker-room-transitions.ts`                                               | A new room and the changes of a room as pure functions                                                       | [A room document](#a-room-document)                           |
 | `poker-decks.ts`                                                          | The decks                                                                                                    | [Using the bot](#using-the-bot)                               |
 | `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                                        | [A room document](#a-room-document)                           |
 | `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, removals, lists; the participant limit | [Joining a room](#joining-a-room)                             |

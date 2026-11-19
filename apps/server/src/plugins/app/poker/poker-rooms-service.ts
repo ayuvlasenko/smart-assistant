@@ -16,22 +16,27 @@ import {
 } from "../settings/settings-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
-import { PokerDeckName, readPokerDeck } from "./poker-decks.js";
+import { PokerDeckName } from "./poker-decks.js";
 import { PokerEvents, PokerRoomChange } from "./poker-events.js";
-import { pickPokerParticipantEmoji } from "./poker-participant-emojis.js";
 import {
     findPokerParticipant,
     listKnownPokerParticipants,
     PokerAutoReveal,
-    PokerParticipant,
     PokerRoomEntity,
     PokerRoomStatus,
+    pokerRoomTitleLength,
+    pokerRoundTitleLength,
     PokerSubjects,
     readPokerRoomStatus,
+    readPokerTitle,
 } from "./poker-room-entity.js";
 import {
     addPokerParticipant,
+    buildPokerParticipant,
+    changePokerAutoReveal,
     changePokerRole,
+    closePokerRoom,
+    openPokerRoom,
     PokerRoleChange,
     PokerRoomPatch,
     PokerRoundRename,
@@ -107,22 +112,17 @@ export class PokerRoomsService {
         draft: PokerRoomDraft,
     ): Promise<PokerRoomEntity> {
         const now = new Date();
-        const data = {
-            botId: actor.botId,
-            token: randomBytes(roomTokenBytes).toString("base64url"),
-            createdBy: actor._id,
-            ...(draft.title === undefined ? {} : { title: draft.title }),
-            deck: draft.deck,
-            autoReveal: draft.autoReveal ? { missingVotes: 0 } : null,
-            participants: [
-                {
-                    userId: actor._id,
-                    emoji: pickPokerParticipantEmoji([]),
-                    role: "voter" as const,
-                    joinedAt: now,
-                },
-            ],
-        };
+        const data = openPokerRoom(
+            {
+                botId: actor.botId,
+                token: randomBytes(roomTokenBytes).toString("base64url"),
+                createdBy: actor._id,
+                title: readPokerTitle(draft.title, pokerRoomTitleLength),
+                deck: draft.deck,
+                autoReveal: draft.autoReveal,
+            },
+            now,
+        );
 
         await this.access.assert(actor, "create", subject("PokerRoom", data));
 
@@ -165,17 +165,12 @@ export class PokerRoomsService {
                 return { status: "full" };
             }
 
-            const participant: PokerParticipant = {
-                userId: actor._id,
-                emoji: pickPokerParticipantEmoji(
-                    room.participants.map(({ emoji }) => emoji),
-                ),
-                role: "voter",
-                joinedAt: now,
-            };
             const joined = await this.save(
                 room,
-                addPokerParticipant(room, participant),
+                addPokerParticipant(
+                    room,
+                    buildPokerParticipant(room.participants, actor._id, now),
+                ),
                 { now, change: "joined" },
             );
 
@@ -246,13 +241,9 @@ export class PokerRoomsService {
         roomId: ObjectId,
         vote: PokerVote,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, roomId, "voted", (room) => {
-            if (!readPokerDeck(room.deck).cards.includes(vote.card)) {
-                throw new Error(`Poker card "${vote.card}" is not in the deck`);
-            }
-
-            return votePokerRound(room, actor._id, vote);
-        });
+        return this.change(actor, roomId, "voted", (room) =>
+            votePokerRound(room, actor._id, vote),
+        );
     }
 
     reveal(
@@ -280,8 +271,10 @@ export class PokerRoomsService {
         roomId: ObjectId,
         rename: PokerRoundRename,
     ): Promise<PokerRoomEntity | null> {
+        const title = readPokerTitle(rename.title, pokerRoundTitleLength);
+
         return this.change(actor, roomId, "roundRenamed", (room) =>
-            renamePokerRound(room, rename),
+            renamePokerRound(room, { round: rename.round, title }),
         );
     }
 
@@ -290,9 +283,9 @@ export class PokerRoomsService {
         roomId: ObjectId,
         autoReveal: PokerAutoReveal,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, roomId, "autoRevealChanged", () => ({
-            autoReveal,
-        }));
+        return this.change(actor, roomId, "autoRevealChanged", () =>
+            changePokerAutoReveal(autoReveal),
+        );
     }
 
     changeRole(
@@ -326,7 +319,7 @@ export class PokerRoomsService {
             actor,
             roomId,
             "closed",
-            (room, now) => ({ closedAt: now }),
+            (room, now) => closePokerRoom(now),
             ["use", "update"],
         );
     }
