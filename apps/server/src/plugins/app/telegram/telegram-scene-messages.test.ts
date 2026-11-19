@@ -305,6 +305,60 @@ void describe("Telegram scene messages", () => {
         assert.deepEqual(bot.readSentTexts(), ["Footer", "Footer"]);
     });
 
+    void it("gives an equal button in two messages one id and redraws them without an edit", async (t) => {
+        const pairScene = defineScene({
+            name: "pair",
+            state: Type.Object({}),
+            ttl: 60_000,
+            root: { name: "pair", params: {} },
+            screens: {
+                pair: {
+                    params: Type.Object({}),
+                    render: async (ctx, scene) =>
+                        ["Left", "Right"].map((text) => ({
+                            kind: "text" as const,
+                            text,
+                            keyboard: [[scene.button("Same", "same", null)]],
+                        })),
+                },
+            },
+            buttons: {
+                same: { value: Type.Null(), handle: async () => undefined },
+            },
+        });
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router, sceneEngine) => {
+                router.scene(pairScene);
+                router.command("pair", (ctx) =>
+                    sceneEngine.start(ctx, pairScene, {}),
+                );
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654446 });
+
+        await bot.sendText(chat, "/pair");
+        await bot.pressButton(chat, "Same");
+
+        const callbackData = bot.telegramApiService.sendMessage.mock.calls.map(
+            (call) => {
+                const markup = call.arguments[0].reply_markup;
+
+                return markup && "inline_keyboard" in markup
+                    ? markup.inline_keyboard.flat()
+                    : [];
+            },
+        );
+
+        assert.equal(callbackData.length, 2);
+        assert.deepEqual(callbackData[0], callbackData[1]);
+        assert.equal(
+            bot.telegramApiService.editMessageText.mock.callCount(),
+            0,
+        );
+    });
+
     void it("keeps the messages as they were when the render fails", async (t) => {
         const panel = { isFooterBroken: true };
         const bot = await buildPanelBot(t, panel);

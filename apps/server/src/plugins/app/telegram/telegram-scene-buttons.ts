@@ -86,11 +86,13 @@ export class TelegramSceneButtons {
         text: string,
         button: TelegramButton,
     ): InlineKeyboardButton.CallbackButton {
+        const unsent = this.unsentIn(instance);
         const id =
-            findSameButton(instance, button) ??
+            findSameButton(unsent, button) ??
+            findSameButton(storedButtonsOf(instance), button) ??
             String(instance.record.buttons.nextId++);
 
-        this.unsentIn(instance).set(id, button);
+        unsent.set(id, button);
 
         return { text, callback_data: `${instance.id}:${id}` };
     }
@@ -189,15 +191,25 @@ export class TelegramSceneButtons {
     }
 }
 
-function findSameButton(
+function storedButtonsOf(
     instance: TelegramSceneInstance,
+): [string, TelegramButton][] {
+    return instance.record.buttons.messages.flatMap((message) =>
+        Object.entries(message.buttons),
+    );
+}
+
+function findSameButton(
+    buttons: Iterable<[string, TelegramButton]>,
     button: TelegramButton,
 ): string | undefined {
     const value = JSON.stringify(button);
 
-    return instance.record.buttons.messages
-        .flatMap((message) => Object.entries(message.buttons))
-        .find(([, stored]) => JSON.stringify(stored) === value)?.[0];
+    for (const [id, other] of buttons) {
+        if (JSON.stringify(other) === value) {
+            return id;
+        }
+    }
 }
 
 function readOwnButtonIds(
