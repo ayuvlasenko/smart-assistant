@@ -1,5 +1,5 @@
 import { WebhookInfo } from "@grammyjs/types";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Env } from "../../../env.js";
@@ -25,9 +25,21 @@ type TelegramBotConfig = Pick<
     | "TELEGRAM_WEBHOOK_URL"
 >;
 
-export type TelegramBotWebhook =
-    | { botId: string; status: "refreshed"; webhookUrl: string; botUrl: string }
-    | { botId: string; status: "failed"; error: string };
+export const telegramBotWebhookSchema = Type.Union([
+    Type.Object({
+        botId: Type.String(),
+        status: Type.Literal("refreshed"),
+        webhookUrl: Type.String(),
+        botUrl: Type.String(),
+    }),
+    Type.Object({
+        botId: Type.String(),
+        status: Type.Literal("failed"),
+        error: Type.String(),
+    }),
+]);
+
+export type TelegramBotWebhook = Static<typeof telegramBotWebhookSchema>;
 
 const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
