@@ -22,7 +22,7 @@ import {
 } from "./telegram-fixtures.js";
 
 export interface TelegramSceneBot extends TelegramBotServiceTestApp {
-    allowUser(telegramId: number): Promise<void>;
+    allowUser(telegramId: number, grants?: string[]): Promise<void>;
     sendText(chat: Chat.PrivateChat, text: string): Promise<Update>;
     sendCallback(
         chat: Chat.PrivateChat,
@@ -72,18 +72,23 @@ export async function buildTelegramSceneBot(
         return update;
     };
 
-    const allowUser = async (telegramId: number) => {
-        if (allowedUserIds.has(telegramId)) {
+    const allowUser = async (telegramId: number, grants: string[] = []) => {
+        if (allowedUserIds.has(telegramId) && !grants.length) {
             return;
         }
 
         allowedUserIds.add(telegramId);
-        await usersRepository.findOneByTelegramIdOrCreate({
+
+        const { user } = await usersRepository.findOneByTelegramIdOrCreate({
             botId: (await telegramBots.root()).id,
             telegramId: String(telegramId),
             isBanned: false,
             languageCode: "en",
         });
+
+        if (grants.length) {
+            await usersRepository.grantAccess(user._id, grants);
+        }
     };
 
     return {

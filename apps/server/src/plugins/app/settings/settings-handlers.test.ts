@@ -205,17 +205,9 @@ async function allowAdmin(
     bot: PokerBot,
     id: number,
 ): Promise<Chat.PrivateChat> {
-    const chat = buildTelegramPrivateChat({ id });
+    await bot.allowUser(id, [adminGrant]);
 
-    await bot.allowUser(id);
-    await testMongo.mongo
-        .collection("users")
-        .updateOne(
-            { telegramId: String(id) },
-            { $set: { grants: [adminGrant] } },
-        );
-
-    return chat;
+    return buildTelegramPrivateChat({ id });
 }
 
 async function openBotSettings(

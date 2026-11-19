@@ -128,7 +128,7 @@ void describe("Invites scenes", () => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654812 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
 
         const [invite] = await testMongo.mongo
@@ -160,7 +160,7 @@ void describe("Invites scenes", () => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654813 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await bot.sendText(admin, "/invites");
         await bot.pressButton(admin, en.newInviteButton);
         await bot.pressButton(admin, en.createButton);
@@ -180,7 +180,7 @@ void describe("Invites scenes", () => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654832 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await bot.sendText(admin, "/invites");
         await bot.pressButton(admin, en.newInviteButton);
         await bot.pressButton(admin, en.accessButton);
@@ -199,7 +199,7 @@ void describe("Invites scenes", () => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654833 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await bot.sendText(admin, "/invites");
         await bot.pressButton(admin, en.newInviteButton);
         await bot.pressButton(admin, en.accessButton);
@@ -232,7 +232,7 @@ void describe("Invites scenes", () => {
         const guest = buildTelegramPrivateChat({ id: 987654815 });
         const outsider = buildTelegramPrivateChat({ id: 987654816 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
 
         const token = await readInviteToken();
@@ -267,9 +267,9 @@ void describe("Invites scenes", () => {
         const drafter = buildTelegramPrivateChat({ id: 987654826 });
         const guest = buildTelegramPrivateChat({ id: 987654827 });
 
-        await createAdmin(bot, author);
-        await createAdmin(bot, watcher);
-        await createAdmin(bot, drafter);
+        await bot.allowUser(author.id, [adminGrant]);
+        await bot.allowUser(watcher.id, [adminGrant]);
+        await bot.allowUser(drafter.id, [adminGrant]);
         await createInviteThroughForm(bot, author);
         await bot.sendText(watcher, "/invites");
         await bot.sendText(drafter, "/invites");
@@ -298,8 +298,8 @@ void describe("Invites scenes", () => {
         const author = buildTelegramPrivateChat({ id: 987654828 });
         const watcher = buildTelegramPrivateChat({ id: 987654829 });
 
-        await createAdmin(bot, author);
-        await createAdmin(bot, watcher);
+        await bot.allowUser(author.id, [adminGrant]);
+        await bot.allowUser(watcher.id, [adminGrant]);
         await bot.sendText(watcher, "/invites");
         await createInviteThroughForm(bot, author);
         await bot.telegramChats.idle();
@@ -322,7 +322,7 @@ void describe("Invites scenes", () => {
         const admin = buildTelegramPrivateChat({ id: 987654817 });
         const member = buildTelegramPrivateChat({ id: 987654818 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
         await bot.sendText(member, `/start invite_${await readInviteToken()}`);
         await bot.sendText(member, "/ping");
@@ -339,7 +339,7 @@ void describe("Invites scenes", () => {
         const admin = buildTelegramPrivateChat({ id: 987654819 });
         const guest = buildTelegramPrivateChat({ id: 987654820 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
         await bot.pressButton(admin, en.revokeButton);
 
@@ -378,7 +378,7 @@ void describe("Invites scenes", () => {
         const admin = buildTelegramPrivateChat({ id: 987654830 });
         const guest = buildTelegramPrivateChat({ id: 987654831 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
         await sendAsStranger(
             bot,
@@ -421,7 +421,7 @@ void describe("Invites scenes", () => {
             ],
         });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
         await bot.allowUser(reader.id);
         await testMongo.mongo
@@ -449,7 +449,7 @@ void describe("Invites scenes", () => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987654821 });
 
-        await createAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await createInviteThroughForm(bot, admin);
         await bot.pressButton(admin, en.backButton);
 
@@ -481,19 +481,6 @@ function buildBot(
     env: Record<string, string> = {},
 ): Promise<InvitesBot> {
     return buildInvitesBot({ testMongo, t, env });
-}
-
-async function createAdmin(
-    bot: InvitesBot,
-    chat: Chat.PrivateChat,
-): Promise<void> {
-    await bot.allowUser(chat.id);
-    await testMongo.mongo
-        .collection("users")
-        .updateOne(
-            { telegramId: String(chat.id) },
-            { $set: { grants: [adminGrant] } },
-        );
 }
 
 async function createInviteThroughForm(

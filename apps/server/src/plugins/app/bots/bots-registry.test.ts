@@ -1,4 +1,3 @@
-import { Chat } from "@grammyjs/types";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { describe, it } from "node:test";
@@ -204,7 +203,7 @@ void describe("Bot modules", () => {
         const bot = await buildPokerBot({ testMongo, t });
         const admin = buildTelegramPrivateChat({ id: 987656001 });
 
-        await allowAdmin(bot, admin);
+        await bot.allowUser(admin.id, [adminGrant]);
         await bot.sendText(admin, "/poker");
 
         const shown = await bot.readMessageTexts(admin.id);
@@ -271,19 +270,6 @@ void describe("Bot modules", () => {
         ]);
     });
 });
-
-async function allowAdmin(
-    bot: PokerBot,
-    chat: Chat.PrivateChat,
-): Promise<void> {
-    await bot.allowUser(chat.id);
-    await testMongo.mongo
-        .collection("users")
-        .updateOne(
-            { telegramId: String(chat.id) },
-            { $set: { grants: [adminGrant] } },
-        );
-}
 
 async function setModules(bot: PokerBot, modules: string[]): Promise<void> {
     await bot.botsRepository.updateModules(bot.botsRegistry.rootId, modules);

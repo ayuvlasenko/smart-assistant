@@ -709,13 +709,7 @@ async function allowAdmin(
     bot: BotsBot,
     chat: Chat.PrivateChat,
 ): Promise<UserEntity> {
-    await bot.allowUser(chat.id);
-    await testMongo.mongo
-        .collection("users")
-        .updateOne(
-            { botId: testBotId, telegramId: String(chat.id) },
-            { $set: { grants: [adminGrant] } },
-        );
+    await bot.allowUser(chat.id, [adminGrant]);
 
     const user = await bot.usersRepository.findOneByTelegramId(
         testBotId,
