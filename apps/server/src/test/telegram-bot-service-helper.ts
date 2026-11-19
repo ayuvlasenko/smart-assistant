@@ -67,7 +67,9 @@ import emitteryPlugin from "../plugins/external/emittery.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
 } from "../plugins/external/env.js";
-import valkeyPlugin from "../plugins/external/kv-valkey.js";
+import valkeyPlugin, {
+    valkeyKeyPrefixOf,
+} from "../plugins/external/kv-valkey.js";
 import mongoPlugin from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
@@ -77,7 +79,7 @@ import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
 } from "./telegram-api-service-mock.js";
-import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
+import { createTestResourceName, deleteKeysByPrefix } from "./valkey.js";
 
 export interface BuildTelegramBotServiceTestAppOptions {
     testMongo: TestMongo;
@@ -126,8 +128,8 @@ export async function buildTelegramBotServiceTestApp({
     registerRoutes,
     logger = false,
 }: BuildTelegramBotServiceTestAppOptions): Promise<TelegramBotServiceTestApp> {
-    const keyPrefix = createTestKeyPrefix();
-    const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
+    const resourceName = createTestResourceName();
+    const keyPrefix = valkeyKeyPrefixOf(resourceName);
     const rootToken = env.TELEGRAM_BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
     const app = Fastify({
         logger,
@@ -208,25 +210,24 @@ export async function buildTelegramBotServiceTestApp({
         );
     }
 
-    try {
-        await app.ready();
-    } catch (err) {
-        await app.close();
-        throw err;
-    }
-
-    const valkey = app.getDecorator<Redis>("valkey");
-    const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
-    const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
-    await botsRepository.updateModules(botsRegistry.rootId, modules);
-
     t.after(async () => {
         try {
-            await deleteKeysByPrefix(valkey, keyPrefix);
+            if (app.hasDecorator("valkey")) {
+                await deleteKeysByPrefix(
+                    app.getDecorator<Redis>("valkey"),
+                    keyPrefix,
+                );
+            }
         } finally {
             await app.close();
         }
     });
+
+    await app.ready();
+
+    const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
+    const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
+    await botsRepository.updateModules(botsRegistry.rootId, modules);
 
     return {
         app,

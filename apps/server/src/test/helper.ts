@@ -5,35 +5,55 @@ import { TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import serviceApp, { options } from "../app.js";
 import { Env } from "../env.js";
+import { valkeyKeyPrefixOf } from "../plugins/external/kv-valkey.js";
 import { buildTestMongo } from "./mongo.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
 } from "./telegram-api-service-mock.js";
-import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
+import { createTestResourceName, deleteKeysByPrefix } from "./valkey.js";
 
 const pressureWaitMilliseconds = 15_000;
 
-type BuildOptions = {
+interface BuildOptions {
     t: TestContext;
     logger?: FastifyServerOptions["logger"];
     telegramApiService?: TelegramApiServiceMock;
     environment?: Env["ENVIRONMENT"];
-};
+}
 
 export async function buildTestApp({ t, ...opts }: BuildOptions) {
-    const keyPrefix = createTestKeyPrefix();
+    const resourceName = createTestResourceName();
+    const telegramApiService =
+        opts.telegramApiService ?? buildTelegramApiServiceMock({ t });
+    const { client, databaseName, mongo } = await buildTestMongo();
+
+    t.after(async () => {
+        try {
+            await mongo.dropDatabase();
+        } finally {
+            await client.close();
+        }
+    });
+
     const app = Fastify({
         logger: opts.logger ?? false,
         ...options,
     });
 
-    const telegramApiService =
-        opts.telegramApiService ?? buildTelegramApiServiceMock({ t });
+    t.after(async () => {
+        try {
+            if (app.hasDecorator("valkey")) {
+                await deleteKeysByPrefix(
+                    app.getDecorator<Redis>("valkey"),
+                    valkeyKeyPrefixOf(resourceName),
+                );
+            }
+        } finally {
+            await app.close();
+        }
+    });
 
-    const { client, databaseName } = await buildTestMongo();
-
-    await client.close();
     app.register(fp(serviceApp), {
         telegramApiFactory: () => telegramApiService,
         database: databaseName,
@@ -42,25 +62,13 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
     await withEnv(
         {
             ENVIRONMENT: opts.environment ?? "production",
-            RESOURCE_NAME: keyPrefix.slice("smart-assistant:".length, -1),
+            RESOURCE_NAME: resourceName,
             INVITE_TOKEN: undefined,
             BOTS_ENCRYPTION_KEY: undefined,
         },
         () => app.ready(),
     );
     await waitUntilNotUnderPressure(app);
-
-    t.after(async () => {
-        try {
-            await deleteKeysByPrefix(
-                app.getDecorator<Redis>("valkey"),
-                keyPrefix,
-            );
-        } finally {
-            await app.mongo.db?.dropDatabase();
-            await app.close();
-        }
-    });
 
     return { app, telegramApiService };
 }

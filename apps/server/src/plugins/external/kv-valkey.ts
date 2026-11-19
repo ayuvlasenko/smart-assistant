@@ -33,11 +33,15 @@ export default fp(
     },
 );
 
+export function valkeyKeyPrefixOf(resourceName: string): string {
+    return `smart-assistant:${resourceName}:`;
+}
+
 function buildValkeyClient(config: Env): Redis {
     const options: RedisOptions = {
         connectTimeout: config.VALKEY_CONNECT_TIMEOUT_MS,
         enableOfflineQueue: false,
-        keyPrefix: `smart-assistant:${config.RESOURCE_NAME}:`,
+        keyPrefix: valkeyKeyPrefixOf(config.RESOURCE_NAME),
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         retryStrategy: (attempt) =>

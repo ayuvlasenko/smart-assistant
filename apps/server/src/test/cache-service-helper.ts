@@ -12,11 +12,13 @@ import rateLimiterPlugin, { RateLimiter } from "../plugins/app/rate-limiter.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
 } from "../plugins/external/env.js";
-import valkeyPlugin from "../plugins/external/kv-valkey.js";
+import valkeyPlugin, {
+    valkeyKeyPrefixOf,
+} from "../plugins/external/kv-valkey.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
-import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
+import { createTestResourceName, deleteKeysByPrefix } from "./valkey.js";
 
 export interface BuildCacheServiceTestAppOptions {
     t: TestContext;
@@ -35,8 +37,8 @@ export interface CacheServiceTestApp {
 export async function buildCacheServiceTestApp({
     t,
 }: BuildCacheServiceTestAppOptions): Promise<CacheServiceTestApp> {
-    const keyPrefix = createTestKeyPrefix();
-    const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
+    const resourceName = createTestResourceName();
+    const keyPrefix = valkeyKeyPrefixOf(resourceName);
     const app = Fastify({
         logger: false,
         ...appOptions,
@@ -57,17 +59,22 @@ export async function buildCacheServiceTestApp({
     app.register(lockPlugin);
     app.register(rateLimiterPlugin);
 
-    await app.ready();
-
-    const client = app.getDecorator<Redis>("valkey");
-
     t.after(async () => {
         try {
-            await deleteKeysByPrefix(client, keyPrefix);
+            if (app.hasDecorator("valkey")) {
+                await deleteKeysByPrefix(
+                    app.getDecorator<Redis>("valkey"),
+                    keyPrefix,
+                );
+            }
         } finally {
             await app.close();
         }
     });
+
+    await app.ready();
+
+    const client = app.getDecorator<Redis>("valkey");
 
     return {
         app,
