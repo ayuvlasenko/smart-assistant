@@ -595,7 +595,7 @@ void describe("Poker rooms", () => {
         assert.deepEqual((await readRoom()).removedParticipants, []);
     });
 
-    void it("lets a participant leave from their own card and keeps the creator", async (t) => {
+    void it("lets any participant leave from their own card", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655152 });
         const member = buildTelegramPrivateChat({ id: 987655153 });
@@ -613,6 +613,7 @@ void describe("Poker rooms", () => {
         assert.deepEqual(await readCallbackTexts(bot, creator), [
             en.watchButton,
             en.backButton,
+            en.leaveButton,
         ]);
 
         await bot.pressButton(member, en.moreButton);
@@ -674,23 +675,17 @@ void describe("Poker rooms", () => {
         );
     });
 
-    void it("lets only the creator close the room after a confirmation", async (t) => {
+    void it("lets any participant close the room after a confirmation", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655181 });
         const member = buildTelegramPrivateChat({ id: 987655182 });
 
         await createRoomThroughForm(bot, creator);
         await joinRoom(bot, member);
-
-        const memberButtons = await readCallbackTexts(bot, member);
-
-        assert.ok(memberButtons.includes(revealLabel(0, 2)));
-        assert.ok(!memberButtons.includes(en.closeButton));
-
-        await bot.pressButton(creator, en.moreButton);
+        await bot.pressButton(member, en.moreButton);
 
         assert.deepEqual(
-            (await readRoomKeyboard(bot, creator))
+            (await readRoomKeyboard(bot, member))
                 .at(-1)
                 ?.map(({ text, style }) => ({ text, style })),
             [
@@ -699,24 +694,26 @@ void describe("Poker rooms", () => {
             ],
         );
 
-        await bot.pressButton(creator, en.closeButton);
-        await bot.pressButton(creator, en.historyButton);
-        await bot.pressButton(creator, en.backButton);
-        await bot.pressButton(creator, en.closeButton);
+        await bot.pressButton(member, en.closeButton);
+        await bot.pressButton(member, en.historyButton);
+        await bot.pressButton(member, en.backButton);
+        await bot.pressButton(member, en.closeButton);
 
         assert.equal((await readRoom()).closedAt, undefined);
         assert.ok(
-            (await bot.readButtonLabels(creator.id)).includes(
+            (await bot.readButtonLabels(member.id)).includes(
                 en.confirmCloseButton,
             ),
         );
 
-        await bot.pressButton(creator, en.confirmCloseButton);
+        await bot.pressButton(member, en.confirmCloseButton);
         await bot.telegramChats.idle();
 
         assert.ok((await readRoom()).closedAt);
-        assert.ok((await readRoomMessage(bot, member)).includes(en.closedNote));
-        assert.ok(!(await readCallbackTexts(bot, member)).includes("5"));
+        assert.ok(
+            (await readRoomMessage(bot, creator)).includes(en.closedNote),
+        );
+        assert.ok(!(await readCallbackTexts(bot, creator)).includes("5"));
 
         await bot.pressButton(member, en.hideButton);
 
@@ -771,25 +768,27 @@ void describe("Poker rooms", () => {
         assert.ok(secondPage.includes("#2"));
     });
 
-    void it("shows a closed room to its creator as history only", async (t) => {
+    void it("shows a closed room to a participant as history only", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655161 });
+        const member = buildTelegramPrivateChat({ id: 987655162 });
 
         await createRoomThroughForm(bot, creator);
+        await joinRoom(bot, member);
         await testMongo.mongo
             .collection("pokerRooms")
             .updateMany({}, { $set: { lastActivityAt: new Date(0) } });
-        await bot.sendText(creator, "/poker");
-        await bot.pressButton(creator, en.closedButton);
+        await bot.sendText(member, "/poker");
+        await bot.pressButton(member, en.closedButton);
         await bot.pressButton(
-            creator,
-            `#1 ${await readRoomTime(bot)} · 👥 1 · round 1`,
+            member,
+            `#1 ${await readRoomTime(bot)} · 👥 2 · round 1`,
         );
 
-        const message = await readRoomMessage(bot, creator);
+        const message = await readRoomMessage(bot, member);
 
         assert.ok(message.includes(en.closedNote));
-        assert.ok(!(await readCallbackTexts(bot, creator)).includes("5"));
+        assert.ok(!(await readCallbackTexts(bot, member)).includes("5"));
     });
 });
 

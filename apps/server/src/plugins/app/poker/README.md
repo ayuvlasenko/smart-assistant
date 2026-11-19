@@ -24,10 +24,10 @@ This directory is planning poker in the bot. A user with the right grant creates
 
 ## Using the bot
 
-| Grant          | Gives                                                                                                                                  |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, auto reveal, roles, removing participants, and the user's rooms |
-| `poker.create` | Everything of `poker.join`, the room form, closing the user's own rooms, and the rooms they closed                                     |
+| Grant          | Gives                                                                                                                                                 |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `poker.join`   | `/poker`, the room links, voting, revealing, new rounds, round titles, auto reveal, roles, removing participants, closing rooms, and the user's rooms |
+| `poker.create` | Everything of `poker.join` and the room form                                                                                                          |
 
 `poker.create` runs the rules of `poker.join` in its own `define`, so an invite needs only one of them. The rules are in `poker-handlers.ts`:
 
@@ -36,21 +36,21 @@ This directory is planning poker in the bot. A user with the right grant creates
 | `use PokerRoom`    | none                                       | both           |
 | `read PokerRoom`   | `participants: { $elemMatch: { userId } }` | both           |
 | `create PokerRoom` | `createdBy: user._id`                      | `poker.create` |
-| `update PokerRoom` | `createdBy: user._id`                      | `poker.create` |
-| `read PokerRoom`   | `createdBy: user._id`                      | `poker.create` |
+
+Inside a room every participant has the same rights, the creator included: `createdBy` only records who created the room. So a user reads a room only while a participant of it, and a creator who left loses the room like anybody else.
 
 The flow of a user:
 
-1. `/poker` starts the `poker` scene, which lives 7 days after its last use. `/start` does the same in a bot whose [start module](../telegram/README.md#the-start-module) is `poker`. It shows the open rooms of the user, five on a page. A user with `poker.create` also gets `➕ New room` and `🗄 Closed rooms`. The lists, the form and its deck choice are screens of the scene, and `‹ Back` returns to the page of the list the user left.
+1. `/poker` starts the `poker` scene, which lives 7 days after its last use. `/start` does the same in a bot whose [start module](../telegram/README.md#the-start-module) is `poker`. It shows the open rooms of the user, five on a page, and `🗄 Closed rooms`. A user with `poker.create` also gets `➕ New room`. The lists, the form and its deck choice are screens of the scene, and `‹ Back` returns to the page of the list the user left.
 2. `➕ New room` opens the form. Its buttons `🃏 Deck`, `✏️ Title` and `⚡ Auto reveal` carry no values: the text of the form shows them. The form holds the deck, `fibonacciShort` by default, an optional title of at most 64 characters (a room without one shows its creation time, such as `31.12 19:15`, in the time zone of the viewer), and auto reveal, which `⚡ Auto reveal` switches between everyone, the default, and off. How many votes may be missing depends on who joins, so the room menu sets it, see [Who counts in a round](#who-counts-in-a-round). `✅ Create` creates the room and starts its `pokerRoom` scene below the list.
 3. Another user opens the room link, `https://t.me/<bot>?start=poker_<token>`, and joins. `📋 Copy link` stands under the main action of the room, in one row with `⋯ More`, and copies this link to the clipboard of the participant through `copy_text`, so the participant pastes it into any chat.
 4. A participant presses a card to vote and presses the same card again to take the vote back. The cards stand in even rows of at most six, so the six cards of `fibonacciShort` fit one row and the 11 cards of `fibonacci` take two. The own card is blue, without a mark in its text. The others see `✅` for a vote, `⏳` for a wait, `💤` for an idle participant and `👀` for an observer, never the card. An observer has no cards on the keyboard.
 5. Any participant presses `👁 Reveal · 2/3`, which counts the votes against the active participants and turns green when everyone voted. With auto reveal the button reads `⚡ Reveal · 2/3` and counts against the number of votes that reveals the round; the round message says nothing about it. The message shows the cards and the [round summary](#the-round-summary). `🔁 Revote` starts a round with the same title; `➡️ Next round`, blue, starts a round without a title.
-6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `👀 Watch` and `👥 Participants`, then `⚡ Auto reveal`, then `‹ Back` with `🔒 Close` beside it for the creator. `👀 Watch` makes the viewer an observer and turns into `🃏 Vote` in place, which makes the observer vote again; the menu stays open, so the viewer sees the switch. `⚡ Auto reveal` shows the current setting under the round, `➖` and `➕` to step it, and `⏸ Turn off` or `⚡ Turn on`, which sets everyone. `👥 Participants` lists the participants, eight on a page, one button each; an observer's button starts with `👀`. A press opens the card of the participant: `👀 Make observer` or `🃏 Make voter` switches the role, and `🚫 Remove` with a second press on `🚫 Sure?` [removes the participant](#leaving-a-room). The own card has `👀 Watch` or `🃏 Vote`, and `🚪 Leave`. After an action the card returns to the list. Any participant uses these screens. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
+6. `⋯ More` switches the keyboard of the same message to a menu of the viewer only: `✏️ Round title` and `📜 History`, then `👀 Watch` and `👥 Participants`, then `⚡ Auto reveal`, then `‹ Back` with `🔒 Close` beside it. `👀 Watch` makes the viewer an observer and turns into `🃏 Vote` in place, which makes the observer vote again; the menu stays open, so the viewer sees the switch. `⚡ Auto reveal` shows the current setting under the round, `➖` and `➕` to step it, and `⏸ Turn off` or `⚡ Turn on`, which sets everyone. `👥 Participants` lists the participants, eight on a page, one button each; an observer's button starts with `👀`. A press opens the card of the participant: `👀 Make observer` or `🃏 Make voter` switches the role, and `🚫 Remove` with a second press on `🚫 Sure?` [removes the participant](#leaving-a-room). The own card has `👀 Watch` or `🃏 Vote`, and `🚪 Leave`. After an action the card returns to the list. Any participant uses these screens. `✏️ Round title` returns to the round and asks for the title of the current round, at most 100 characters; `/skip` clears it. `📜 History` shows the revealed rounds that have votes, newest first, at most five on a page and fewer when their text does not fit into one message; its `‹ Back` returns to the menu. Each round is a bold line with its number, title, agreement and median, then one line per card with its voters.
 
 The colours come from the `style` field of an inline button: `primary`, `success` and `danger`. A client without it shows plain buttons, and then the own card does not stand out.
 
-The creator closes a room with the red `🔒 Close` and a second press on `🔒 Sure?`; otherwise the room [closes by itself](#closed-rooms). A participant [leaves the room](#leaving-a-room) from the own card, and a participant who only stops voting becomes [idle](#who-counts-in-a-round).
+Any participant closes a room with the red `🔒 Close` and a second press on `🔒 Sure?`; otherwise the room [closes by itself](#closed-rooms). A participant [leaves the room](#leaving-a-room) from the own card, and a participant who only stops voting becomes [idle](#who-counts-in-a-round).
 
 The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card is an estimate.
 
@@ -106,7 +106,7 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
 }
 ```
 
-The current round is the field `round`, and `rounds` holds the finished rounds for the history. The migration `20261016120000-add-poker-rooms-indexes.js` adds a unique index on `token` and the indexes of the two lists. Both list indexes end with `lastActivityAt: -1, _id: -1`, the sort of `findPage`, so MongoDB reads a page from the index without a sort in memory.
+The current round is the field `round`, and `rounds` holds the finished rounds for the history. The migration `20261016120000-add-poker-rooms-indexes.js` adds a unique index on `token` and the index of the room lists, `participants.userId: 1, lastActivityAt: -1, _id: -1`. The open and the closed list both filter by `participants.userId` and sort like `findPage`, so MongoDB reads a page from the index without a sort in memory. The closed list read `createdBy` before every participant could close a room; `20261119120000-drop-poker-rooms-created-by-index.js` drops its index.
 
 A change names the round the user saw, never the round of a fresh load. Every round button carries it in its value: `vote` holds `{ round, card }`, `reveal` and `askTitle` hold the round, and `startRound` holds `{ round, repeat }`. `askTitle` keeps the round in the scene state as `titleRound` until the title arrives, because typing takes seconds and the round can change in between.
 
@@ -121,16 +121,16 @@ A title sent for round 3 after round 4 started returns `null` in the same way, a
 
 Every change expects an open room and the user among its participants; `PokerRoomsService` checks both before it calls the function of the change:
 
-| Change      | Function                 | Expects                                          | Writes                                                                      |
-| ----------- | ------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------- |
-| Vote        | `votePokerRound`         | the round of the button is `voting`, a voter     | the card in `round.votes`, or no vote for the same card                     |
-| Reveal      | `revealPokerRound`       | the round of the button is `voting`              | `round.status: "revealed"`, `round.revealedAt`                              |
-| Next round  | `startPokerRound`        | the round of the button is `revealed`            | `round` appended to `rounds`, a new `round`                                 |
-| Round title | `renamePokerRound`       | the round of the button is the current one       | `round.title`, or none                                                      |
-| Auto reveal | none                     | nothing more                                     | `autoReveal`                                                                |
-| Role        | `changePokerRole`        | the other user is a participant                  | the `role`; for an observer, no vote in a `voting` round                    |
-| Remove      | `removePokerParticipant` | the other user is a participant, not the creator | the participant moved to `removedParticipants`, no vote in a `voting` round |
-| Close       | none                     | `update PokerRoom`                               | `closedAt`                                                                  |
+| Change      | Function                 | Expects                                      | Writes                                                                                                    |
+| ----------- | ------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Vote        | `votePokerRound`         | the round of the button is `voting`, a voter | the card in `round.votes`, or no vote for the same card                                                   |
+| Reveal      | `revealPokerRound`       | the round of the button is `voting`          | `round.status: "revealed"`, `round.revealedAt`                                                            |
+| Next round  | `startPokerRound`        | the round of the button is `revealed`        | `round` appended to `rounds`, a new `round`                                                               |
+| Round title | `renamePokerRound`       | the round of the button is the current one   | `round.title`, or none                                                                                    |
+| Auto reveal | none                     | nothing more                                 | `autoReveal`                                                                                              |
+| Role        | `changePokerRole`        | the other user is a participant              | the `role`; for an observer, no vote in a `voting` round                                                  |
+| Remove      | `removePokerParticipant` | the other user is a participant              | the participant moved to `removedParticipants`, no vote in a `voting` round; `closedAt` when nobody stays |
+| Close       | none                     | nothing more                                 | `closedAt`                                                                                                |
 
 Before the write, the service runs `revealPokerRoundIfDue` on the changed room and adds the reveal to the same write, see [Who counts in a round](#who-counts-in-a-round). Every write also sets `lastActivityAt` and `updatedAt` and increments `version`.
 
@@ -139,7 +139,7 @@ Before the write, the service runs `revealPokerRoundIfDue` on the changed room a
 - A vote with a card that is not in the deck throws: the value comes from a button that the scene drew from the same deck.
 - A caller passes the id of the room, never a loaded room, so every attempt decides on a room that the service read itself.
 - A conflict means that another change was written between the read and the write, so presses that start at the same moment need at most as many attempts as there are presses. After 20 attempts the service throws.
-- The service checks `access.assert(actor, "use", subject("PokerRoom", room))` on the room of every attempt, and `update` too for a close; membership is a business rule, so it is a plain check next to it.
+- The service checks `access.assert(actor, "use", subject("PokerRoom", room))` on the room of every attempt; membership is a business rule, so it is a plain check next to it.
 
 ## Joining a room
 
@@ -198,7 +198,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Problem.** A room had no way out. A user who joined the wrong room stayed in its list of participants, and the room stayed in the `/poker` of that user. Taking a participant out must not rewrite the history: the rounds keep the votes of that participant.
 
-**Idea.** Any participant removes any other one, and leaves the room in the same way; only the creator stays. The participant moves from `participants` to `removedParticipants`. So every count and every list reads `participants` as before, and the room still knows the name and the emoji for the history.
+**Idea.** Any participant removes any other one, the creator included, and leaves the room in the same way. The participant moves from `participants` to `removedParticipants`. So every count and every list reads `participants` as before, and the room still knows the name and the emoji for the history.
 
 **Data.** `removedParticipants` is an optional array of the same participant records, in the order of the removals. A room without a removal has no such field. `listKnownPokerParticipants` in `poker-room-entity.ts` joins both arrays for the labels.
 
@@ -212,7 +212,8 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Edge cases.**
 
-- The creator cannot be removed and cannot leave: `removePokerParticipant` refuses `createdBy`, and the card of the creator has no such button. The creator closes the room instead.
+- The creator leaves and is removed like any other participant. A creator who left no longer reads the room: `read PokerRoom` checks `participants` only.
+- When the last participant leaves, `removePokerParticipant` sets `closedAt` in the same write. An empty room has nobody to close it, and its link would stay open for a day.
 - On the own card the button reads `🚪 Leave`. After the second press the scene ends with `scene.end({ messages: "delete" })`, so the room message leaves the chat.
 - A removed user joins again by the link. `addPokerParticipant` drops the record from `removedParticipants`, and the user gets a new emoji and a new `joinedAt`.
 - A card of a participant who was removed in the meantime shows `This participant is no longer in the room.` and `‹ Back`.
@@ -221,18 +222,18 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Problem.** Without an end, the list of `/poker` grows forever and an old link keeps working.
 
-**Idea.** A room is closed when its creator set `closedAt`, or one day (`pokerRoomIdleMilliseconds`) after its last change, through `lastActivityAt`. The idle part is computed, never stored, so no job closes rooms. `readPokerRoomStatus` computes the status in code, and `statusFilter` in the repository builds the same condition for MongoDB.
+**Idea.** A room is closed when a participant set `closedAt`, its last participant left, or one day (`pokerRoomIdleMilliseconds`) after its last change, through `lastActivityAt`. The idle part is computed, never stored, so no job closes rooms. `readPokerRoomStatus` computes the status in code, and `statusFilter` in the repository builds the same condition for MongoDB.
 
-**Walk-through.** The creator presses `🔒 Close`.
+**Walk-through.** A participant presses `🔒 Close`.
 
 1. `close` is a button with `confirm: true`, so the first press only marks it in the scene record, and the button turns into `🔒 Sure?`. Any other button of the room and any move cancel it.
-2. The second press calls `PokerRoomsService.close`. It checks `update PokerRoom` on the loaded room, then writes `closedAt` like any other change, see [A room document](#a-room-document).
+2. The second press calls `PokerRoomsService.close`. It writes `closedAt` like any other change, see [A room document](#a-room-document).
 3. The service emits `poker.roomChanged`, and the screen of every participant redraws as the history of a closed room.
 
 **Edge cases.**
 
 - Every change expects an open room, so nobody can vote in a closed room.
-- A closed room leaves the open list of every participant and moves to `🗄 Closed rooms` of its creator.
+- A closed room leaves the open list of every participant and moves to their `🗄 Closed rooms`. A user who left the room before it closed finds it in neither list.
 - The `pokerRoom` scene of a closed room shows only the history on any screen, without cards and without a back button. Its page buttons replace the current screen with the history, so the pages work from the round and the menu too. `✖️ Hide` ends the scene of that user with `scene.end({ messages: "delete" })`, so the message leaves the chat; opening the room again from `🗄 Closed rooms` brings it back.
 - The link of a closed room answers `This room is closed.` to a new user. A participant who opens it gets the history.
 - The `pokerRoom` scene has a TTL of one day as well, so its record expires with an idle room.
@@ -241,7 +242,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Problem.** A vote of one participant must redraw the room message of every other participant, and a closed or new room must redraw their room lists. A handler may not write to the sessions of other users.
 
-**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the creator and the participants, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
+**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the participants before and after the change, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
 
 **Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `autoReveal`, `participants` or `history` with its page, or `participant` with the user id.
 

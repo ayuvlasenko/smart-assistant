@@ -163,7 +163,7 @@ function isObserver({ ctx, room }: PokerRoomView): boolean {
 }
 
 function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
-    const { ctx, scene, room, canClose } = view;
+    const { ctx, scene, room } = view;
     const { t } = ctx;
 
     return [
@@ -186,22 +186,18 @@ function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
         [
             scene.backButton(t("poker:backButton")),
-            ...(canClose
-                ? [
-                      {
-                          ...scene.button(
-                              t(
-                                  scene.isConfirming("close")
-                                      ? "poker:confirmCloseButton"
-                                      : "poker:closeButton",
-                              ),
-                              "close",
-                              null,
-                          ),
-                          style: "danger" as const,
-                      },
-                  ]
-                : []),
+            {
+                ...scene.button(
+                    t(
+                        scene.isConfirming("close")
+                            ? "poker:confirmCloseButton"
+                            : "poker:closeButton",
+                    ),
+                    "close",
+                    null,
+                ),
+                style: "danger",
+            },
         ],
     ];
 }

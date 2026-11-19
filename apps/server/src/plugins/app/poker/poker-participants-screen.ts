@@ -81,7 +81,7 @@ export function renderPokerParticipant(
             [readRoleButton(view, participant)],
             [
                 scene.backButton(t("poker:backButton")),
-                ...readRemoveButtons(view, participant),
+                readRemoveButton(view, participant),
             ],
         ],
     );
@@ -153,34 +153,27 @@ function readRoleButton(
     });
 }
 
-function readRemoveButtons(
+function readRemoveButton(
     view: PokerRoomView,
     participant: PokerParticipant,
-): InlineKeyboardButton[] {
-    const { ctx, scene, room } = view;
-
-    if (participant.userId.equals(room.createdBy)) {
-        return [];
-    }
-
+): InlineKeyboardButton {
+    const { ctx, scene } = view;
     const label = isOwn(view, participant)
         ? "poker:leaveButton"
         : "poker:removeButton";
 
-    return [
-        {
-            ...scene.button(
-                ctx.t(
-                    scene.isConfirming("remove")
-                        ? "poker:confirmRemoveButton"
-                        : label,
-                ),
-                "remove",
-                participant.userId.toHexString(),
+    return {
+        ...scene.button(
+            ctx.t(
+                scene.isConfirming("remove")
+                    ? "poker:confirmRemoveButton"
+                    : label,
             ),
-            style: "danger",
-        },
-    ];
+            "remove",
+            participant.userId.toHexString(),
+        ),
+        style: "danger",
+    };
 }
 
 function isOwn({ ctx }: PokerRoomView, participant: PokerParticipant): boolean {

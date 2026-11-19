@@ -21,14 +21,12 @@ export async function renderPokerList(
     const canCreate = await access.can(ctx.user, "create", "PokerRoom");
 
     return renderRooms(view, "open", page, [
-        canCreate
-            ? [
-                  scene.button(t("poker:newRoomButton"), "create", null),
-                  scene.screenButton(t("poker:closedButton"), "closed", {
-                      page: 0,
-                  }),
-              ]
-            : [],
+        [
+            ...(canCreate
+                ? [scene.button(t("poker:newRoomButton"), "create", null)]
+                : []),
+            scene.screenButton(t("poker:closedButton"), "closed", { page: 0 }),
+        ],
     ]);
 }
 
