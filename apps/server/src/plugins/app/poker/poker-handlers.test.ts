@@ -446,7 +446,7 @@ void describe("Poker rooms", () => {
         );
     });
 
-    void it("switches the viewer between voting and watching from the menu and returns to the round", async (t) => {
+    void it("switches the viewer between voting and watching in place in the menu", async (t) => {
         const bot = await buildBot(t);
         const creator = buildTelegramPrivateChat({ id: 987655146 });
         const member = buildTelegramPrivateChat({ id: 987655147 });
@@ -459,29 +459,33 @@ void describe("Poker rooms", () => {
         await bot.telegramChats.idle();
 
         const watching = await readRoomMessage(bot, creator);
+        const menu = await readCallbackTexts(bot, member);
 
-        assert.deepEqual(await readCardRows(bot, member), []);
-        assert.ok(
-            (await readCallbackTexts(bot, member)).includes(en.moreButton),
-        );
-
-        await bot.pressButton(member, en.moreButton);
-
-        assert.ok(
-            (await readCallbackTexts(bot, member)).includes(en.voteButton),
-        );
+        assert.ok(menu.includes(en.voteButton));
+        assert.ok(!menu.includes(en.watchButton));
         assert.ok(watching.split("\n").some((line) => line.endsWith(" 👀")));
         assert.ok(
             (await readCallbackTexts(bot, creator)).includes(revealLabel(0, 1)),
         );
 
+        await bot.pressButton(member, en.backButton);
+
+        assert.deepEqual(await readCardRows(bot, member), []);
+        assert.ok(
+            !(await readCallbackTexts(bot, member)).includes(en.voteButton),
+        );
+
+        await bot.pressButton(member, en.moreButton);
         await bot.pressButton(member, en.voteButton);
 
-        assert.equal((await readCardRows(bot, member)).length, 1);
         assert.ok(
-            (await readCallbackTexts(bot, member)).includes(en.moreButton),
+            (await readCallbackTexts(bot, member)).includes(en.watchButton),
         );
         assert.equal((await readRoom()).participants[1]?.role, "voter");
+
+        await bot.pressButton(member, en.backButton);
+
+        assert.equal((await readCardRows(bot, member)).length, 1);
     });
 
     void it("opens a participant from the paged list and switches the role on the card", async (t) => {

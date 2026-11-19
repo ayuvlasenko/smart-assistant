@@ -218,10 +218,6 @@ export function createPokerRoomScene(
                         { userId: new ObjectId(userId), role },
                     );
 
-                    if (scene.screen.name === "menu") {
-                        await scene.reset();
-                    }
-
                     if (scene.screen.name === "participant") {
                         await scene.back();
                     }
