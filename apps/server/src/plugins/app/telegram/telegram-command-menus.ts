@@ -136,10 +136,14 @@ export class TelegramCommandMenus {
     }
 
     async syncUser(user: UserEntity): Promise<void> {
-        const bot = await this.telegramBots.find(user.botId);
+        try {
+            const bot = await this.telegramBots.find(user.botId);
 
-        if (bot) {
-            await this.sync(bot, user);
+            if (bot) {
+                await this.sync(bot, user);
+            }
+        } catch (err) {
+            this.recordChatMenuFailure(err, user);
         }
     }
 
@@ -148,6 +152,17 @@ export class TelegramCommandMenus {
             return;
         }
 
+        try {
+            await this.syncChatMenu(bot, user);
+        } catch (err) {
+            this.recordChatMenuFailure(err, user);
+        }
+    }
+
+    private async syncChatMenu(
+        bot: TelegramBot,
+        user: UserEntity,
+    ): Promise<void> {
         const [commands, defaultCommands] = await Promise.all([
             this.describeCommandsOf(
                 bot,
@@ -169,35 +184,35 @@ export class TelegramCommandMenus {
             return;
         }
 
-        try {
-            await this.setChatMenu(
-                bot,
-                Number(user.telegramId),
-                commandMenu ? commands : undefined,
-            );
-            await this.usersRepository.setCommandMenu(user._id, commandMenu);
-            this.telegramMetrics.recordCommandMenuSync(
-                commandMenu ? "set" : "removed",
-            );
-            this.log.info(
-                {
-                    botId: bot.id,
-                    userId: user._id,
-                    commands: commandMenu
-                        ? commands.map(({ command }) => command)
-                        : undefined,
-                },
-                commandMenu
-                    ? "Telegram chat commands set successfully"
-                    : "Telegram chat commands removed",
-            );
-        } catch (err) {
-            this.telegramMetrics.recordCommandMenuSync("failed");
-            this.log.error(
-                { err, botId: bot.id, userId: user._id },
-                "Failed to set telegram chat commands",
-            );
-        }
+        await this.setChatMenu(
+            bot,
+            Number(user.telegramId),
+            commandMenu ? commands : undefined,
+        );
+        await this.usersRepository.setCommandMenu(user._id, commandMenu);
+        this.telegramMetrics.recordCommandMenuSync(
+            commandMenu ? "set" : "removed",
+        );
+        this.log.info(
+            {
+                botId: bot.id,
+                userId: user._id,
+                commands: commandMenu
+                    ? commands.map(({ command }) => command)
+                    : undefined,
+            },
+            commandMenu
+                ? "Telegram chat commands set successfully"
+                : "Telegram chat commands removed",
+        );
+    }
+
+    private recordChatMenuFailure(err: unknown, user: UserEntity): void {
+        this.telegramMetrics.recordCommandMenuSync("failed");
+        this.log.error(
+            { err, botId: user.botId, userId: user._id },
+            "Failed to set telegram chat commands",
+        );
     }
 
     private async listBotsOnStart(): Promise<TelegramBot[]> {
