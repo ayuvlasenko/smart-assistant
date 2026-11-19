@@ -5,6 +5,7 @@ import {
     FastifyInstance,
     FastifyPluginOptions,
     FastifyServerOptions,
+    LogController,
 } from "fastify";
 import { ObjectId } from "mongodb";
 import { STATUS_CODES } from "node:http";
@@ -18,7 +19,7 @@ const internalServerErrorMessage = "Internal Server Error";
 
 export const options = {
     ...requestIdOptions,
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
     ajv: {
         customOptions: {
             coerceTypes: "array",
