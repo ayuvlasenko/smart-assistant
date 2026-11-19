@@ -32,7 +32,7 @@ const defaultRequestTimeoutMilliseconds = 10_000;
 const unscopedCallTimeoutMilliseconds = 60_000;
 const defaultRetryAfterSeconds = 1;
 const slowWaitMilliseconds = 1_000;
-const networkErrorRetryDelaysMilliseconds = [200, 1_000];
+const repeatDelaysMilliseconds = [200, 1_000];
 
 export class TelegramApiService {
     private readonly baseUrl: string;
@@ -140,6 +140,7 @@ export class TelegramApiService {
         ...args: TelegramMethodArgs<TMethod>
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const [params] = args;
+        const body = params === undefined ? undefined : JSON.stringify(params);
         const scope = telegramApiScope.getStore() ?? {
             signal: AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
             priority: "interactive",
@@ -150,7 +151,7 @@ export class TelegramApiService {
             params,
         );
 
-        let networkErrors = 0;
+        let repeats = 0;
 
         for (;;) {
             await this.waitForSlot(method, buckets, scope);
@@ -158,19 +159,19 @@ export class TelegramApiService {
             let result: ApiResponse<TelegramMethodResult<TMethod>>;
 
             try {
-                result = await this.send<TMethod>(method, params, scope.signal);
+                result = await this.send<TMethod>(method, body, scope.signal);
             } catch (err) {
                 const retryDelayMilliseconds =
-                    networkErrorRetryDelaysMilliseconds[networkErrors];
+                    repeatDelaysMilliseconds[repeats];
 
                 if (
                     retryDelayMilliseconds === undefined ||
-                    !isNetworkError(err, scope.signal)
+                    !isRepeatable(err, scope.signal)
                 ) {
                     throw err;
                 }
 
-                networkErrors += 1;
+                repeats += 1;
                 await sleep(retryDelayMilliseconds, scope.signal);
                 continue;
             }
@@ -223,29 +224,27 @@ export class TelegramApiService {
 
     private async send<TMethod extends TelegramMethod>(
         method: TMethod,
-        params: unknown,
+        body: string | undefined,
         signal: AbortSignal,
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const stopRequest = this.telegramMetrics.startApiRequest(
             this.telegramId,
             method,
         );
-        let result: ApiResponse<TelegramMethodResult<TMethod>>;
+        let response: Response;
+        let text: string;
 
         try {
-            const response = await fetch(`${this.baseUrl}/${method}`, {
+            response = await fetch(`${this.baseUrl}/${method}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 signal: AbortSignal.any([
                     signal,
                     AbortSignal.timeout(this.requestTimeoutMilliseconds),
                 ]),
-                body: params === undefined ? undefined : JSON.stringify(params),
+                body,
             });
-
-            result = (await response.json()) as ApiResponse<
-                TelegramMethodResult<TMethod>
-            >;
+            text = await response.text();
         } catch (err) {
             const failure = signal.aborted ? "aborted" : "network_error";
 
@@ -255,6 +254,19 @@ export class TelegramApiService {
                 "Telegram API request got no answer",
             );
             throw err;
+        }
+
+        const result = parseApiResponse<TelegramMethodResult<TMethod>>(text);
+
+        if (!result) {
+            stopRequest("bad_answer", response.status);
+            this.log.warn(
+                { method, result: "bad_answer", statusCode: response.status },
+                "Telegram API answer is not a Bot API response",
+            );
+            throw new Error(
+                `Telegram ${method} answered ${response.status} without a Bot API response`,
+            );
         }
 
         if (result.ok) {
@@ -310,10 +322,40 @@ export class TelegramApiService {
     }
 }
 
-function isNetworkError(err: unknown, signal: AbortSignal): boolean {
+function isRepeatable(err: unknown, signal: AbortSignal): boolean {
     return (
         !signal.aborted &&
         !(err instanceof DOMException && err.name === "TimeoutError")
+    );
+}
+
+function parseApiResponse<TResult>(
+    text: string,
+): ApiResponse<TResult> | undefined {
+    try {
+        const body: unknown = JSON.parse(text);
+
+        return isApiResponse(body) ? (body as ApiResponse<TResult>) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function isApiResponse(body: unknown): boolean {
+    if (typeof body !== "object" || body === null || !("ok" in body)) {
+        return false;
+    }
+
+    if (body.ok === true) {
+        return "result" in body;
+    }
+
+    return (
+        body.ok === false &&
+        "error_code" in body &&
+        typeof body.error_code === "number" &&
+        "description" in body &&
+        typeof body.description === "string"
     );
 }
 

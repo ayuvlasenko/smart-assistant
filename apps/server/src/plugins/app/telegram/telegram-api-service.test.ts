@@ -137,6 +137,75 @@ void describe("TelegramApiService", () => {
         assert.equal(entry.err?.message, "network down");
     });
 
+    void it("repeats a request whose answer is not a Bot API response, and records and logs it with the status", async (t) => {
+        const logs = createLoggerCollector();
+        const { fetch, metrics, telegramApiService } = await buildApiService(
+            t,
+            [
+                new Response("<html>Bad Gateway</html>", { status: 502 }),
+                new Response(JSON.stringify({ description: "no ok field" }), {
+                    status: 200,
+                }),
+                { ok: true, result: { message_id: 7 } },
+            ],
+            logs,
+        );
+
+        const result = await telegramApiService.sendMessage({
+            chat_id: 1,
+            text: "hello",
+        });
+
+        assert.equal(result.ok, true);
+        assert.equal(fetch.mock.callCount(), 3);
+
+        const output = await metrics.metrics();
+
+        assert.match(
+            output,
+            /^telegram_api_requests_total\{method="sendMessage",result="bad_answer",error_code="502",bot="123"\} 1$/m,
+        );
+        assert.match(
+            output,
+            /^telegram_api_requests_total\{method="sendMessage",result="bad_answer",error_code="200",bot="123"\} 1$/m,
+        );
+        assert.doesNotMatch(output, /result="network_error"/);
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(
+                    ({ msg }) =>
+                        msg === "Telegram API answer is not a Bot API response",
+                )
+                .map(({ method, statusCode }) => ({ method, statusCode })),
+            [
+                { method: "sendMessage", statusCode: 502 },
+                { method: "sendMessage", statusCode: 200 },
+            ],
+        );
+    });
+
+    void it("throws at once and sends nothing when the parameters can't be serialized", async (t) => {
+        const { fetch, metrics, telegramApiService } = await buildApiService(
+            t,
+            [{ ok: true, result: { message_id: 7 } }],
+        );
+
+        await assert.rejects(
+            () =>
+                telegramApiService.sendMessage({
+                    chat_id: 1n as unknown as number,
+                    text: "hello",
+                }),
+            TypeError,
+        );
+        assert.equal(fetch.mock.callCount(), 0);
+        assert.doesNotMatch(
+            await metrics.metrics(),
+            /^telegram_api_requests_total\{method="sendMessage"/m,
+        );
+    });
+
     void it("records the rate limiter wait of a limited method", async (t) => {
         const { metrics, telegramApiService } = await buildApiService(t, [
             { ok: true, result: true },
@@ -331,6 +400,10 @@ async function buildApiService(
 
         if (responseBody instanceof Error) {
             throw responseBody;
+        }
+
+        if (responseBody instanceof Response) {
+            return responseBody;
         }
 
         if (!responseBody) {

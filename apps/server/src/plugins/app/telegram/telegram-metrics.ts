@@ -38,7 +38,12 @@ export type TelegramSceneEvent =
 export type TelegramButtonResult = "handled" | "expired" | "forbidden";
 
 export type TelegramApiResult =
-    "ok" | "error" | "rate_limited" | "network_error" | "aborted";
+    | "ok"
+    | "error"
+    | "rate_limited"
+    | "network_error"
+    | "bad_answer"
+    | "aborted";
 
 export type TelegramDeliveryKind = "publish" | "deliver";
 

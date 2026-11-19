@@ -447,13 +447,15 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 
 **Edge cases.**
 
+- An answer that is not a Bot API response, such as the HTML page of a `502` from a gateway of Telegram, is repeated like a network error: after a `504` the bot does not know either whether Telegram ran the request. `send` counts it as `bad_answer` with the HTTP status in `error_code` and logs `Telegram API answer is not a Bot API response` with `method` and `statusCode`.
+- Parameters that `JSON.stringify` can't serialize, a bug of the caller, throw before the first request and are never repeated or counted.
 - A request that ran into its timeout of 10 s is not repeated: it has already taken 10 s of the 60 s for which an update may hold its session lock. It is counted and logged like a network error.
 - The signal of the scope ends a request and the pause before a repeat with its reason. The request is counted as `aborted` and logged with the same line.
 - A repeated `send*` whose first request did run leaves two messages in the chat. The scene records only the second one, so a button of the first answers `telegram:buttonExpired`.
 - A repeated edit whose first request did run gets `message is not modified`. `TelegramResponder.edit` and `editKeyboard` take that answer as a success, and `removeKeyboard` logs it and goes on.
 - A repeated delete whose first request did run gets an error answer, and `TelegramResponder.deleteMessage` returns `false` as for any message that is already gone.
 - We have not measured what Telegram answers to a second `answerCallbackQuery` for one press. `TelegramResponder` throws on an answer that is not `ok`, so such a repeat may end the update with `telegram:error`.
-- `telegram_api_requests_total{result="network_error"}` counts every attempt, so one call that fails three times adds 3.
+- `telegram_api_requests_total{result="network_error"}` and `{result="bad_answer"}` count every attempt, so one call that fails three times adds 3.
 
 ## Scene instances
 
