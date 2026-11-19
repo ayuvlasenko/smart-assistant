@@ -1,7 +1,7 @@
-import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Filter, MongoServerError, ObjectId } from "mongodb";
+import { Collection, Filter, MongoServerError, ObjectId } from "mongodb";
+import { readMongoDb } from "../../external/mongo.js";
 import { BotEntity, EncryptedBotToken, newRootBotId } from "./bot-entity.js";
 import { BotTelegramIdTakenError } from "./bots-errors.js";
 
@@ -14,33 +14,33 @@ export interface RootBot {
 }
 
 export class BotsRepository {
-    readonly mongo: Required<FastifyMongoObject>;
+    private readonly bots: Collection<BotEntity>;
 
-    constructor(mongo: Required<FastifyMongoObject>) {
-        this.mongo = mongo;
+    constructor(bots: Collection<BotEntity>) {
+        this.bots = bots;
     }
 
     findAll(): Promise<BotEntity[]> {
-        return this.collection().find().sort({ createdAt: 1 }).toArray();
+        return this.bots.find().sort({ createdAt: 1 }).toArray();
     }
 
     findOneById(_id: string): Promise<BotEntity | null> {
-        return this.collection().findOne({ _id });
+        return this.bots.findOne({ _id });
     }
 
     findOneByTelegramId(telegramId: string): Promise<BotEntity | null> {
-        return this.collection().findOne({ telegramId });
+        return this.bots.findOne({ telegramId });
     }
 
     async ensureRoot(telegramId: string): Promise<RootBot> {
-        const known = await this.collection().findOneAndUpdate(
+        const known = await this.bots.findOneAndUpdate(
             { telegramId },
             { $set: { isRoot: true } },
             { returnDocument: "after" },
         );
 
         if (known) {
-            await this.collection().updateMany(
+            await this.bots.updateMany(
                 { _id: { $ne: known._id }, isRoot: true },
                 { $unset: { isRoot: "" } },
             );
@@ -48,7 +48,7 @@ export class BotsRepository {
             return { bot: known };
         }
 
-        const previous = await this.collection().findOneAndUpdate(
+        const previous = await this.bots.findOneAndUpdate(
             { isRoot: true },
             {
                 $set: { telegramId },
@@ -81,7 +81,7 @@ export class BotsRepository {
             createdAt: now,
             updatedAt: now,
         };
-        const result = await this.collection().updateOne(
+        const result = await this.bots.updateOne(
             { telegramId },
             { $setOnInsert: fields },
             { upsert: true },
@@ -95,7 +95,7 @@ export class BotsRepository {
     }
 
     toggleModule(_id: string, module: string): Promise<BotEntity | null> {
-        return this.collection().findOneAndUpdate(
+        return this.bots.findOneAndUpdate(
             { _id },
             [
                 {
@@ -132,11 +132,13 @@ export class BotsRepository {
         _id: string,
         startModule: string | undefined,
     ): Promise<BotEntity | null> {
+        if (startModule === undefined) {
+            return this.update({ _id }, { $unset: { startModule: "" } });
+        }
+
         return this.update(
-            { _id },
-            startModule === undefined
-                ? { $unset: { startModule: "" } }
-                : { $set: { startModule } },
+            { _id, modules: startModule },
+            { $set: { startModule } },
         );
     }
 
@@ -183,7 +185,7 @@ export class BotsRepository {
             | { $set: Partial<BotEntity> }
             | { $unset: Partial<Record<"disabledAt" | "startModule", "">> },
     ): Promise<BotEntity | null> {
-        return this.collection().findOneAndUpdate(
+        return this.bots.findOneAndUpdate(
             filter,
             {
                 ...change,
@@ -196,7 +198,7 @@ export class BotsRepository {
 
     private async createRoot(telegramId: string): Promise<BotEntity> {
         const now = new Date();
-        const bot = await this.collection().findOneAndUpdate(
+        const bot = await this.bots.findOneAndUpdate(
             { _id: newRootBotId },
             {
                 $setOnInsert: {
@@ -217,10 +219,6 @@ export class BotsRepository {
 
         return bot;
     }
-
-    private collection() {
-        return this.mongo.db.collection<BotEntity>("bots");
-    }
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
@@ -229,13 +227,11 @@ function isDuplicateKeyError(err: unknown): boolean {
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        if (!fastify.mongo.db) {
-            throw new Error("MongoDB is not connected");
-        }
-
         fastify.decorate(
             "botsRepository",
-            new BotsRepository(fastify.mongo as Required<FastifyMongoObject>),
+            new BotsRepository(
+                readMongoDb(fastify).collection<BotEntity>("bots"),
+            ),
         );
     },
     {

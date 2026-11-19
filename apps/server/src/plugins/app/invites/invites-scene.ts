@@ -148,7 +148,7 @@ export function createInvitesScene(
                 value: invitesButtonValues.toggle,
                 guard: canCreate,
                 handle: async (ctx, scene, grant) => {
-                    if (!access.holds(ctx.user, grant)) {
+                    if (!(await invitesService.canGrant(ctx.user, grant))) {
                         return;
                     }
 

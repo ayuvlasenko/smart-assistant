@@ -1,17 +1,26 @@
 import underPressure, {
     FastifyUnderPressureOptions,
 } from "@fastify/under-pressure";
-import { FastifyInstance } from "fastify";
+import { FastifyContextConfig, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
+import { readMongoDb } from "./mongo.js";
+
+declare module "fastify" {
+    interface FastifyContextConfig {
+        pressureHandler?: FastifyUnderPressureOptions["pressureHandler"];
+    }
+}
+
+export const pressureExemptConfig = {
+    pressureHandler: () => undefined,
+} satisfies FastifyContextConfig;
 
 export const autoConfig = (
     fastify: FastifyInstance,
 ): FastifyUnderPressureOptions => {
     return {
         maxEventLoopDelay: 1000,
-        maxHeapUsedBytes: 100_000_000,
-        maxRssBytes: 1_000_000_000,
         maxEventLoopUtilization: 0.98,
         message: "The server is under pressure, retry later!",
         retryAfter: 50,
@@ -23,14 +32,8 @@ export const autoConfig = (
         },
         healthCheck: async () => {
             try {
-                if (!fastify.mongo.db) {
-                    throw new Error("Database connection is not available");
-                }
-
-                await fastify.mongo.db.collection("test").findOne({});
-
-                const valkey = fastify.getDecorator<Redis>("valkey");
-                await valkey.ping();
+                await readMongoDb(fastify).command({ ping: 1 });
+                await fastify.getDecorator<Redis>("valkey").ping();
 
                 return true;
             } catch (err) {

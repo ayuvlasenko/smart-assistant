@@ -4,7 +4,12 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
-import { AccessControl, AccessService } from "../access/access-service.js";
+import {
+    AccessAction,
+    AccessControl,
+    AccessService,
+} from "../access/access-service.js";
+import { Page, PageRequest } from "../page.js";
 import {
     NumberSetting,
     SettingsService,
@@ -53,15 +58,8 @@ export type PokerJoinResult =
     | { status: "closed" }
     | { status: "full" };
 
-export interface PokerRoomsPageRequest {
+export interface PokerRoomsPageRequest extends PageRequest {
     status: PokerRoomStatus;
-    skip: number;
-    limit: number;
-}
-
-export interface PokerRoomsPage {
-    items: PokerRoomEntity[];
-    total: number;
 }
 
 type PokerRoomTransition = (
@@ -206,7 +204,7 @@ export class PokerRoomsService {
     async list(
         actor: UserEntity,
         { status, skip, limit }: PokerRoomsPageRequest,
-    ): Promise<PokerRoomsPage> {
+    ): Promise<Page<PokerRoomEntity>> {
         const query = {
             filter: {
                 $and: [
@@ -243,129 +241,138 @@ export class PokerRoomsService {
         );
     }
 
-    async vote(
+    vote(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         vote: PokerVote,
     ): Promise<PokerRoomEntity | null> {
-        if (!readPokerDeck(room.deck).cards.includes(vote.card)) {
-            throw new Error(`Poker card "${vote.card}" is not in the deck`);
-        }
+        return this.change(actor, roomId, "voted", (room) => {
+            if (!readPokerDeck(room.deck).cards.includes(vote.card)) {
+                throw new Error(`Poker card "${vote.card}" is not in the deck`);
+            }
 
-        return this.change(actor, room, "voted", (current) =>
-            votePokerRound(current, actor._id, vote),
-        );
+            return votePokerRound(room, actor._id, vote);
+        });
     }
 
-    async reveal(
+    reveal(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         round: number,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, room, "revealed", (current, now) =>
-            revealPokerRound(current, round, now),
+        return this.change(actor, roomId, "revealed", (room, now) =>
+            revealPokerRound(room, round, now),
         );
     }
 
-    async startRound(
+    startRound(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         start: PokerRoundStart,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, room, "roundStarted", (current, now) =>
-            startPokerRound(current, start, now),
+        return this.change(actor, roomId, "roundStarted", (room, now) =>
+            startPokerRound(room, start, now),
         );
     }
 
-    async renameRound(
+    renameRound(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         rename: PokerRoundRename,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, room, "roundRenamed", (current) =>
-            renamePokerRound(current, rename),
+        return this.change(actor, roomId, "roundRenamed", (room) =>
+            renamePokerRound(room, rename),
         );
     }
 
-    async changeAutoReveal(
+    changeAutoReveal(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         autoReveal: PokerAutoReveal,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, room, "autoRevealChanged", () => ({
+        return this.change(actor, roomId, "autoRevealChanged", () => ({
             autoReveal,
         }));
     }
 
-    async changeRole(
+    changeRole(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         roleChange: PokerRoleChange,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, room, "roleChanged", (current) =>
-            changePokerRole(current, roleChange),
+        return this.change(actor, roomId, "roleChanged", (room) =>
+            changePokerRole(room, roleChange),
         );
     }
 
-    async removeParticipant(
+    removeParticipant(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         userId: ObjectId,
     ): Promise<PokerRoomEntity | null> {
         return this.change(
             actor,
-            room,
+            roomId,
             userId.equals(actor._id) ? "left" : "removed",
-            (current) => removePokerParticipant(current, userId),
+            (room) => removePokerParticipant(room, userId),
         );
     }
 
-    async close(
+    close(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
     ): Promise<PokerRoomEntity | null> {
-        await this.access.assert(actor, "update", subject("PokerRoom", room));
-
-        return this.change(actor, room, "closed", (current, now) => ({
-            closedAt: now,
-        }));
+        return this.change(
+            actor,
+            roomId,
+            "closed",
+            (room, now) => ({ closedAt: now }),
+            ["use", "update"],
+        );
     }
 
     private async change(
         actor: UserEntity,
-        room: PokerRoomEntity,
+        roomId: ObjectId,
         change: PokerRoomChange,
         transition: PokerRoomTransition,
+        actions: AccessAction[] = ["use"],
     ): Promise<PokerRoomEntity | null> {
-        let current: PokerRoomEntity | null = room;
-        let isReloaded = false;
-
         for (let attempt = 0; attempt < saveAttempts; attempt += 1) {
-            if (!current) {
+            const room = await this.find(actor, roomId);
+
+            if (!room) {
                 return null;
             }
 
-            await this.access.assert(
-                actor,
-                "use",
-                subject("PokerRoom", current),
-            );
-
-            const now = new Date();
-            const patch =
-                readPokerRoomStatus(current, now) === "open" &&
-                findPokerParticipant(current, actor._id)
-                    ? transition(current, now)
-                    : null;
-            const saved =
-                patch && (await this.save(current, patch, { now, change }));
-
-            if (saved || (!patch && isReloaded)) {
-                return saved;
+            for (const action of actions) {
+                await this.access.assert(
+                    actor,
+                    action,
+                    subject("PokerRoom", room),
+                );
             }
 
-            current = await this.find(actor, room._id);
-            isReloaded = true;
+            const now = new Date();
+
+            if (
+                readPokerRoomStatus(room, now) !== "open" ||
+                !findPokerParticipant(room, actor._id)
+            ) {
+                return null;
+            }
+
+            const patch = transition(room, now);
+
+            if (!patch) {
+                return null;
+            }
+
+            const saved = await this.save(room, patch, { now, change });
+
+            if (saved) {
+                return saved;
+            }
         }
 
         throw new Error(

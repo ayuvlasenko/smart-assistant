@@ -213,8 +213,13 @@ void describe("AccessService", () => {
                 $expr: { $eq: [0, 1] },
             },
         );
-        assert.equal(await access.isEnabled("43", "reports"), false);
-        assert.equal(await access.isEnabled("43", "invites"), true);
+        assert.deepEqual(
+            await access.listEnabled("43", [
+                { name: "reports" },
+                { name: "invites" },
+            ]),
+            [{ name: "invites" }],
+        );
         assert.deepEqual(
             access.listModules().map(({ name }) => name),
             ["reports"],

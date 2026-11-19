@@ -5,7 +5,6 @@ import fp from "fastify-plugin";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
-import { I18nService } from "../i18n-service.js";
 import { LockService } from "../lock-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
@@ -14,8 +13,7 @@ import {
     buildTelegramDeepLinkUrl,
     TelegramDeepLink,
 } from "./telegram-deep-links.js";
-import { TelegramApiError } from "./telegram-errors.js";
-import { telegramLocales } from "./telegram-locales.js";
+import { TelegramApiError, unwrapTelegramResponse } from "./telegram-errors.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 type TelegramBotConfig = Pick<
@@ -96,17 +94,16 @@ export class TelegramBotService {
 
     async setWebhook(bot: TelegramBot): Promise<string> {
         const url = resolveTelegramWebhookUrl(this.config, bot.telegramId);
-        const result = await bot.api.setWebhook({
-            url,
-            secret_token: telegramWebhookSecret(
-                this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                bot.telegramId,
-            ),
-        });
-
-        if (!result.ok) {
-            throw new TelegramApiError("setWebhook", result);
-        }
+        unwrapTelegramResponse(
+            "setWebhook",
+            await bot.api.setWebhook({
+                url,
+                secret_token: telegramWebhookSecret(
+                    this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    bot.telegramId,
+                ),
+            }),
+        );
 
         this.log.info(
             { botId: bot.id, url },
@@ -117,23 +114,16 @@ export class TelegramBotService {
     }
 
     async deleteWebhook(bot: TelegramBot): Promise<void> {
-        const result = await bot.api.deleteWebhook();
-
-        if (!result.ok) {
-            throw new TelegramApiError("deleteWebhook", result);
-        }
+        unwrapTelegramResponse("deleteWebhook", await bot.api.deleteWebhook());
 
         this.log.info({ botId: bot.id }, "Telegram webhook deleted");
     }
 
     async readWebhook(bot: TelegramBot): Promise<WebhookInfo> {
-        const result = await bot.api.getWebhookInfo();
-
-        if (!result.ok) {
-            throw new TelegramApiError("getWebhookInfo", result);
-        }
-
-        return result.result;
+        return unwrapTelegramResponse(
+            "getWebhookInfo",
+            await bot.api.getWebhookInfo(),
+        );
     }
 
     async refreshWebhooks(): Promise<TelegramBotWebhook[]> {
@@ -226,20 +216,13 @@ export class TelegramBotService {
     }
 
     private async fetchUsername(bot: TelegramBot): Promise<string> {
-        const result = await bot.api.getMe();
-
-        if (!result.ok) {
-            throw new TelegramApiError("getMe", result);
-        }
-
-        return result.result.username;
+        return unwrapTelegramResponse("getMe", await bot.api.getMe()).username;
     }
 }
 
 export default fp(
     async function (fastify: FastifyInstance) {
         const appLogger = fastify.getDecorator<AppLogger>("appLogger");
-        const i18nService = fastify.getDecorator<I18nService>("i18nService");
         const telegramBotService = new TelegramBotService(
             appLogger.child({ module: "telegram" }),
             fastify.getDecorator<TelegramBots>("telegramBots"),
@@ -248,8 +231,6 @@ export default fp(
             fastify.getDecorator<LockService>("lockService"),
             fastify.getDecorator<Env>("config"),
         );
-
-        i18nService.addLocales("telegram", telegramLocales);
 
         fastify.decorate("telegramBotService", telegramBotService);
 
@@ -263,7 +244,6 @@ export default fp(
             "@fastify/env",
             "app-logger",
             "cache",
-            "i18n-service",
             "lock-service",
             "telegram-bots",
             "telegram-command-menus",

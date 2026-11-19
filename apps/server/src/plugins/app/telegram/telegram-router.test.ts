@@ -1,191 +1,28 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { setTimeout } from "node:timers/promises";
-import { buildTestMongo } from "../../../test/mongo.js";
-import { TelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-    buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildTelegramSceneBot } from "../../../test/telegram-scene-bot.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { message, text } from "./telegram-filters.js";
-import { telegramLocales } from "./telegram-locales.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { defineScene, next as nextStep } from "./telegram-scene.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramRouter", () => {
-    void it("runs global middlewares in registration order around the route", async (t) => {
-        const calls: string[] = [];
-        const { telegramBots, telegramUpdateHandler, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                registerRoutes: (router) => {
-                    router.use(async (_ctx, next) => {
-                        calls.push("first:before");
-                        await next();
-                        calls.push("first:after");
-                    });
-                    router.use(async (_ctx, next) => {
-                        calls.push("second");
-                        await next();
-                    });
-                    router.on(text("hello"), async () => {
-                        calls.push("handler");
-                    });
-                },
-            });
-
-        await createUser(usersRepository, 987654341);
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTextUpdate(987654341, "hello"),
-        );
-
-        assert.deepEqual(calls, [
-            "first:before",
-            "second",
-            "handler",
-            "first:after",
-        ]);
-    });
-
-    void it("stops the update when a middleware doesn't call next", async (t) => {
-        const calls: string[] = [];
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
-            t,
-            registerRoutes: (router) => {
-                router.use(async () => {
-                    calls.push("middleware");
-                });
-                router.on(text("hello"), async () => {
-                    calls.push("handler");
-                });
-            },
-        });
-
-        await createUser(usersRepository, 987654342);
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTextUpdate(987654342, "hello"),
-        );
-
-        assert.deepEqual(calls, ["middleware"]);
-        assert.deepEqual(readSentTexts(telegramApiService), []);
-    });
-
-    void it("runs route middlewares only for their route", async (t) => {
-        const calls: string[] = [];
-        const { telegramBots, telegramUpdateHandler, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
-                t,
-                registerRoutes: (router) => {
-                    router.on(
-                        text("first"),
-                        async () => {
-                            calls.push("first");
-                        },
-                        {
-                            use: [
-                                async (_ctx, next) => {
-                                    calls.push("first:middleware");
-                                    await next();
-                                },
-                            ],
-                        },
-                    );
-                    router.on(text("second"), async () => {
-                        calls.push("second");
-                    });
-                },
-            });
-
-        await createUser(usersRepository, 987654343);
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTextUpdate(987654343, "second", 1),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTextUpdate(987654343, "first", 2),
-        );
-
-        assert.deepEqual(calls, ["second", "first:middleware", "first"]);
-    });
-
-    void it("fails the update when a middleware calls next twice", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
-            t,
-            registerRoutes: (router) => {
-                router.use(async (_ctx, next) => {
-                    await next();
-                    await next();
-                });
-                router.on(text("hello"), async () => undefined);
-            },
-        });
-
-        await createUser(usersRepository, 987654344);
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTextUpdate(987654344, "hello"),
-        );
-
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.en.error,
-        ]);
-    });
-
     void it("handles a command with a bot username suffix", async (t) => {
         const calls: string[] = [];
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.command("test", async () => {
@@ -207,8 +44,7 @@ void describe("TelegramRouter", () => {
         await assert.rejects(
             () =>
                 buildTelegramBotServiceTestApp({
-                    databaseName,
-                    mongoClient,
+                    testMongo,
                     t,
                     registerRoutes: (router) => {
                         router.command("start", async () => undefined);
@@ -224,8 +60,7 @@ void describe("TelegramRouter", () => {
                 assert.rejects(
                     () =>
                         buildTelegramBotServiceTestApp({
-                            databaseName,
-                            mongoClient,
+                            testMongo,
                             t,
                             registerRoutes: (router) => {
                                 router.command(name, async () => undefined);
@@ -241,8 +76,7 @@ void describe("TelegramRouter", () => {
 
     void it("accepts a command name in snake case", async (t) => {
         const bot = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.command("new_invite_2", async () => undefined);
@@ -255,8 +89,7 @@ void describe("TelegramRouter", () => {
     void it("routes by an async predicate that reads the context", async (t) => {
         const calls: string[] = [];
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.when(
@@ -303,8 +136,7 @@ void describe("TelegramRouter", () => {
             },
         });
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 router.scene(echoScene);
@@ -331,8 +163,7 @@ void describe("TelegramRouter", () => {
 
     void it("rejects routes registered after the app is ready", async (t) => {
         const { app } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
         const router = app.getDecorator<TelegramRouter>("telegramRouter");
@@ -349,12 +180,6 @@ void describe("TelegramRouter", () => {
     });
 });
 
-function readSentTexts(telegramApiService: TelegramApiServiceMock): string[] {
-    return telegramApiService.sendMessage.mock.calls.map(
-        (call) => call.arguments[0].text,
-    );
-}
-
 async function createUser(
     usersRepository: UsersRepository,
     telegramId: number,
@@ -367,29 +192,9 @@ async function createUser(
     });
 }
 
-function buildTextUpdate(
-    telegramId: number,
-    messageText: string,
-    updateId = 1,
-) {
-    return buildTelegramTextMessageUpdate({
-        update_id: updateId,
-        message: {
-            chat: buildTelegramPrivateChat({ id: telegramId }),
-            text: messageText,
-        },
-    });
-}
-
 function buildCommandUpdate(telegramId: number, messageText: string) {
-    return buildTelegramTextMessageUpdate({
-        message: {
-            chat: buildTelegramPrivateChat({ id: telegramId }),
-            from: buildTelegramUser({ id: telegramId }),
-            entities: [
-                { length: messageText.length, offset: 0, type: "bot_command" },
-            ],
-            text: messageText,
-        },
-    });
+    return buildTelegramCommandUpdate(
+        buildTelegramPrivateChat({ id: telegramId }),
+        messageText,
+    );
 }

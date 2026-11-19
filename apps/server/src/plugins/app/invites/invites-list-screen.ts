@@ -1,6 +1,11 @@
 import { AccessControl } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+} from "../telegram/telegram-html.js";
+import { inRowsOf } from "../telegram/telegram-keyboard.js";
 import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
@@ -9,8 +14,6 @@ import {
     readInviteStatus,
 } from "./invite-entity.js";
 import {
-    buildInvitesMessage,
-    formatBold,
     formatGrants,
     formatInviteLabel,
     formatLabeledTime,
@@ -45,8 +48,8 @@ export async function renderInvitesList(
           )
         : [escapeTelegramHtml(t("invites:listEmpty"))];
 
-    return buildInvitesMessage(
-        [formatBold(t("invites:listTitle")), ...lines],
+    return buildTelegramHtmlMessage(
+        [formatTelegramHtmlBold(t("invites:listTitle")), ...lines],
         [
             ...inRowsOf(
                 invitesPerRow,
@@ -95,14 +98,4 @@ function describeListItem(
     }
 
     return parts.join(" · ");
-}
-
-function inRowsOf<TItem>(size: number, items: TItem[]): TItem[][] {
-    const rows: TItem[][] = [];
-
-    for (let index = 0; index < items.length; index += size) {
-        rows.push(items.slice(index, index + size));
-    }
-
-    return rows;
 }

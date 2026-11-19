@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+    buildTelegramHtmlMessage,
     escapeTelegramHtml,
     formatTelegramHtmlMention,
     formatTelegramHtmlTime,
     measureTelegramHtml,
+    telegramMessageTextLimit,
 } from "./telegram-html.js";
 
 void describe("Telegram HTML", () => {
@@ -37,5 +39,39 @@ void describe("Telegram HTML", () => {
             measureTelegramHtml("<b>Tom &amp; Jerry</b> &lt;3"),
             "Tom & Jerry <3".length,
         );
+    });
+});
+
+void describe("buildTelegramHtmlMessage", () => {
+    void it("drops the last lines of a text over the Telegram limit and marks the cut", () => {
+        const lines = Array.from(
+            { length: 200 },
+            (_, index) => `<b>${index}</b> ${"x".repeat(40)}`,
+        );
+        const message = buildTelegramHtmlMessage(lines, []);
+
+        assert.ok(message.kind === "text");
+        assert.ok(
+            measureTelegramHtml(message.text) <= telegramMessageTextLimit,
+        );
+        assert.ok(message.text.startsWith("<b>0</b>"));
+        assert.ok(message.text.endsWith("\n…"));
+    });
+
+    void it("keeps a text within the limit as it is", () => {
+        const message = buildTelegramHtmlMessage(
+            ["<b>Room</b>", "", "🦊 Sasha ✅"],
+            [],
+        );
+
+        assert.ok(message.kind === "text");
+        assert.equal(message.text, "<b>Room</b>\n\n🦊 Sasha ✅");
+    });
+
+    void it("drops the empty rows of the keyboard", () => {
+        const button = { text: "Back", callback_data: "back" };
+        const message = buildTelegramHtmlMessage(["Text"], [[], [button], []]);
+
+        assert.deepEqual(message.keyboard, [[button]]);
     });
 });

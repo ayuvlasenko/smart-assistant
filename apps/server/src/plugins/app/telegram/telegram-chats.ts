@@ -12,6 +12,7 @@ import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
+import { telegramLocales } from "./telegram-locales.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { isTimeZone } from "./telegram-parsers.js";
 import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
@@ -27,7 +28,7 @@ import { TelegramSessionStore } from "./telegram-session-store.js";
 
 export interface TelegramChatOptions {
     bot: TelegramBot;
-    userId: number;
+    telegramUserId: number;
     user: UserEntity;
     log: FastifyBaseLogger;
 }
@@ -39,7 +40,7 @@ export interface TelegramUpdateOptions extends TelegramChatOptions {
 
 export interface TelegramSceneTarget {
     botId: string;
-    userId: number;
+    telegramUserId: number;
     key: string;
 }
 
@@ -158,7 +159,7 @@ export class TelegramChats {
                         err: result.reason,
                         scene: scene.name,
                         botId: targets[index]?.botId,
-                        telegramUserId: targets[index]?.userId,
+                        telegramUserId: targets[index]?.telegramUserId,
                     },
                     "Failed to deliver a scene update",
                 );
@@ -178,7 +179,7 @@ export class TelegramChats {
         try {
             await this.withUser(
                 await bot,
-                target.userId,
+                target.telegramUserId,
                 { scene: scene.name },
                 (ctx) =>
                     this.sceneEngine.deliver(
@@ -206,8 +207,8 @@ export class TelegramChats {
             );
 
             const results = await Promise.allSettled(
-                watchers.map(([userId, scenes]) =>
-                    this.redrawFor(bot, userId, scenes, topics),
+                watchers.map(([telegramUserId, scenes]) =>
+                    this.redrawFor(bot, telegramUserId, scenes, topics),
                 ),
             );
 
@@ -219,14 +220,14 @@ export class TelegramChats {
             );
 
             for (const [index, result] of results.entries()) {
-                const [userId, scenes = []] = watchers[index] ?? [];
+                const [telegramUserId, scenes = []] = watchers[index] ?? [];
 
                 if (result.status === "rejected") {
                     this.recordPublishFailure(
                         result.reason,
                         botId,
                         topics,
-                        userId,
+                        telegramUserId,
                         scenes,
                     );
                 }
@@ -255,13 +256,16 @@ export class TelegramChats {
               )
             : [];
 
-        for (const { userId, entry } of matches.flat()) {
-            entries.set(userId, (entries.get(userId) ?? new Set()).add(entry));
+        for (const { telegramUserId, entry } of matches.flat()) {
+            entries.set(
+                telegramUserId,
+                (entries.get(telegramUserId) ?? new Set()).add(entry),
+            );
         }
 
         return new Map(
-            [...entries].map(([userId, userEntries]) => [
-                userId,
+            [...entries].map(([telegramUserId, userEntries]) => [
+                telegramUserId,
                 [...userEntries].flatMap(
                     (entry) => parseTelegramSceneTopicEntry(entry) ?? [],
                 ),
@@ -271,7 +275,7 @@ export class TelegramChats {
 
     private async redrawFor(
         bot: TelegramBot | undefined,
-        userId: number,
+        telegramUserId: number,
         scenes: TelegramSceneRef[],
         topics: string[],
     ): Promise<void> {
@@ -279,11 +283,16 @@ export class TelegramChats {
             this.telegramMetrics.startRecipientDelivery("publish");
 
         try {
-            await this.withUser(bot, userId, { topics }, async (ctx) => {
-                for (const { sceneId } of scenes) {
-                    await this.sceneEngine.redraw(ctx, sceneId, topics);
-                }
-            });
+            await this.withUser(
+                bot,
+                telegramUserId,
+                { topics },
+                async (ctx) => {
+                    for (const { sceneId } of scenes) {
+                        await this.sceneEngine.redraw(ctx, sceneId, topics);
+                    }
+                },
+            );
         } finally {
             finishRecipient();
         }
@@ -293,7 +302,7 @@ export class TelegramChats {
         err: unknown,
         botId: string,
         topics: string[],
-        userId: number | undefined,
+        telegramUserId: number | undefined,
         scenes: TelegramSceneRef[],
     ): void {
         for (const { sceneName } of scenes) {
@@ -305,7 +314,7 @@ export class TelegramChats {
                 err,
                 botId,
                 topics,
-                telegramUserId: userId,
+                telegramUserId,
                 scenes: scenes.map(({ sceneName }) => sceneName),
             },
             "Failed to publish a scene update",
@@ -341,7 +350,7 @@ export class TelegramChats {
 
     private async withUser(
         bot: TelegramBot | undefined,
-        userId: number,
+        telegramUserId: number,
         bindings: Record<string, unknown>,
         handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
     ): Promise<void> {
@@ -349,7 +358,7 @@ export class TelegramChats {
             bot &&
             (await this.usersRepository.findOneByTelegramId(
                 bot.id,
-                String(userId),
+                String(telegramUserId),
             ));
 
         if (!bot || !user || user.isBanned) {
@@ -358,11 +367,11 @@ export class TelegramChats {
 
         const log = this.log.child({
             botId: bot.id,
-            telegramUserId: userId,
+            telegramUserId,
             ...bindings,
         });
 
-        await this.withChat({ bot, userId, user, log }, handle);
+        await this.withChat({ bot, telegramUserId, user, log }, handle);
     }
 
     private withChat<T>(
@@ -370,7 +379,7 @@ export class TelegramChats {
         handle: (ctx: TelegramContext<undefined>) => Promise<T>,
     ): Promise<T> {
         const responder = new TelegramResponder(
-            chat.userId,
+            chat.telegramUserId,
             undefined,
             chat.bot.api,
             chat.log,
@@ -382,14 +391,14 @@ export class TelegramChats {
     }
 
     private withContext<TUpdate extends Update | undefined, T>(
-        { bot, userId, user, log }: TelegramChatOptions,
+        { bot, telegramUserId, user, log }: TelegramChatOptions,
         update: TUpdate,
         responder: TelegramResponder,
         handle: (ctx: TelegramContext<TUpdate>) => Promise<T>,
     ): Promise<T> {
         return this.sessionStore.withSession(
             bot.telegramId,
-            userId,
+            telegramUserId,
             (session, signal) => {
                 const ctx = new TelegramContext({
                     update,
@@ -418,11 +427,15 @@ export class TelegramChats {
 export default fp(
     async function (fastify: FastifyInstance) {
         const appLogger = fastify.getDecorator<AppLogger>("appLogger");
+        const i18nService = fastify.getDecorator<I18nService>("i18nService");
+
+        i18nService.addLocales("telegram", telegramLocales);
+
         const telegramChats = new TelegramChats(
             fastify.getDecorator<TelegramSessionStore>("telegramSessionStore"),
             fastify.getDecorator<TelegramSceneEngine>("telegramSceneEngine"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
-            fastify.getDecorator<I18nService>("i18nService"),
+            i18nService,
             fastify.getDecorator<TelegramBots>("telegramBots"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
             new TelegramDeliveryPermits(telegramDeliveryLimit),

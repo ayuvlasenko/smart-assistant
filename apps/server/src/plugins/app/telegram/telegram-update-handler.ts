@@ -109,7 +109,7 @@ export class TelegramUpdateHandler {
             bot.telegramId,
             update,
         );
-        const result = await this.finish(run, telegramUser);
+        const result = await this.processToResult(run, telegramUser);
 
         finishUpdate(result);
         run.log.info(
@@ -126,7 +126,7 @@ export class TelegramUpdateHandler {
         );
     }
 
-    private async finish(
+    private async processToResult(
         run: TelegramUpdateRun,
         telegramUser: User | undefined,
     ): Promise<TelegramUpdateResult> {
@@ -208,14 +208,14 @@ export class TelegramUpdateHandler {
     private async dispatch(
         run: TelegramUpdateRun,
         user: UserEntity,
-        userId: number,
+        telegramUserId: number,
     ): Promise<string> {
         return this.telegramChats.withUpdate(
             {
                 bot: run.bot,
                 update: run.update,
                 responder: run.responder,
-                userId,
+                telegramUserId,
                 user,
                 log: run.log,
             },

@@ -1,15 +1,7 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramPrivateChat,
     testBotId,
@@ -23,26 +15,7 @@ import { TelegramGuard } from "./telegram-guard.js";
 import { defineScene, TelegramScene } from "./telegram-scene.js";
 import { textStep } from "./telegram-steps.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 const isVip: TelegramGuard = (user) => user.grants.includes("vip");
 const counterStateSchema = Type.Object({ count: Type.Number() });
@@ -153,7 +126,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.sendText(chat, "/vip");
         bot.telegramChats.deliver(
             bot.vipScene,
-            [{ botId: testBotId, userId: chat.id, key: "vip" }],
+            [{ botId: testBotId, telegramUserId: chat.id, key: "vip" }],
             async (ctx, scene) => {
                 delivered.push(scene.state.count);
                 scene.state.count += 1;
@@ -163,7 +136,7 @@ void describe("Telegram guards on scenes", () => {
         await setGrants(chat.id, []);
         bot.telegramChats.deliver(
             bot.vipScene,
-            [{ botId: testBotId, userId: chat.id, key: "vip" }],
+            [{ botId: testBotId, telegramUserId: chat.id, key: "vip" }],
             async (ctx, scene) => {
                 delivered.push(scene.state.count);
             },
@@ -180,8 +153,7 @@ async function buildGuardBot(t: TestContext): Promise<GuardBot> {
     let vipScene!: TelegramScene<typeof counterStateSchema>;
 
     const bot = await buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: (router, sceneEngine) => {
             const cardScene = defineScene({
@@ -305,7 +277,7 @@ async function buildGuardBot(t: TestContext): Promise<GuardBot> {
 }
 
 async function setGrants(telegramId: number, grants: string[]): Promise<void> {
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne({ telegramId: String(telegramId) }, { $set: { grants } });
 }

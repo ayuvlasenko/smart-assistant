@@ -1,12 +1,12 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+} from "../telegram/telegram-html.js";
 import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import {
-    buildPokerMessage,
-    formatBold,
-    formatPokerRoomTitle,
-} from "./poker-format.js";
+import { formatPokerRoomTitle } from "./poker-format.js";
 import { PokerRoomStatus } from "./poker-room-entity.js";
 import { PokerView } from "./poker-schemas.js";
 
@@ -64,9 +64,9 @@ async function renderRooms(
         }),
     );
 
-    return buildPokerMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(
+            formatTelegramHtmlBold(
                 t(status === "open" ? "poker:listTitle" : "poker:closedTitle"),
             ),
             ...(rooms.items.length

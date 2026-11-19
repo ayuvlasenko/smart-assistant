@@ -4,13 +4,8 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import i18nPlugin, { I18nService, Translate } from "../i18n-service.js";
-import {
-    measureTelegramHtml,
-    telegramMessageTextLimit,
-} from "../telegram/telegram-html.js";
 import { UserEntity } from "../users/user-entity.js";
 import {
-    buildPokerMessage,
     describePokerParticipants,
     formatPokerRoomTime,
     formatPokerVoters,
@@ -105,33 +100,6 @@ void describe("formatPokerVoters", () => {
             formatPokerVoters({ card: "5", userIds }, labels),
             "u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, +3",
         );
-    });
-});
-
-void describe("buildPokerMessage", () => {
-    void it("drops the last lines of a text over the Telegram limit and marks the cut", () => {
-        const lines = Array.from(
-            { length: 200 },
-            (_, index) => `<b>${index}</b> ${"x".repeat(40)}`,
-        );
-        const message = buildPokerMessage(lines, []);
-
-        assert.ok(message.kind === "text");
-        assert.ok(
-            measureTelegramHtml(message.text) <= telegramMessageTextLimit,
-        );
-        assert.ok(message.text.startsWith("<b>0</b>"));
-        assert.ok(message.text.endsWith("\n…"));
-    });
-
-    void it("keeps a text within the limit as it is", () => {
-        const message = buildPokerMessage(
-            ["<b>Room</b>", "", "🦊 Sasha ✅"],
-            [],
-        );
-
-        assert.ok(message.kind === "text");
-        assert.equal(message.text, "<b>Room</b>\n\n🦊 Sasha ✅");
     });
 });
 

@@ -2,7 +2,12 @@ import { InlineKeyboardButton, WebhookInfo } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
 import { inviteDeepLinkName } from "../invites/invites-handlers.js";
 import { buildTelegramDeepLinkUrl } from "../telegram/telegram-deep-links.js";
-import { escapeTelegramHtml } from "../telegram/telegram-html.js";
+import {
+    buildTelegramHtmlMessage,
+    escapeTelegramHtml,
+    formatTelegramHtmlBold,
+    formatTelegramHtmlLabeled,
+} from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
 import { BotsSceneControl, BotsView } from "./bots-schemas.js";
@@ -16,9 +21,9 @@ export async function renderBotsList({
     const { t } = ctx;
     const bots = await botsService.list(ctx.user);
 
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(t("bots:listTitle")),
+            formatTelegramHtmlBold(t("bots:listTitle")),
             ...bots.map((bot) =>
                 escapeTelegramHtml(
                     [
@@ -57,23 +62,23 @@ export async function renderBot(
         ? undefined
         : await botsService.readWebhook(ctx.user, bot._id);
 
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(labelOf(t, botsService, bot)),
+            formatTelegramHtmlBold(labelOf(t, botsService, bot)),
             `<code>${escapeTelegramHtml(bot.telegramId)}</code>`,
-            formatLabeled(t("bots:statusLabel"), statusOf(t, bot)),
-            formatLabeled(
+            formatTelegramHtmlLabeled(t("bots:statusLabel"), statusOf(t, bot)),
+            formatTelegramHtmlLabeled(
                 t("bots:modulesLabel"),
                 modulesOf(t, botsService, bot),
             ),
-            formatLabeled(
+            formatTelegramHtmlLabeled(
                 t("bots:startLabel"),
                 startModuleOf(t, botsService, bot),
             ),
             ...(bot.disabledAt
                 ? []
                 : [
-                      formatLabeled(
+                      formatTelegramHtmlLabeled(
                           t("bots:webhookLabel"),
                           describeWebhook(t, webhook),
                       ),
@@ -125,9 +130,9 @@ export async function renderBotModules(
         return renderMissing(t, scene);
     }
 
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(
+            formatTelegramHtmlBold(
                 t("bots:modulesTitle", { bot: labelOf(t, botsService, bot) }),
             ),
         ],
@@ -157,9 +162,9 @@ export async function renderBotStartModule(
         return renderMissing(t, scene);
     }
 
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(
+            formatTelegramHtmlBold(
                 t("bots:startModuleTitle", {
                     bot: labelOf(t, botsService, bot),
                 }),
@@ -207,7 +212,7 @@ export async function renderBotOwnerInvite(
     }
 
     if (!bot.username || !(await botsService.isServed(bot._id))) {
-        return buildBotsMessage(
+        return buildTelegramHtmlMessage(
             [escapeTelegramHtml(t("bots:ownerInviteUnavailable"))],
             [[scene.backButton(t("bots:backButton"))]],
         );
@@ -218,9 +223,9 @@ export async function renderBotOwnerInvite(
         value: token,
     });
 
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(
+            formatTelegramHtmlBold(
                 t("bots:ownerInviteTitle", {
                     bot: labelOf(t, botsService, bot),
                 }),
@@ -240,26 +245,10 @@ function renderMissing(
     t: Translate,
     scene: BotsSceneControl,
 ): TelegramMessageContent {
-    return buildBotsMessage(
+    return buildTelegramHtmlMessage(
         [escapeTelegramHtml(t("bots:botMissing"))],
         [[scene.backButton(t("bots:backButton"))]],
     );
-}
-
-function buildBotsMessage(
-    lines: string[],
-    keyboard: InlineKeyboardButton[][],
-): TelegramMessageContent {
-    return {
-        kind: "text",
-        parse_mode: "HTML",
-        text: lines.join("\n"),
-        keyboard: keyboard.filter((row) => row.length),
-    };
-}
-
-function formatBold(text: string): string {
-    return `<b>${escapeTelegramHtml(text)}</b>`;
 }
 
 function labelOf(
@@ -305,10 +294,6 @@ function startModuleOf(
 
 function formatChoice(title: string, isChosen: boolean): string {
     return `${isChosen ? "🔘" : "⚪"} ${title}`;
-}
-
-function formatLabeled(label: string, value: string): string {
-    return `${escapeTelegramHtml(label)}: ${escapeTelegramHtml(value)}`;
 }
 
 function describeWebhook(

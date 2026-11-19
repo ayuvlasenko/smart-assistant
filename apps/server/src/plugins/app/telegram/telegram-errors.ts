@@ -1,4 +1,4 @@
-import { ApiError } from "@grammyjs/types";
+import { ApiError, ApiResponse } from "@grammyjs/types";
 
 export class DuplicateTelegramUpdateError extends Error {
     constructor() {
@@ -52,4 +52,15 @@ export class TelegramApiError extends Error {
         this.description = response.description;
         this.retryAfter = response.parameters?.retry_after;
     }
+}
+
+export function unwrapTelegramResponse<TResult>(
+    method: string,
+    response: ApiResponse<TResult>,
+): TResult {
+    if (!response.ok) {
+        throw new TelegramApiError(method, response);
+    }
+
+    return response.result;
 }

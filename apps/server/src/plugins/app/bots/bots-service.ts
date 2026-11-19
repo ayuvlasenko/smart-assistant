@@ -210,14 +210,16 @@ export class BotsService {
             module ?? undefined,
         );
 
-        if (bot) {
-            await this.botsConnector.refreshCommands(botId);
-            this.log.info(
-                { botId, startModule: bot.startModule, userId: actor._id },
-                "Bot start module changed",
-            );
-            await this.emitChanged(botId);
+        if (!bot) {
+            return this.botsRepository.findOneById(botId);
         }
+
+        await this.botsConnector.refreshCommands(botId);
+        this.log.info(
+            { botId, startModule: bot.startModule, userId: actor._id },
+            "Bot start module changed",
+        );
+        await this.emitChanged(botId);
 
         return bot;
     }

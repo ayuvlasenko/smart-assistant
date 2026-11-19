@@ -9,6 +9,7 @@ import { buildTestApp } from "../../../test/helper.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
     buildTelegramWebhookHeaders,
@@ -221,15 +222,10 @@ void describe("POST /api/telegram/webhook", () => {
             method: "POST",
             url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
-            body: buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654394,
-                    }),
-                    entities: [{ length: 6, offset: 0, type: "bot_command" }],
-                    text: "/start secret-invite-token",
-                },
-            }),
+            body: buildTelegramCommandUpdate(
+                buildTelegramPrivateChat({ id: 987654394 }),
+                "/start secret-invite-token",
+            ),
         });
 
         const logOutput = JSON.stringify(logs.readEntries());

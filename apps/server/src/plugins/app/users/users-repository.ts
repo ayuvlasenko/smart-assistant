@@ -1,11 +1,7 @@
-import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { ClientSession, ObjectId } from "mongodb";
-import {
-    EntityVersionMismatchError,
-    NotFoundError,
-} from "../../../entity-errors.js";
+import { Collection, ObjectId, UpdateFilter } from "mongodb";
+import { readMongoDb } from "../../external/mongo.js";
 import { UserEntity, UserProfile } from "./user-entity.js";
 
 const optionalProfileFields = ["firstName", "username"] as const;
@@ -16,39 +12,25 @@ export interface UserLookup {
 }
 
 export class UsersRepository {
-    readonly mongo: Required<FastifyMongoObject>;
+    private readonly users: Collection<UserEntity>;
 
-    constructor(mongo: Required<FastifyMongoObject>) {
-        this.mongo = mongo;
+    constructor(users: Collection<UserEntity>) {
+        this.users = users;
     }
 
-    findOneById(
-        _id: ObjectId,
-        session?: ClientSession,
-    ): Promise<UserEntity | null> {
-        return this.mongo.db
-            .collection<UserEntity>("users")
-            .findOne({ _id }, { session });
+    findOneById(_id: ObjectId): Promise<UserEntity | null> {
+        return this.users.findOne({ _id });
     }
 
-    findManyByIds(
-        ids: ObjectId[],
-        session?: ClientSession,
-    ): Promise<UserEntity[]> {
-        return this.mongo.db
-            .collection<UserEntity>("users")
-            .find({ _id: { $in: ids } }, { session })
-            .toArray();
+    findManyByIds(ids: ObjectId[]): Promise<UserEntity[]> {
+        return this.users.find({ _id: { $in: ids } }).toArray();
     }
 
-    async existsWithGrant(
-        botId: string,
-        grant: string,
-        session?: ClientSession,
-    ): Promise<boolean> {
-        const count = await this.mongo.db
-            .collection<UserEntity>("users")
-            .countDocuments({ botId, grants: grant }, { session, limit: 1 });
+    async existsWithGrant(botId: string, grant: string): Promise<boolean> {
+        const count = await this.users.countDocuments(
+            { botId, grants: grant },
+            { limit: 1 },
+        );
 
         return count > 0;
     }
@@ -56,108 +38,71 @@ export class UsersRepository {
     findOneByTelegramId(
         botId: string,
         telegramId: string,
-        session?: ClientSession,
     ): Promise<UserEntity | null> {
-        return this.mongo.db
-            .collection<UserEntity>("users")
-            .findOne({ botId, telegramId }, { session });
+        return this.users.findOne({ botId, telegramId });
     }
 
     async findOneByTelegramIdOrCreate(
         data: Pick<UserEntity, "botId" | "telegramId" | "isBanned"> &
             UserProfile,
-        session?: ClientSession,
     ): Promise<UserLookup> {
-        const result = await this.mongo.db
-            .collection<UserEntity>("users")
-            .findOneAndUpdate(
-                { botId: data.botId, telegramId: data.telegramId },
-                {
-                    $setOnInsert: {
-                        _id: new ObjectId(),
-                        ...withoutUndefined(data),
-                        grants: [],
-                        version: 0,
-                        createdAt: new Date(),
-                        updatedAt: new Date(),
-                    },
+        const now = new Date();
+        const result = await this.users.findOneAndUpdate(
+            { botId: data.botId, telegramId: data.telegramId },
+            {
+                $setOnInsert: {
+                    _id: new ObjectId(),
+                    ...withoutUndefined(data),
+                    grants: [],
+                    version: 0,
+                    createdAt: now,
+                    updatedAt: now,
                 },
-                {
-                    session,
-                    upsert: true,
-                    returnDocument: "after",
-                    includeResultMetadata: true,
-                },
-            );
+            },
+            {
+                upsert: true,
+                returnDocument: "after",
+                includeResultMetadata: true,
+            },
+        );
+
+        if (!result.value) {
+            throw new Error("The user was not stored");
+        }
 
         return {
-            user: result.value as UserEntity,
+            user: result.value,
             isCreated: !result.lastErrorObject?.updatedExisting,
         };
     }
 
-    async updateProfile(
-        _id: ObjectId,
-        profile: UserProfile,
-        session?: ClientSession,
-    ): Promise<UserEntity> {
+    updateProfile(_id: ObjectId, profile: UserProfile): Promise<UserEntity> {
         const unset = Object.fromEntries(
             optionalProfileFields
                 .filter((field) => profile[field] === undefined)
                 .map((field) => [field, ""] as const),
         );
-        const user = await this.mongo.db
-            .collection<UserEntity>("users")
-            .findOneAndUpdate(
-                { _id },
-                {
-                    $set: {
-                        ...withoutUndefined(profile),
-                        updatedAt: new Date(),
-                    },
-                    ...(Object.keys(unset).length ? { $unset: unset } : {}),
-                    $inc: { version: 1 },
-                },
-                { session, returnDocument: "after" },
-            );
 
-        if (!user) {
-            throw new NotFoundError("User");
-        }
-
-        return user;
+        return this.update(_id, {
+            $set: { ...withoutUndefined(profile), updatedAt: new Date() },
+            ...(Object.keys(unset).length ? { $unset: unset } : {}),
+            $inc: { version: 1 },
+        });
     }
 
-    async grantAccess(
-        _id: ObjectId,
-        grants: string[],
-        session?: ClientSession,
-    ): Promise<UserEntity> {
-        const user = await this.mongo.db
-            .collection<UserEntity>("users")
-            .findOneAndUpdate(
-                { _id },
-                {
-                    $set: { isBanned: false, updatedAt: new Date() },
-                    $addToSet: { grants: { $each: grants } },
-                    $inc: { version: 1 },
-                },
-                { session, returnDocument: "after" },
-            );
-
-        if (!user) {
-            throw new NotFoundError("User");
-        }
-
-        return user;
+    grantAccess(_id: ObjectId, grants: string[]): Promise<UserEntity> {
+        return this.update(_id, {
+            $set: { isBanned: false, updatedAt: new Date() },
+            $addToSet: { grants: { $each: grants } },
+            $inc: { version: 1 },
+        });
     }
 
     async setCommandMenu(
         _id: ObjectId,
         commandMenu: string | undefined,
-        session?: ClientSession,
     ): Promise<void> {
-        await this.mongo.db.collection<UserEntity>("users").updateOne(
+        await this.users.updateOne(
             { _id },
             {
                 ...(commandMenu === undefined
@@ -166,54 +111,38 @@ export class UsersRepository {
                 $currentDate: { updatedAt: true },
                 $inc: { version: 1 },
             },
-            { session },
         );
     }
 
-    async setSetting(
+    setSetting(
         _id: ObjectId,
         name: string,
         value: unknown,
-        session?: ClientSession,
     ): Promise<UserEntity> {
         const path = `settings.${name}`;
-        const user = await this.mongo.db
-            .collection<UserEntity>("users")
-            .findOneAndUpdate(
-                { _id },
-                {
-                    ...(value === undefined
-                        ? { $unset: { [path]: "" } }
-                        : { $set: { [path]: value } }),
-                    $currentDate: { updatedAt: true },
-                    $inc: { version: 1 },
-                },
-                { session, returnDocument: "after" },
-            );
+
+        return this.update(_id, {
+            ...(value === undefined
+                ? { $unset: { [path]: "" } }
+                : { $set: { [path]: value } }),
+            $currentDate: { updatedAt: true },
+            $inc: { version: 1 },
+        });
+    }
+
+    private async update(
+        _id: ObjectId,
+        change: UpdateFilter<UserEntity>,
+    ): Promise<UserEntity> {
+        const user = await this.users.findOneAndUpdate({ _id }, change, {
+            returnDocument: "after",
+        });
 
         if (!user) {
-            throw new NotFoundError("User");
+            throw new Error(`User ${_id.toHexString()} is not stored`);
         }
 
         return user;
-    }
-
-    async save(entity: UserEntity, session?: ClientSession): Promise<void> {
-        const { _id, version, ...document } = entity;
-        const result = await this.mongo.db
-            .collection<UserEntity>("users")
-            .updateOne(
-                { _id, version },
-                {
-                    $set: { ...document, updatedAt: new Date() },
-                    $inc: { version: 1 },
-                },
-                { session },
-            );
-
-        if (result.matchedCount === 0) {
-            throw new EntityVersionMismatchError("User");
-        }
     }
 }
 
@@ -225,13 +154,11 @@ function withoutUndefined<T extends object>(value: T): Partial<T> {
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        if (!fastify.mongo.db) {
-            throw new Error("MongoDB is not connected");
-        }
-
         fastify.decorate(
             "usersRepository",
-            new UsersRepository(fastify.mongo as Required<FastifyMongoObject>),
+            new UsersRepository(
+                readMongoDb(fastify).collection<UserEntity>("users"),
+            ),
         );
     },
     {

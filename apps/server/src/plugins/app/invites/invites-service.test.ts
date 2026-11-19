@@ -1,16 +1,9 @@
 import { ForbiddenError } from "@casl/ability";
-import { Db, MongoClient, ObjectId } from "mongodb";
+import { ObjectId } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { testBotId } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
@@ -21,27 +14,7 @@ import {
     InviteWithoutGrantsError,
 } from "./invites-errors.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("invites").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("InvitesService create", () => {
     void it("creates an invite with a link token and unique grants for an admin", async (t) => {
@@ -85,6 +58,20 @@ void describe("InvitesService create", () => {
         await assert.rejects(
             bot.invitesService.create(admin, { grants: ["missing.grant"] }),
             InviteGrantNotAllowedError,
+        );
+    });
+
+    void it("refuses a grant of a module that is off in the bot", async (t) => {
+        const bot = await buildInvitesBot({ testMongo, t, modules: ["poker"] });
+        const admin = await createUser(bot, "987654705", [adminGrant]);
+
+        await assert.rejects(
+            bot.invitesService.create(admin, { grants: [pingGrant] }),
+            new InviteGrantNotAllowedError(pingGrant),
+        );
+        assert.equal(
+            await bot.invitesService.canGrant(admin, pingGrant),
+            false,
         );
     });
 
@@ -159,7 +146,7 @@ void describe("InvitesService activate", () => {
         const user = await createUser(bot, "987654713", [], true);
 
         await bot.invitesService.activate(user, invite.token);
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne({ _id: user._id }, { $set: { grants: [] } });
 
@@ -184,13 +171,13 @@ void describe("InvitesService activate", () => {
         await bot.invitesService.activate(user, revoked.token);
         await bot.invitesService.activate(user, expired.token);
         await bot.invitesRepository.revoke(revoked._id, new Date());
-        await mongo
+        await testMongo.mongo
             .collection("invites")
             .updateOne(
                 { _id: expired._id },
                 { $set: { expiresAt: new Date(Date.now() - 1000) } },
             );
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne(
                 { _id: user._id },
@@ -491,7 +478,7 @@ void describe("InvitesService bootstrap", () => {
 
         await bot.invitesService.bootstrap(testBotId, "token-a");
         await bot.invitesService.activate(holder, "token-a");
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne({ _id: holder._id }, { $set: { grants: [] } });
 
@@ -516,7 +503,7 @@ void describe("InvitesService bootstrap", () => {
         await bot.invitesService.bootstrap(testBotId, "token-a");
         await bot.invitesService.activate(holder, "token-a");
         await bot.invitesService.bootstrap(testBotId, "token-a");
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne({ _id: holder._id }, { $set: { grants: [] } });
 
@@ -546,7 +533,10 @@ void describe("InvitesService bootstrap", () => {
                 .sort((a, b) => a.localeCompare(b)),
             ["created", "kept"],
         );
-        assert.equal(await mongo.collection("invites").countDocuments({}), 1);
+        assert.equal(
+            await testMongo.mongo.collection("invites").countDocuments({}),
+            1,
+        );
     });
 
     void it("reports a token that an invite of another bot holds as unusable", async (t) => {
@@ -571,7 +561,7 @@ void describe("InvitesService bootstrap", () => {
         const bot = await buildBot(t);
         const admin = await createUser(bot, "987654743", [adminGrant]);
 
-        await mongo.collection("invites").insertOne({
+        await testMongo.mongo.collection("invites").insertOne({
             botId: testBotId,
             token: "orphan-token",
             grants: [adminGrant],
@@ -607,7 +597,7 @@ void describe("InvitesService bootstrap", () => {
             undefined,
         );
 
-        await mongo.collection("users").deleteMany({});
+        await testMongo.mongo.collection("users").deleteMany({});
         await bot.invitesService.bootstrap(testBotId, "fresh-token");
 
         assert.deepEqual(
@@ -632,7 +622,7 @@ function buildBot(
     t: TestContext,
     env: Record<string, string> = {},
 ): Promise<InvitesBot> {
-    return buildInvitesBot({ databaseName, mongoClient, t, env });
+    return buildInvitesBot({ testMongo, t, env });
 }
 
 async function createUser(
@@ -652,7 +642,7 @@ async function createUser(
         return user;
     }
 
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne({ _id: user._id }, { $set: { grants } });
 

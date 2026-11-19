@@ -1,4 +1,4 @@
-import { CallbackQuery, Message, Update } from "@grammyjs/types";
+import { Update } from "@grammyjs/types";
 import Fastify from "fastify";
 import i18next from "i18next";
 import assert from "node:assert/strict";
@@ -16,37 +16,8 @@ import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { I18nService } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramChat } from "./telegram-extractors.js";
-import { TelegramUpdateFilter } from "./telegram-filters.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSession } from "./telegram-session.js";
-
-type TestTextMessageUpdate = Omit<Update, "callback_query" | "message"> & {
-    callback_query?: never;
-    message: Message.TextMessage & Update.NonChannel;
-};
-
-type TestCallbackDataUpdate = Omit<Update, "callback_query" | "message"> & {
-    callback_query: CallbackQuery & { data: string };
-    message?: never;
-};
-
-const textMessageFilter: TelegramUpdateFilter<TestTextMessageUpdate> = (
-    update,
-): update is TestTextMessageUpdate => {
-    return !!(update.message && "text" in update.message);
-};
-
-const callbackDataFilter: TelegramUpdateFilter<TestCallbackDataUpdate> = (
-    update,
-): update is TestCallbackDataUpdate => {
-    return typeof update.callback_query?.data === "string";
-};
-
-function expectGuardedUpdateUnion(
-    update: TestTextMessageUpdate | TestCallbackDataUpdate,
-): TestTextMessageUpdate | TestCallbackDataUpdate {
-    return update;
-}
 
 function buildContext<TUpdate extends Update>(
     t: TestContext,
@@ -95,54 +66,6 @@ void describe("TelegramContext", () => {
         assert.throws(() => {
             context.refreshUser(buildUserEntity());
         }, /can't change its user/);
-    });
-
-    void it("narrows update with a single filter", (t) => {
-        const context = buildContext(
-            t,
-            buildTelegramTextMessageUpdate({
-                message: {
-                    text: "hello",
-                },
-            }) as Update,
-        );
-
-        if (!context.has(textMessageFilter)) {
-            assert.fail("Expected text message filter to match");
-        }
-
-        assert.equal(context.update.message.text, "hello");
-    });
-
-    void it("narrows update with any matching filter from an array", (t) => {
-        const context = buildContext(
-            t,
-            buildTelegramCallbackQueryUpdate({
-                data: "choose:today",
-            }) as Update,
-        );
-
-        if (!context.has([textMessageFilter, callbackDataFilter])) {
-            assert.fail("Expected one of the filters to match");
-        }
-
-        expectGuardedUpdateUnion(context.update);
-        assert.equal(context.update.message?.text, undefined);
-        assert.equal(context.update.callback_query?.data, "choose:today");
-    });
-
-    void it("returns false when no array filter matches", (t) => {
-        const context = buildContext(
-            t,
-            buildTelegramCallbackQueryUpdate({
-                data: undefined,
-            }) as Update,
-        );
-
-        assert.equal(
-            context.has([textMessageFilter, callbackDataFilter]),
-            false,
-        );
     });
 
     void it("replies to the chat of the update", async (t) => {

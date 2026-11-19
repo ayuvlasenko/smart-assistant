@@ -14,6 +14,7 @@ import {
 } from "./telegram-bot-service-helper.js";
 import {
     buildTelegramCallbackQueryUpdate,
+    buildTelegramCommandUpdate,
     buildTelegramTextMessage,
     buildTelegramTextMessageUpdate,
     buildTelegramUser,
@@ -177,26 +178,23 @@ export function buildSessionKey(
 
 function buildTextUpdate(chat: Chat.PrivateChat, text: string): Update {
     updateId += 1;
-    const [commandPart] = text.startsWith("/") ? text.split(" ") : [];
+
+    const ids = {
+        update_id: updateId,
+        message_id: userMessageIdOffset + updateId,
+    };
+
+    if (text.startsWith("/")) {
+        return buildTelegramCommandUpdate(chat, text, ids);
+    }
 
     return buildTelegramTextMessageUpdate({
-        update_id: updateId,
+        update_id: ids.update_id,
         message: {
-            message_id: userMessageIdOffset + updateId,
+            message_id: ids.message_id,
             chat,
             from: buildTelegramUser({ id: chat.id }),
             text,
-            ...(commandPart
-                ? {
-                      entities: [
-                          {
-                              type: "bot_command",
-                              offset: 0,
-                              length: commandPart.length,
-                          },
-                      ],
-                  }
-                : {}),
         },
     });
 }
@@ -352,15 +350,35 @@ async function readKeyboardsByMessage(
         }
     }
 
-    for (const call of telegramApiService.deleteMessage.mock.calls) {
-        const response = await call.result;
-
-        if (response?.ok && call.arguments[0].chat_id === chatId) {
-            keyboards.delete(call.arguments[0].message_id);
-        }
+    for (const messageId of await readRemovedMessageIds(
+        telegramApiService,
+        chatId,
+    )) {
+        keyboards.delete(messageId);
     }
 
     return keyboards;
+}
+
+async function readRemovedMessageIds(
+    telegramApiService: TelegramApiServiceMock,
+    chatId: number,
+): Promise<number[]> {
+    const removed: number[] = [];
+
+    for (const call of telegramApiService.deleteMessage.mock.calls) {
+        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
+            removed.push(call.arguments[0].message_id);
+        }
+    }
+
+    for (const call of telegramApiService.deleteMessages.mock.calls) {
+        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
+            removed.push(...call.arguments[0].message_ids);
+        }
+    }
+
+    return removed;
 }
 
 function findLatestButton(

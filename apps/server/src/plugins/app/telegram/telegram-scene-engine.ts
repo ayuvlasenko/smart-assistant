@@ -108,7 +108,7 @@ export class TelegramSceneEngine {
             await this.create(ctx, scene, id, state);
         }
 
-        this.updateFor(ctx).removeCommandMessage(ctx.update);
+        this.updateFor(ctx).deleteCommandAfterRender(ctx.update);
 
         return true;
     }
@@ -220,7 +220,13 @@ export class TelegramSceneEngine {
         const stopRecording = ctx.events.on(
             ["messageSent", "messageEdited", "messageRemoved"],
             ({ data }) => {
-                update.rememberButtons(this.buttons, data);
+                for (const instance of update.storage.loaded) {
+                    this.buttons.remember(
+                        instance,
+                        data.messageId,
+                        data.markup,
+                    );
+                }
             },
         );
 
@@ -584,7 +590,7 @@ export class TelegramSceneEngine {
             instance,
             { silent: true },
         );
-        instance.record.confirming = undefined;
+        this.buttons.cancelConfirmation(instance);
         move();
     }
 

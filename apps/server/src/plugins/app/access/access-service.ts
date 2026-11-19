@@ -73,7 +73,6 @@ export interface AccessControl<TSubjects> {
     ): Promise<Document>;
     guard(action: AccessAction, target: AccessSubject<TSubjects>): AccessGuard;
     holds(user: UserEntity, grant: string): boolean;
-    isEnabled(botId: string, sectionName: string): Promise<boolean>;
     listEnabled<TSection extends { name: string }>(
         botId: string,
         sections: readonly TSection[],
@@ -117,7 +116,6 @@ export class AccessService {
         guard: (action, target) => async (user) =>
             (await this.abilityFor(user)).can(action, target),
         holds: (user, grant) => this.holds(user, grant),
-        isEnabled: (botId, sectionName) => this.isEnabled(botId, sectionName),
         listEnabled: (botId, sections) => this.listEnabled(botId, sections),
         listSections: () => this.sections,
         listModules: () =>
@@ -185,16 +183,6 @@ export class AccessService {
         );
 
         return query ?? noRecordsQuery;
-    }
-
-    private async isEnabled(
-        botId: string,
-        sectionName: string,
-    ): Promise<boolean> {
-        return (
-            !this.modules.has(sectionName) ||
-            this.isOn(await this.readModules(botId), sectionName)
-        );
     }
 
     private async listEnabled<TSection extends { name: string }>(

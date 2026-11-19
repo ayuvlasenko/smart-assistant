@@ -6,7 +6,6 @@ import {
     buildLoggerOptions,
     buildPrettyLoggerOptions,
 } from "./logger-options.js";
-import { requestIdOptions } from "./logger-request.js";
 
 function getLoggerOptions(): FastifyServerOptions["logger"] {
     const level = process.env.LOG_LEVEL ?? "info";
@@ -29,7 +28,6 @@ function getLoggerOptions(): FastifyServerOptions["logger"] {
 
 const app = Fastify({
     logger: getLoggerOptions(),
-    ...requestIdOptions,
     trustProxy: true,
     ...options,
 });

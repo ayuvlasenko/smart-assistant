@@ -1,10 +1,9 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { loggerRequestSerializers } from "../../../logger-request.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
@@ -13,6 +12,7 @@ import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-servi
 import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramChannelPostUpdate,
+    buildTelegramCommandUpdate,
     buildTelegramEditedMessageUpdate,
     buildTelegramPollUpdate,
     buildTelegramPrivateChat,
@@ -39,34 +39,13 @@ import { telegramLocales } from "./telegram-locales.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { defineScene } from "./telegram-scene.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("settings").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramUpdateHandler", () => {
     void it("creates a banned user from a new Telegram user update", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -96,8 +75,7 @@ void describe("TelegramUpdateHandler", () => {
         const logs = createLoggerCollector();
         const { telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 logger: logs.logger,
             });
@@ -126,8 +104,7 @@ void describe("TelegramUpdateHandler", () => {
         const logs = createLoggerCollector();
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 logger: logs.logger,
                 registerRoutes: (router) => {
@@ -144,14 +121,10 @@ void describe("TelegramUpdateHandler", () => {
         );
         await telegramUpdateHandler.handle(
             await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                update_id: 2,
-                message: {
-                    chat: buildTelegramPrivateChat({ id: 987654343 }),
-                    entities: [{ length: 7, offset: 0, type: "bot_command" }],
-                    text: "/secret",
-                },
-            }),
+            buildTelegramCommandUpdate(
+                buildTelegramPrivateChat({ id: 987654343 }),
+                "/secret",
+            ),
         );
 
         assert.deepEqual(
@@ -181,8 +154,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("counts a user once, on the first update", async (t) => {
         const { metrics, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
         const chat = buildTelegramPrivateChat({ id: 987654324 });
@@ -210,8 +182,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -241,8 +212,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("doesn't send pong for a newly created banned user", async (t) => {
         const { telegramApiService, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: registerPing,
             });
@@ -269,8 +239,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: registerPing,
         });
@@ -321,8 +290,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             telegramApiService,
             registerRoutes: registerPing,
@@ -357,8 +325,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             sessionStoreOptions: { lockMaxHoldMilliseconds: 100 },
             registerRoutes: (router) => {
@@ -399,8 +366,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: registerPing,
         });
@@ -435,8 +401,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: registerPing,
         });
@@ -470,8 +435,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: registerPing,
         });
@@ -505,8 +469,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: registerPing,
         });
@@ -543,8 +506,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("skips updates without a Telegram user", async (t) => {
         const { telegramApiService, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -554,12 +516,14 @@ void describe("TelegramUpdateHandler", () => {
         );
 
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
-        assert.equal(await mongo.collection("users").countDocuments(), 0);
+        assert.equal(
+            await testMongo.mongo.collection("users").countDocuments(),
+            0,
+        );
     });
     void it("replies with an error when the user can't be loaded", async (t) => {
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -581,8 +545,7 @@ void describe("TelegramUpdateHandler", () => {
 
     void it("replies with an error when the user can't be loaded and the callback answer fails", async (t) => {
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -614,8 +577,7 @@ void describe("TelegramUpdateHandler", () => {
         const logs = createLoggerCollector();
         const chat = buildTelegramPrivateChat({ id: 987654399 });
         const bot: TelegramSceneBot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             logger: { ...logs.logger, serializers: loggerRequestSerializers },
             registerRoutes: (router, sceneEngine) => {
@@ -651,8 +613,7 @@ void describe("TelegramUpdateHandler", () => {
         const calls: string[] = [];
         const { telegramApiService, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.command("help", async () => {
@@ -680,7 +641,10 @@ void describe("TelegramUpdateHandler", () => {
 
         assert.deepEqual(calls, []);
         assert.deepEqual(readSentTexts(telegramApiService), []);
-        assert.equal(await mongo.collection("users").countDocuments(), 0);
+        assert.equal(
+            await testMongo.mongo.collection("users").countDocuments(),
+            0,
+        );
     });
 
     void it("stays silent on unhandled updates that are not new messages", async (t) => {
@@ -690,8 +654,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -715,8 +678,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.on(text("boom"), async () => {
@@ -749,8 +711,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("stores the Telegram language of a new user", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -779,8 +740,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("uses English for a new user with an unsupported language", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -813,8 +773,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -846,8 +805,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("keeps the stored language when Telegram sends no language", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -878,8 +836,7 @@ void describe("TelegramUpdateHandler", () => {
     void it("stores and follows the Telegram name and username", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -939,8 +896,7 @@ void describe("TelegramUpdateHandler", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 
@@ -962,8 +918,7 @@ void describe("TelegramUpdateHandler deep links", () => {
         const values: string[] = [];
         const { telegramApiService, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.deepLink(
@@ -993,8 +948,7 @@ void describe("TelegramUpdateHandler deep links", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.deepLink("poker", async (ctx) => {
@@ -1035,8 +989,7 @@ void describe("TelegramUpdateHandler deep links", () => {
     void it("keeps a banned user silent on /start without a payload", async (t) => {
         const { telegramApiService, telegramBots, telegramUpdateHandler } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.deepLink(
@@ -1064,8 +1017,7 @@ void describe("TelegramUpdateHandler deep links", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.deepLink("invite", async (ctx, value) => {
@@ -1106,8 +1058,7 @@ void describe("TelegramUpdateHandler deep links", () => {
             telegramUpdateHandler,
             usersRepository,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router) => {
                 router.deepLink(
@@ -1133,8 +1084,7 @@ void describe("TelegramUpdateHandler deep links", () => {
     void it("refuses a deep link name twice or with characters outside a-z and 0-9", async (t) => {
         await assert.rejects(
             buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.deepLink("invite", async () => undefined);
@@ -1145,8 +1095,7 @@ void describe("TelegramUpdateHandler deep links", () => {
         );
         await assert.rejects(
             buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.deepLink("join_poker", async () => undefined);
@@ -1198,12 +1147,9 @@ function buildStartUpdate(
     messageText: string,
     updateId?: number,
 ) {
-    return buildTelegramTextMessageUpdate({
-        update_id: updateId,
-        message: {
-            chat: buildTelegramPrivateChat({ id: telegramId }),
-            entities: [{ length: 6, offset: 0, type: "bot_command" }],
-            text: messageText,
-        },
-    });
+    return buildTelegramCommandUpdate(
+        buildTelegramPrivateChat({ id: telegramId }),
+        messageText,
+        { update_id: updateId },
+    );
 }

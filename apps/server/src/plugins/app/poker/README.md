@@ -20,7 +20,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 - The engine never edits a `media` message into another kind, and we do not know whether Telegram edits a `text` message into a `rich` one, see [Screens and messages](../telegram/README.md#screens-and-messages). Every poker message is `text` with `parse_mode: "HTML"` on every screen, so a message keeps its kind and the engine edits it instead of deleting it and sending a new one.
 - A `rich` message was tried first and dropped: Telegram clients stretch a rich table over the whole width and draw headings in a large serif font, so a small room looked sparse. HTML text keeps the room compact. The history uses plain lines too: a quote per round drew a heavy bar around each round and did not fold short rounds.
 - The Bot API allows about one message per second in one chat, see [Rate limits](../telegram/README.md#rate-limits). A room of ten participants gets ten edits for one vote.
-- A message holds at most 4096 characters of text after the HTML is parsed, and Telegram does not split a longer one: it refuses the message. A large room would reach the limit on its own, so a list of voters shows ten labels and `+N` for the rest, a history page holds only the rounds that fit, and `buildPokerMessage` drops the last lines of any text that is still too long and ends it with `…`. `measureTelegramHtml` counts the text without tags, in UTF-16 code units, the unit the Bot API uses for text entities, so an emoji counts as two.
+- A message holds at most 4096 characters of text after the HTML is parsed, and Telegram does not split a longer one: it refuses the message. A large room would reach the limit on its own, so a list of voters shows ten labels and `+N` for the rest, a history page holds only the rounds that fit, and `buildTelegramHtmlMessage` from `telegram-html.ts` drops the last lines of any text that is still too long and ends it with `…`. `measureTelegramHtml` counts the text without tags, in UTF-16 code units, the unit the Bot API uses for text entities, so an emoji counts as two.
 
 ## Using the bot
 
@@ -112,7 +112,7 @@ A change names the round the user saw, never the round of a fresh load. Every ro
 
 **Walk-through.** Two participants press `➡️ Next round` on round 3 at the same time.
 
-1. Each press loads the room at version 17 and calls `PokerRoomsService.startRound` with round number 3 from its button.
+1. Each press calls `PokerRoomsService.startRound` with the id of the room from the scene state and round number 3 from its button. The service loads the room at version 17.
 2. `startPokerRound` finds round 3 revealed in the loaded room and returns the new `rounds` and round 4. A revote copies the title of the loaded round.
 3. `PokerRoomsRepository.save` writes the fields with the filter `version: 17` and increments `version`. The first write matches.
 4. The second write matches nothing. The service reads the room again, `startPokerRound` finds round 4 and returns `null`. The service returns `null` and emits nothing, and the press only redraws the screen of the user.
@@ -137,9 +137,9 @@ Before the write, the service runs `revealPokerRoundIfDue` on the changed room a
 **Edge cases.**
 
 - A vote with a card that is not in the deck throws: the value comes from a button that the scene drew from the same deck.
-- The service decides first on the room that the caller loaded. Only a room that the service read itself can refuse a change: when the caller's room refuses it, the service reads the room once more and decides again.
+- A caller passes the id of the room, never a loaded room, so every attempt decides on a room that the service read itself.
 - A conflict means that another change was written between the read and the write, so presses that start at the same moment need at most as many attempts as there are presses. After 20 attempts the service throws.
-- The service checks `access.assert(actor, "use", subject("PokerRoom", room))` on the room of every attempt; membership is a business rule, so it is a plain check next to it.
+- The service checks `access.assert(actor, "use", subject("PokerRoom", room))` on the room of every attempt, and `update` too for a close; membership is a business rule, so it is a plain check next to it.
 
 ## Joining a room
 

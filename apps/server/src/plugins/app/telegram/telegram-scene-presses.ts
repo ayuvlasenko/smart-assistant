@@ -86,7 +86,7 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
-        instance.record.confirming = undefined;
+        this.buttons.cancelConfirmation(instance);
 
         const isHandled = await this.inputs.handleButton(
             ctx,
@@ -160,7 +160,7 @@ export class TelegramScenePresses {
         const control = this.controlOf(ctx, instance);
 
         if (!definition.confirm) {
-            instance.record.confirming = undefined;
+            this.buttons.cancelConfirmation(instance);
         } else if (!this.buttons.confirm(instance, name, value)) {
             this.record(ctx, instance, name);
             return;

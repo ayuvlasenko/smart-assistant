@@ -189,6 +189,8 @@ A screen without params takes no second argument: `scene.push("form")`. Each mov
 
 **Confirmation.** Mark a destructive button `confirm: true`. The first press only remembers the button and its value and draws the screen again; the second press of the same button with the same value runs `handle`. Any other button of the scene and any move cancel it. Draw the second label with `scene.isConfirming(name)`, such as `⛔ Sure?`.
 
+**Text.** Build an HTML text message with `buildTelegramHtmlMessage(lines, keyboard)` from `telegram-html.ts`. It drops the empty rows of the keyboard and cuts a text over 4096 characters at a line, with `…` at the end. `formatTelegramHtmlBold` and `formatTelegramHtmlLabeled` escape what they format; split a long row of buttons with `inRowsOf` from `telegram-keyboard.ts`.
+
 **Pagination.** Keep the page in the params of the screen and draw it with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one, and back returns to the page the user left.
 
 **Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a notice that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
@@ -204,7 +206,7 @@ Never write to the session of another user. Change the scenes of other users thr
 1. The domain service saves the change and emits `<domain>.<entity>Changed` on `eventEmitter`, narrowed with `fastify.getDecorator<Emittery<<Domain>Events>>("eventEmitter")`. The events of a domain live in `<domain>-events.ts`.
 2. The handlers plugin subscribes with `on` and calls one of these:
     - `telegramChats.publish(botId, topics)` when any user of the bot may look at the data. The event carries the bot id, taken from the entity or the actor. The scene declares the topics it shows now with `watch(state)`, and a screen adds its own with `watch(params, state)`, such as `<domain>.<entity>:<id>`.
-    - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. Each target names the bot, the user id and the scene key. The optional `handle` runs under the user's session lock without an incoming update.
+    - `telegramChats.deliver(scene, targets, handle?)` when the domain knows the users, or when the scene must change its state or send a notification. Each target names the bot, the Telegram user id and the scene key. The optional `handle` runs under the user's session lock without an incoming update.
 3. Both return at once and run in the background, and the engine draws the screens afterwards. So a handler only changes the state or sends a notification. Tests wait for both with `telegramChats.idle()`.
 
 See [Updates for other users](#updates-for-other-users) for how the engine finds and redraws the scenes.
@@ -247,7 +249,7 @@ flowchart TD
     chats -->|withScenes| engine[TelegramSceneEngine]
     chats -->|"handler(ctx)"| router[TelegramRouter]
 
-    router -->|"middleware"| engine
+    router -->|"handle, before the routes"| engine
     router -->|"command / on / when"| domain["Domain handlers"]
 
     engine --> update[TelegramSceneUpdate]
@@ -313,7 +315,7 @@ sequenceDiagram
     H->>H: find or create user, follow name and language
     H->>H: sync the chat command menu
     H->>C: withUpdate(update, user)
-    C->>S: withSession(telegramId, userId)
+    C->>S: withSession(telegramId, telegramUserId)
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
@@ -445,13 +447,15 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 
 **Edge cases.**
 
+- An answer that is not a Bot API response, such as the HTML page of a `502` from a gateway of Telegram, is repeated like a network error: after a `504` the bot does not know either whether Telegram ran the request. `send` counts it as `bad_answer` with the HTTP status in `error_code` and logs `Telegram API answer is not a Bot API response` with `method` and `statusCode`.
+- Parameters that `JSON.stringify` can't serialize, a bug of the caller, throw before the first request and are never repeated or counted.
 - A request that ran into its timeout of 10 s is not repeated: it has already taken 10 s of the 60 s for which an update may hold its session lock. It is counted and logged like a network error.
 - The signal of the scope ends a request and the pause before a repeat with its reason. The request is counted as `aborted` and logged with the same line.
 - A repeated `send*` whose first request did run leaves two messages in the chat. The scene records only the second one, so a button of the first answers `telegram:buttonExpired`.
 - A repeated edit whose first request did run gets `message is not modified`. `TelegramResponder.edit` and `editKeyboard` take that answer as a success, and `removeKeyboard` logs it and goes on.
 - A repeated delete whose first request did run gets an error answer, and `TelegramResponder.deleteMessage` returns `false` as for any message that is already gone.
 - We have not measured what Telegram answers to a second `answerCallbackQuery` for one press. `TelegramResponder` throws on an answer that is not `ok`, so such a repeat may end the update with `telegram:error`.
-- `telegram_api_requests_total{result="network_error"}` counts every attempt, so one call that fails three times adds 3.
+- `telegram_api_requests_total{result="network_error"}` and `{result="bad_answer"}` count every attempt, so one call that fails three times adds 3.
 
 ## Scene instances
 
@@ -616,7 +620,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 **Walk-through.**
 
 1. A handler calls `scene.ask("maxUses")`. The engine checks the guard of the scene and of the input, and that no other scene holds the focus. Then it writes `input` and runs `enter` of the first step, which usually sends the question.
-2. The engine runs as a middleware before the routes. For a message, it loads the instance from `focus`.
+2. The router hands every update to `TelegramSceneEngine.handle` before the routes. For a message, it loads the instance from `focus`.
 3. When the current step `accepts` the update, the step runs `handle` and returns a transition: `next`, `stay`, `goto`, `back`, `cancel` or `complete`. A transition can carry a `patch` for the payload, and `back` follows `history`.
 4. After the last step, or on `complete`, the engine decodes the payload with its schema, removes `input` and calls `complete` of the input.
 5. A text message that the step does not accept gets the `hint` of the step. A command is never input text: `message("text")` skips commands, so `/cancel` and every other command still reach the routes.
@@ -734,7 +738,7 @@ sequenceDiagram
     end
 ```
 
-Every target names the bot, the user id and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
+Every target names the bot, the Telegram user id (`telegramUserId`) and the scene key, which is the entity id. Use `deliver` when the domain knows the users, such as the players of a table, or when the scene must change its state or send a notification. Without `handle` the scene only redraws its screen from the repository. With `handle` it can also change its state or send a notification.
 
 **Edge cases for both.** `publish` and `deliver` return at once, so `emit` never waits for the sessions of other users. A failure for one user does not stop the others: it logs `Failed to publish a scene update` or `Failed to deliver a scene update` and counts `delivery_failed`. `telegramChats.idle()` waits for every pending run; tests call it, and the server calls it on close. `eventEmitter` is in-process, but the sessions, the index and the locks are in Valkey, so a publish on one pod redraws the scenes of users whose updates go to another pod. A pod runs at most 25 deliveries of a bot at once, `telegramDeliveryLimit`, the number of messages the bot may send in a second. A delivery takes a permit from `TelegramDeliveryPermits` before it takes the session lock, and the other deliveries wait without a lock. So a recipient of a large `publish` holds the lock for the time of 25 tokens at most, 1 s at the full rate and 5 s while interactive calls take their share, and not until the whole queue is sent. The permits count in the memory of one pod, and the tokens come from the bucket that all pods share. So when several pods deliver for one bot at the same time, that time grows with their number: up to 4 s and 20 s with the four pods of production.
 
@@ -828,7 +832,7 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-webhook-secret.ts`                                       | The secret token of the webhook of a bot                                     | [Bots and webhooks](#bots-and-webhooks)                     |
 | `telegram-api-service.ts`                                          | HTTP calls to the Bot API: scope, rate limits, `429`, repeats, timeout, logs | [Rate limits](#rate-limits)                                 |
 | `telegram-rate-limits.ts`                                          | The limits of each Bot API method                                            | [Rate limits](#rate-limits)                                 |
-| `telegram-router.ts`                                               | Commands, deep links, filters, middlewares                                   | [Access and the command menu](#access-and-the-command-menu) |
+| `telegram-router.ts`                                               | Commands, deep links, filters and routes                                     | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
@@ -842,12 +846,13 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                                 | [Inputs](#inputs)                                           |
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                           | [Inputs](#inputs)                                           |
 | `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                              |                                                             |
+| `telegram-keyboard.ts`                                             | `inRowsOf`, the rows of a keyboard                                           | [Button layout](#button-layout)                             |
 | `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                       | [Blocking scenes](#blocking-scenes)                         |
 | `telegram-start-entries.ts`                                        | What `/start` opens per module                                               | [The start module](#the-start-module)                       |
 | `telegram-bot-service.ts`                                          | The webhooks of the bots, the bot username, deep link URLs                   | [Bots and webhooks](#bots-and-webhooks)                     |
 | `telegram-command-menus.ts`                                        | The default menu of every bot and the menu of every chat                     | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-filters.ts`, `telegram-extractors.ts`                    | Type guards and readers of an `Update`                                       |                                                             |
-| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML helpers for messages                            |                                                             |
+| `telegram-parsers.ts`, `telegram-html.ts`                          | Parsers of typed input; HTML text messages and their helpers                 |                                                             |
 | `telegram-metrics.ts`, `telegram-errors.ts`, `telegram-locales.ts` | Metrics, error types, texts                                                  |                                                             |
 
 To read the code in order:

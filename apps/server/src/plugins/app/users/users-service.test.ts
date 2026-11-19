@@ -1,38 +1,17 @@
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import { testBotId } from "../../../test/telegram-fixtures.js";
 import { UsersService } from "./users-service.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("UsersService", () => {
     void it("unbans a user, adds the grants and sets the chat menu again", async (t) => {
         const { app, telegramApiService, usersRepository } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 registerRoutes: (router) => {
                     router.command("secret", async () => undefined, {
@@ -73,8 +52,7 @@ void describe("UsersService", () => {
 
     void it("keeps a separate user for every bot of one Telegram account", async (t) => {
         const { app } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
         const usersService = app.getDecorator<UsersService>("usersService");

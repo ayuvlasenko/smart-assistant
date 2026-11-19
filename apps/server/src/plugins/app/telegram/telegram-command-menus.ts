@@ -20,7 +20,7 @@ import { languageOf } from "../users/user-language.js";
 import { UsersEvents } from "../users/users-events.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
-import { TelegramApiError } from "./telegram-errors.js";
+import { unwrapTelegramResponse } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramRouter } from "./telegram-router.js";
@@ -89,14 +89,13 @@ export class TelegramCommandMenus {
         await this.cache.delete(botMenuKeyOf(bot));
 
         for (const { languageCode, commands } of menus) {
-            const result = await bot.api.setMyCommands({
-                commands,
-                ...(languageCode ? { language_code: languageCode } : {}),
-            });
-
-            if (!result.ok) {
-                throw new TelegramApiError("setMyCommands", result);
-            }
+            unwrapTelegramResponse(
+                "setMyCommands",
+                await bot.api.setMyCommands({
+                    commands,
+                    ...(languageCode ? { language_code: languageCode } : {}),
+                }),
+            );
         }
 
         await this.cache.set(botMenuKeyOf(bot), hashMenus(bot, menus), {
@@ -116,6 +115,23 @@ export class TelegramCommandMenus {
 
         if (hash !== hashMenus(bot, await this.buildBotMenus(bot))) {
             await this.refresh(bot);
+        }
+    }
+
+    async syncBotById(botId: string): Promise<void> {
+        const bot = await this.telegramBots.find(botId);
+
+        if (!bot) {
+            return;
+        }
+
+        try {
+            await this.syncBot(bot);
+        } catch (err) {
+            this.log.error(
+                { err, botId },
+                "Failed to refresh the commands of a bot",
+            );
         }
     }
 
@@ -238,20 +254,17 @@ export class TelegramCommandMenus {
         const scope = { type: "chat", chat_id: chatId } as const;
 
         if (commands) {
-            const result = await bot.api.setMyCommands({ commands, scope });
-
-            if (!result.ok) {
-                throw new TelegramApiError("setMyCommands", result);
-            }
-
+            unwrapTelegramResponse(
+                "setMyCommands",
+                await bot.api.setMyCommands({ commands, scope }),
+            );
             return;
         }
 
-        const result = await bot.api.deleteMyCommands({ scope });
-
-        if (!result.ok) {
-            throw new TelegramApiError("deleteMyCommands", result);
-        }
+        unwrapTelegramResponse(
+            "deleteMyCommands",
+            await bot.api.deleteMyCommands({ scope }),
+        );
     }
 }
 

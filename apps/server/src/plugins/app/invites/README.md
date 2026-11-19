@@ -109,20 +109,20 @@ A bootstrap invite is an invite without `createdBy`. So the token works once, fo
 
 Revoke needs two presses: its button has `confirm: true` and carries the invite id. The first press turns the red `⛔ Revoke` next to `‹ Back` into `⛔ Sure?`; the second one revokes. Any other button and any move cancel it, so a look at the users and back shows `⛔ Revoke` again.
 
-The form keeps the draft in the scene state and writes nothing until `✅ Create`, which replaces the form with the new invite on the same message, so `‹ Back` from it leads to the list. It offers only the grants the admin holds, and `InvitesService.create` checks the same rule again. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
+The form keeps the draft in the scene state and writes nothing until `✅ Create`, which replaces the form with the new invite on the same message, so `‹ Back` from it leads to the list. It offers the grants of `InvitesService.listGrantableSections`: the grants the admin holds, in the modules that are on in the bot. The toggle of a grant and `InvitesService.create` check the same list, so an old button of a module that was turned off adds nothing. The buttons and inputs of the form carry the guard `create Invite`, so a user who can only read invites never reaches it. The limit and the other number of days are scene inputs built from `numberStep`; `/skip` removes the limit. The form does not block other scenes.
 
 The scene redraws by itself when an invite changes. The `list` screen watches `invites`, the `invite` and `users` screens watch `invites.invite:<id>`, and the form watches nothing. `InvitesService` emits `invites.inviteChanged` with the invite id after it creates, activates or revokes an invite, and the handler publishes both topics, so every admin who looks at the list or at that invite sees the change. The bootstrap on start emits nothing. Each screen draws one compact text message in HTML mode: the helpers in `telegram-html.ts` escape the text, show dates as `<tg-time>`, so each client shows them in its own time zone, and mention users by id. The link is not printed; the `📋 Copy link` button copies it.
 
 ## Files
 
-| File                                                                  | Owns                                                                                                |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `invite-entity.ts`                                                    | The invite document and its status                                                                  |
-| `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page            |
-| `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap                  |
-| `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event                   |
-| `invites-scene.ts`                                                    | The scene: its screens with their topics, its buttons and inputs                                    |
-| `invites-schemas.ts`                                                  | The state, screen and button schemas of the scene and the view that every screen renders from       |
-| `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry               |
-| `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, HTML lines, the message with its keyboard |
-| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts`        | Events, errors, texts                                                                               |
+| File                                                                  | Owns                                                                                          |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `invite-entity.ts`                                                    | The invite document and its status                                                            |
+| `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page      |
+| `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap            |
+| `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event             |
+| `invites-scene.ts`                                                    | The scene: its screens with their topics, its buttons and inputs                              |
+| `invites-schemas.ts`                                                  | The state, screen and button schemas of the scene and the view that every screen renders from |
+| `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry         |
+| `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, labeled times, the page button      |
+| `invites-events.ts`, `invites-errors.ts`, `invites-locales.ts`        | Events, errors, texts                                                                         |

@@ -15,6 +15,7 @@ export interface LoggerEntry {
     responseTime?: number;
     result?: string;
     route?: string;
+    statusCode?: number;
     updateId?: number;
     userId?: string;
     err?: {

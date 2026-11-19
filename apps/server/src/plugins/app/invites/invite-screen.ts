@@ -3,7 +3,10 @@ import { InlineKeyboardButton } from "@grammyjs/types";
 import { ObjectId } from "mongodb";
 import { Translate } from "../i18n-service.js";
 import {
+    buildTelegramHtmlMessage,
     escapeTelegramHtml,
+    formatTelegramHtmlBold,
+    formatTelegramHtmlLabeled,
     formatTelegramHtmlMention,
     formatTelegramHtmlTime,
 } from "../telegram/telegram-html.js";
@@ -11,12 +14,9 @@ import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { InviteEntity, readInviteStatus } from "./invite-entity.js";
 import {
-    buildInvitesMessage,
-    formatBold,
     formatGrants,
     formatInviteStatus,
     formatInviteUses,
-    formatLabeled,
     formatLabeledTime,
     pageButtonOf,
 } from "./invite-format.js";
@@ -59,11 +59,11 @@ export async function renderInvite(
         );
     }
 
-    return buildInvitesMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(t("invites:inviteTitle")),
+            formatTelegramHtmlBold(t("invites:inviteTitle")),
             summary.join(" · "),
-            formatLabeled(
+            formatTelegramHtmlLabeled(
                 t("invites:accessLabel"),
                 formatGrants(access, t, invite.grants),
             ),
@@ -126,9 +126,9 @@ export async function renderInviteUsers(
         limit: usersPageSize,
     });
 
-    return buildInvitesMessage(
+    return buildTelegramHtmlMessage(
         [
-            formatBold(t("invites:usersTitle")),
+            formatTelegramHtmlBold(t("invites:usersTitle")),
             ...users.items.map((item) => describeUser(t, ctx.timeZone, item)),
         ],
         [
@@ -149,7 +149,7 @@ function renderMissingInvite({
     ctx,
     scene,
 }: InvitesView): TelegramMessageContent {
-    return buildInvitesMessage(
+    return buildTelegramHtmlMessage(
         [escapeTelegramHtml(ctx.t("invites:inviteMissing"))],
         [[scene.backButton(ctx.t("invites:backButton"))]],
     );

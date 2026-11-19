@@ -73,7 +73,9 @@ export class BotsRegistry {
     }
 
     async modulesOf(botId: string): Promise<readonly string[]> {
-        return (await this.find(botId))?.modules ?? [];
+        const bot = await this.botsRepository.findOneById(botId);
+
+        return bot ? this.listModules(bot) : [];
     }
 
     encrypt(token: string): EncryptedBotToken {
@@ -120,7 +122,7 @@ export class BotsRegistry {
                 id: bot._id,
                 telegramId: telegramIdOfToken(this.rootToken),
                 token: this.rootToken,
-                modules: [...bot.modules, botsModule],
+                modules: this.listModules(bot),
                 startModule: bot.startModule,
             };
         }
@@ -148,6 +150,12 @@ export class BotsRegistry {
                   startModule: bot.startModule,
               }
             : undefined;
+    }
+
+    private listModules(bot: BotEntity): readonly string[] {
+        return bot._id === this.startedRootId
+            ? [...bot.modules, botsModule]
+            : bot.modules;
     }
 
     private decrypt(

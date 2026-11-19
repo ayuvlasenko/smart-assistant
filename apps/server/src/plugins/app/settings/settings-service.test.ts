@@ -1,8 +1,7 @@
 import { ForbiddenError } from "@casl/ability";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import { testBotId } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -14,26 +13,7 @@ import {
     SettingsService,
 } from "./settings-service.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("settings").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 const flag: FlagSetting = {
     kind: "flag",
@@ -153,7 +133,7 @@ void describe("SettingsService", () => {
     void it("drops stored choices that are no longer offered and falls back from a broken value", async (t) => {
         const settingsService = await buildSettings(t);
 
-        await mongo.collection("settings").insertMany([
+        await testMongo.mongo.collection("settings").insertMany([
             {
                 botId: testBotId,
                 name: colours.name,
@@ -173,8 +153,7 @@ async function buildSettings(
     t: Parameters<typeof buildTelegramBotServiceTestApp>[0]["t"],
 ): Promise<SettingsService> {
     const { settingsService } = await buildTelegramBotServiceTestApp({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
     });
 

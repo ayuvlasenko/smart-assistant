@@ -33,6 +33,8 @@ import { TelegramMethodResult } from "../plugins/app/telegram/telegram-api-servi
 import { telegramWebhookSecret } from "../plugins/app/telegram/telegram-webhook-secret.js";
 import { TELEGRAM_SECRET_HEADER } from "../routes/api/telegram/telegram.js";
 
+let nextUpdateId = 1_000_000_000;
+
 export const testBotId = newRootBotId;
 export const testTelegramBotId = telegramIdOfToken(
     process.env.TELEGRAM_BOT_TOKEN ?? "",
@@ -59,9 +61,35 @@ export function buildTelegramTextMessageUpdate(
     options: BuildTelegramTextMessageUpdateOptions = {},
 ): TelegramTextMessageUpdate {
     return {
-        update_id: options.update_id ?? 1,
+        update_id: options.update_id ?? takeUpdateId(),
         message: buildTelegramTextMessage(options.message),
     };
+}
+
+export interface BuildTelegramCommandUpdateOptions {
+    update_id?: number;
+    message_id?: number;
+}
+
+export function buildTelegramCommandUpdate(
+    chat: Chat.PrivateChat,
+    text: string,
+    { update_id, message_id }: BuildTelegramCommandUpdateOptions = {},
+): TelegramTextMessageUpdate {
+    const [command = ""] = text.split(" ", 1);
+
+    return buildTelegramTextMessageUpdate({
+        update_id,
+        message: {
+            ...(message_id === undefined ? {} : { message_id }),
+            chat,
+            from: buildTelegramUser({ id: chat.id }),
+            text,
+            entities: [
+                { type: "bot_command", offset: 0, length: command.length },
+            ],
+        },
+    });
 }
 
 export function buildTelegramEditedMessageUpdate(
@@ -708,10 +736,16 @@ function buildTelegramUpdate<
 >(
     key: TKey,
     value: TValue,
-    update_id = 1,
+    update_id = takeUpdateId(),
 ): Update & { [Key in TKey]-?: TValue } {
     return {
         update_id,
         [key]: value,
     } as unknown as Update & { [Key in TKey]-?: TValue };
+}
+
+function takeUpdateId(): number {
+    nextUpdateId += 1;
+
+    return nextUpdateId;
 }

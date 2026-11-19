@@ -1,20 +1,11 @@
 import { Chat } from "@grammyjs/types";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
-    buildTelegramTextMessageUpdate,
-    buildTelegramUser,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
@@ -30,28 +21,8 @@ import { telegramLocales } from "../telegram/telegram-locales.js";
 import { InvitesSubjects } from "./invite-entity.js";
 import { invitesLocales } from "./invites-locales.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
+const testMongo = useTestMongo();
 let strangerUpdateId = 100_000;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("invites").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
 
 const en = invitesLocales.en;
 
@@ -98,8 +69,7 @@ void describe("Invites bootstrap", () => {
 void describe("Invites and the start module", () => {
     void it("opens the start module of the bot for a user whose invite gives the access to it", async (t) => {
         const bot = await buildInvitesBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             plugins: [
                 pokerRoomsRepositoryPlugin,
@@ -157,7 +127,10 @@ void describe("Invites scenes", () => {
         await createAdmin(bot, admin);
         await createInviteThroughForm(bot, admin);
 
-        const [invite] = await mongo.collection("invites").find().toArray();
+        const [invite] = await testMongo.mongo
+            .collection("invites")
+            .find()
+            .toArray();
         const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
         assert.ok(invite);
@@ -188,12 +161,34 @@ void describe("Invites scenes", () => {
         await bot.pressButton(admin, en.newInviteButton);
         await bot.pressButton(admin, en.createButton);
 
-        assert.equal(await mongo.collection("invites").countDocuments(), 0);
+        assert.equal(
+            await testMongo.mongo.collection("invites").countDocuments(),
+            0,
+        );
         assert.equal(
             bot.telegramApiService.answerCallbackQuery.mock.calls.at(-1)
                 ?.arguments[0].text,
             en.noAccessSelected,
         );
+    });
+
+    void it("ignores an old grant button of a module that was turned off", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987654832 });
+
+        await createAdmin(bot, admin);
+        await bot.sendText(admin, "/invites");
+        await bot.pressButton(admin, en.newInviteButton);
+        await bot.pressButton(admin, en.accessButton);
+        await bot.pressButton(admin, "Ping (0/1)");
+        await bot.botsRepository.updateModules(bot.botsRegistry.rootId, [
+            "poker",
+        ]);
+        await bot.pressButton(admin, "⬜ Use /ping");
+
+        const [message] = await bot.readMessageTexts(admin.id);
+
+        assert.ok(message?.includes(en.nothingSelected));
     });
 
     void it("lets a stranger in through the link and redraws the invite of the admin", async (t) => {
@@ -314,7 +309,7 @@ void describe("Invites scenes", () => {
         await bot.pressButton(admin, en.revokeButton);
 
         assert.equal(
-            (await mongo.collection("invites").findOne())?.revokedAt,
+            (await testMongo.mongo.collection("invites").findOne())?.revokedAt,
             undefined,
         );
         assert.deepEqual(
@@ -332,7 +327,9 @@ void describe("Invites scenes", () => {
             `/start invite_${await readInviteToken()}`,
         );
 
-        assert.ok((await mongo.collection("invites").findOne())?.revokedAt);
+        assert.ok(
+            (await testMongo.mongo.collection("invites").findOne())?.revokedAt,
+        );
         assert.deepEqual(readSentTextsTo(bot, guest), [en.inviteUnavailable]);
         assert.ok(
             (await bot.readMessageTexts(admin.id))
@@ -365,7 +362,7 @@ void describe("Invites scenes", () => {
         await bot.pressButton(admin, en.revokeButton);
 
         assert.equal(
-            (await mongo.collection("invites").findOne())?.revokedAt,
+            (await testMongo.mongo.collection("invites").findOne())?.revokedAt,
             undefined,
         );
     });
@@ -392,7 +389,7 @@ void describe("Invites scenes", () => {
         await createAdmin(bot, admin);
         await createInviteThroughForm(bot, admin);
         await bot.allowUser(reader.id);
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne(
                 { telegramId: String(reader.id) },
@@ -448,7 +445,7 @@ function buildBot(
     t: TestContext,
     env: Record<string, string> = {},
 ): Promise<InvitesBot> {
-    return buildInvitesBot({ databaseName, mongoClient, t, env });
+    return buildInvitesBot({ testMongo, t, env });
 }
 
 async function createAdmin(
@@ -456,7 +453,7 @@ async function createAdmin(
     chat: Chat.PrivateChat,
 ): Promise<void> {
     await bot.allowUser(chat.id);
-    await mongo
+    await testMongo.mongo
         .collection("users")
         .updateOne(
             { telegramId: String(chat.id) },
@@ -483,7 +480,7 @@ async function createInviteThroughForm(
 }
 
 async function readInviteToken(): Promise<string> {
-    const invite = await mongo.collection("invites").findOne();
+    const invite = await testMongo.mongo.collection("invites").findOne();
 
     assert.ok(invite);
 
@@ -497,24 +494,10 @@ async function sendAsStranger(
 ): Promise<void> {
     strangerUpdateId += 1;
 
-    const [command] = text.split(" ");
-
     await bot.telegramUpdateHandler.handle(
         await bot.telegramBots.root(),
-        buildTelegramTextMessageUpdate({
+        buildTelegramCommandUpdate(chat, text, {
             update_id: strangerUpdateId,
-            message: {
-                chat,
-                from: buildTelegramUser({ id: chat.id }),
-                text,
-                entities: [
-                    {
-                        type: "bot_command",
-                        offset: 0,
-                        length: command?.length ?? 0,
-                    },
-                ],
-            },
         }),
     );
 }

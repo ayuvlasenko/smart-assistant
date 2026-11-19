@@ -1,4 +1,3 @@
-import { InlineKeyboardButton } from "@grammyjs/types";
 import { AccessControl } from "../access/access-service.js";
 import { Translate } from "../i18n-service.js";
 import {
@@ -6,7 +5,6 @@ import {
     formatTelegramHtmlTime,
 } from "../telegram/telegram-html.js";
 import { TelegramPageButton } from "../telegram/telegram-pagination.js";
-import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
     InviteEntity,
     InviteStatus,
@@ -53,26 +51,6 @@ export function formatGrants(
     return grants
         .map((name) => access.findGrant(name)?.title(t) ?? name)
         .join(", ");
-}
-
-export function buildInvitesMessage(
-    lines: string[],
-    keyboard: InlineKeyboardButton[][],
-): TelegramMessageContent {
-    return {
-        kind: "text",
-        parse_mode: "HTML",
-        text: lines.join("\n"),
-        keyboard: keyboard.filter((row) => row.length),
-    };
-}
-
-export function formatBold(text: string): string {
-    return `<b>${escapeTelegramHtml(text)}</b>`;
-}
-
-export function formatLabeled(label: string, value: string): string {
-    return `${escapeTelegramHtml(label)}: ${escapeTelegramHtml(value)}`;
 }
 
 export function formatLabeledTime(

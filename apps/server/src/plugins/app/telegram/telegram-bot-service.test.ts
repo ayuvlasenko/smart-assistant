@@ -1,11 +1,10 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
     buildTelegramBotServiceTestApp,
@@ -18,30 +17,10 @@ import {
 import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
+const testMongo = useTestMongo();
 
 const webhookClaimSchema = Type.String();
 const webhookClaimKey = `telegram:${testTelegramBotId}:webhook:set`;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-    await mongo.collection("bots").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
 
 void describe("TelegramBotService", () => {
     void it("builds a resource-specific webhook URL of the bot when no explicit override is set", () => {
@@ -79,8 +58,7 @@ void describe("TelegramBotService", () => {
     void it("sets the webhook and stores the one-hour guard when the cache key is missing", async (t) => {
         const { app, cache, telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -112,8 +90,7 @@ void describe("TelegramBotService", () => {
     void it("skips setting the webhook when the one-hour guard already exists", async (t) => {
         const { cache, telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
             });
 
@@ -138,8 +115,7 @@ void describe("TelegramBotService", () => {
         });
         const { cache, telegramBotService } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 telegramApiService,
                 logger: logs.logger,
@@ -170,8 +146,7 @@ void describe("TelegramBotService", () => {
         });
         const { cache, telegramBotService } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 telegramApiService,
             });
@@ -194,8 +169,7 @@ void describe("TelegramBotService", () => {
             },
         });
         const { child, telegramBotService } = await buildTwoBotsTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             telegramApiService: failing,
         });
@@ -217,8 +191,7 @@ void describe("TelegramBotService", () => {
         });
         const { child, childBotId, telegramBotService } =
             await buildTwoBotsTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 telegramApiService: failing,
                 environment: "preview",
@@ -245,8 +218,7 @@ void describe("TelegramBotService", () => {
         });
 
         const { telegramBotService } = await buildTwoBotsTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             telegramApiService: failing,
             environment: "preview",
@@ -262,8 +234,7 @@ void describe("TelegramBotService", () => {
     void it("doesn't set the webhook on start in preview", async (t) => {
         const { cache, telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
-                databaseName,
-                mongoClient,
+                testMongo,
                 t,
                 environment: "preview",
             });
@@ -285,8 +256,7 @@ void describe("TelegramBotService", () => {
             telegramBotService,
             telegramBots,
         } = await buildTelegramBotServiceTestApp({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
         });
 

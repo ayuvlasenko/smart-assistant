@@ -1,15 +1,7 @@
 import { Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramPrivateChat,
@@ -25,26 +17,7 @@ import { TelegramRouter } from "./telegram-router.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
 import { defineScene } from "./telegram-scene.js";
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("TelegramSceneButtons", () => {
     void it("passes the stored value to the scene button and answers the press", async (t) => {
@@ -75,8 +48,7 @@ void describe("TelegramSceneButtons", () => {
     void it("reports an error once when the session is lost after a press", async (t) => {
         const chat = buildTelegramPrivateChat({ id: 987654397 });
         const bot: TelegramSceneBot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 registerDropScene(router, sceneEngine, async () => {
@@ -114,8 +86,7 @@ void describe("TelegramSceneButtons", () => {
     void it("reports an error once when a scene button fails and the session is lost", async (t) => {
         const chat = buildTelegramPrivateChat({ id: 987654400 });
         const bot: TelegramSceneBot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 registerDropScene(router, sceneEngine, async () => {
@@ -140,8 +111,7 @@ void describe("TelegramSceneButtons", () => {
 
     void it("answers the press and reports the error when a scene button fails", async (t) => {
         const bot = await buildTelegramSceneBot({
-            databaseName,
-            mongoClient,
+            testMongo,
             t,
             registerRoutes: (router, sceneEngine) => {
                 registerDropScene(router, sceneEngine, async () => {
@@ -175,8 +145,7 @@ void describe("TelegramSceneButtons", () => {
         await assert.rejects(
             () =>
                 buildTelegramSceneBot({
-                    databaseName,
-                    mongoClient,
+                    testMongo,
                     t,
                     registerRoutes: (router, sceneEngine) => {
                         registerGreetScene(router, sceneEngine);
@@ -211,8 +180,7 @@ void describe("TelegramSceneButtons", () => {
 
 async function buildGreetBot(t: TestContext): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         registerRoutes: registerGreetScene,
     });

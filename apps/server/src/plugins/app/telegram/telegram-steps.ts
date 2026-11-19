@@ -2,10 +2,11 @@ import { InlineKeyboardButton, Update } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { Translate } from "../i18n-service.js";
+import { Page } from "../page.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { anyOf, callbackQuery, command, message } from "./telegram-filters.js";
-import { pageButtons, TelegramPage } from "./telegram-pagination.js";
+import { pageButtons } from "./telegram-pagination.js";
 import {
     addDays,
     formatDate,
@@ -62,7 +63,7 @@ export interface TelegramChoiceStepOptions<
         ctx: TelegramContext,
         input: TelegramInputControl<TPayload>,
         page: { offset: number; limit: number },
-    ) => Promise<TelegramPage<TelegramChoice>>;
+    ) => Promise<Page<TelegramChoice>>;
     pageSize?: number;
 }
 

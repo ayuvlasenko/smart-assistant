@@ -1,16 +1,8 @@
 import { Update } from "@grammyjs/types";
 import { type Static, Type } from "@sinclair/typebox";
-import { Db, MongoClient } from "mongodb";
 import assert from "node:assert/strict";
-import {
-    after,
-    before,
-    beforeEach,
-    describe,
-    it,
-    TestContext,
-} from "node:test";
-import { buildTestMongo } from "../../../test/mongo.js";
+import { describe, it, TestContext } from "node:test";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
 import {
     buildTelegramSceneBot,
@@ -45,26 +37,7 @@ const colors = [
     { label: "Blue", value: "blue" },
 ];
 
-let databaseName!: string;
-let mongoClient!: MongoClient;
-let mongo!: Db;
-
-before(async () => {
-    const testMongo = await buildTestMongo();
-
-    databaseName = testMongo.databaseName;
-    mongoClient = testMongo.client;
-    mongo = testMongo.mongo;
-});
-
-beforeEach(async () => {
-    await mongo.collection("users").deleteMany({});
-});
-
-after(async () => {
-    await mongo.dropDatabase();
-    await mongoClient.close();
-});
+const testMongo = useTestMongo();
 
 void describe("Telegram steps", () => {
     void it("collects text, number, date and choice values", async (t) => {
@@ -159,7 +132,7 @@ void describe("Telegram steps", () => {
         const chat = buildTelegramPrivateChat({ id: 987654405 });
 
         await reachStep(bot, chat, "date");
-        await mongo
+        await testMongo.mongo
             .collection("users")
             .updateOne(
                 { telegramId: String(chat.id) },
@@ -274,8 +247,7 @@ async function buildOrderBot(
     env?: Record<string, string>,
 ): Promise<TelegramSceneBot> {
     return buildTelegramSceneBot({
-        databaseName,
-        mongoClient,
+        testMongo,
         t,
         env,
         registerRoutes: (router, sceneEngine) => {

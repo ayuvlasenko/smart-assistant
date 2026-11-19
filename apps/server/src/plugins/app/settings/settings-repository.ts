@@ -1,18 +1,18 @@
-import { FastifyMongoObject } from "@fastify/mongodb";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { Document, ObjectId } from "mongodb";
+import { Collection, Document, ObjectId } from "mongodb";
+import { readMongoDb } from "../../external/mongo.js";
 import { SettingEntity } from "./setting-entity.js";
 
 export class SettingsRepository {
-    readonly mongo: Required<FastifyMongoObject>;
+    private readonly settings: Collection<SettingEntity>;
 
-    constructor(mongo: Required<FastifyMongoObject>) {
-        this.mongo = mongo;
+    constructor(settings: Collection<SettingEntity>) {
+        this.settings = settings;
     }
 
     findOne(botId: string, name: string): Promise<SettingEntity | null> {
-        return this.collection().findOne({ botId, name });
+        return this.settings.findOne({ botId, name });
     }
 
     async save(
@@ -21,7 +21,7 @@ export class SettingsRepository {
         value: unknown,
         updatedBy: ObjectId,
     ): Promise<void> {
-        await this.collection().updateOne(
+        await this.settings.updateOne(
             { botId, name },
             {
                 $set: { value, updatedBy, updatedAt: new Date() },
@@ -68,7 +68,7 @@ export class SettingsRepository {
         updatedBy: ObjectId,
         value: Document,
     ): Promise<unknown> {
-        const setting = await this.collection().findOneAndUpdate(
+        const setting = await this.settings.findOneAndUpdate(
             { botId, name },
             [
                 {
@@ -85,22 +85,14 @@ export class SettingsRepository {
 
         return setting?.value;
     }
-
-    private collection() {
-        return this.mongo.db.collection<SettingEntity>("settings");
-    }
 }
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        if (!fastify.mongo.db) {
-            throw new Error("MongoDB is not connected");
-        }
-
         fastify.decorate(
             "settingsRepository",
             new SettingsRepository(
-                fastify.mongo as Required<FastifyMongoObject>,
+                readMongoDb(fastify).collection<SettingEntity>("settings"),
             ),
         );
     },
