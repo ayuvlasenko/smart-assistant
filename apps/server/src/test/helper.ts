@@ -25,7 +25,6 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
     const keyPrefix = createTestKeyPrefix();
     const app = Fastify({
         logger: opts.logger ?? false,
-        trustProxy: true,
         ...options,
     });
 
@@ -36,7 +35,7 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
 
     await client.close();
     app.register(fp(serviceApp), {
-        telegramApiService,
+        telegramApiFactory: () => telegramApiService,
         database: databaseName,
     });
 

@@ -1,6 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import fp from "fastify-plugin";
-import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { BotsRegistry, RegisteredBot } from "../bots/bots-registry.js";
 import { RateLimiter } from "../rate-limiter.js";
@@ -13,7 +12,6 @@ import { TelegramMetrics } from "./telegram-metrics.js";
 export type TelegramApiFactory = (token: string) => TelegramApiClient;
 
 export interface TelegramBotsPluginOptions extends FastifyPluginOptions {
-    telegramApiService?: TelegramApiClient;
     telegramApiFactory?: TelegramApiFactory;
 }
 
@@ -97,31 +95,27 @@ export class TelegramBots {
 export default fp(
     async function (fastify: FastifyInstance, opts: TelegramBotsPluginOptions) {
         const registry = fastify.getDecorator<BotsRegistry>("botsRegistry");
-        const rootToken =
-            fastify.getDecorator<Env>("config").TELEGRAM_BOT_TOKEN;
         const log = fastify
             .getDecorator<AppLogger>("appLogger")
             .child({ module: "telegram-api" });
         const telegramMetrics =
             fastify.getDecorator<TelegramMetrics>("telegramMetrics");
         const rateLimiter = fastify.getDecorator<RateLimiter>("rateLimiter");
-        const createApi: TelegramApiFactory = (token) => {
-            if (opts.telegramApiService && token === rootToken) {
-                return opts.telegramApiService;
-            }
-
-            return (
-                opts.telegramApiFactory?.(token) ??
-                new TelegramApiService(token, log, telegramMetrics, rateLimiter)
-            );
-        };
+        const createApi: TelegramApiFactory =
+            opts.telegramApiFactory ??
+            ((token) =>
+                new TelegramApiService(
+                    token,
+                    log,
+                    telegramMetrics,
+                    rateLimiter,
+                ));
 
         fastify.decorate("telegramBots", new TelegramBots(registry, createApi));
     },
     {
         name: "telegram-bots",
         dependencies: [
-            "@fastify/env",
             "app-logger",
             "bots-registry",
             "rate-limiter",

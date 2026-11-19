@@ -28,7 +28,6 @@ function getLoggerOptions(): FastifyServerOptions["logger"] {
 
 const app = Fastify({
     logger: getLoggerOptions(),
-    trustProxy: true,
     ...options,
 });
 

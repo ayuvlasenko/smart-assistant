@@ -128,9 +128,9 @@ export async function buildTelegramBotServiceTestApp({
 }: BuildTelegramBotServiceTestAppOptions): Promise<TelegramBotServiceTestApp> {
     const keyPrefix = createTestKeyPrefix();
     const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
+    const rootToken = env.TELEGRAM_BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
     const app = Fastify({
         logger,
-        trustProxy: true,
         ...appOptions,
     });
 
@@ -168,8 +168,13 @@ export async function buildTelegramBotServiceTestApp({
     app.register(rateLimiterPlugin);
     app.register(telegramMetricsPlugin);
     app.register(telegramBotsPlugin, {
-        telegramApiService,
-        telegramApiFactory,
+        telegramApiFactory: (token: string) => {
+            if (token === rootToken || !telegramApiFactory) {
+                return telegramApiService;
+            }
+
+            return telegramApiFactory(token);
+        },
     });
     app.register(telegramSessionStorePlugin, {
         telegramSessionStore: sessionStoreOptions,

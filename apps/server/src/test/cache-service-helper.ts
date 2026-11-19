@@ -39,7 +39,6 @@ export async function buildCacheServiceTestApp({
     const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
     const app = Fastify({
         logger: false,
-        trustProxy: true,
         ...appOptions,
     });
 
