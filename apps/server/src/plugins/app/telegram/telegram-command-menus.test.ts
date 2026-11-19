@@ -425,19 +425,24 @@ void describe("TelegramCommandMenus chat menus", () => {
                 ),
         );
     });
-    void it("counts a failed sync and resolves when a guard of a command fails", async (t) => {
-        const { metrics, telegramApiService, telegramCommandMenus } =
-            await buildTelegramBotServiceTestApp({
-                ...buildMenuAppOptions(t),
-                registerRoutes: (router) => {
-                    router.command("broken", async () => undefined, {
-                        description: (translate) => translate("telegram:error"),
-                        guard: () => Promise.reject(new Error("guard failed")),
-                    });
-                },
-            });
+    void it("counts a failed sync of an update and resolves when a guard of a command fails", async (t) => {
+        const {
+            metrics,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            registerRoutes: (router) => {
+                router.command("broken", async () => undefined, {
+                    description: (translate) => translate("telegram:error"),
+                    guard: () => Promise.reject(new Error("guard failed")),
+                });
+            },
+        });
 
-        await telegramCommandMenus.syncUser(
+        await telegramCommandMenus.sync(
+            await telegramBots.root(),
             await insertUser({ telegramId: "987654611" }),
         );
 
