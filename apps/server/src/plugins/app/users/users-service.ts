@@ -3,7 +3,7 @@ import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { AppLogger } from "../app-logger.js";
-import { I18nService } from "../i18n-service.js";
+import { defaultLanguage, I18nService, Language } from "../i18n-service.js";
 import { FlagSetting, SettingsService } from "../settings/settings-service.js";
 import { UserSettingsService } from "../settings/user-settings-service.js";
 import { UserEntity, UserProfile } from "./user-entity.js";
@@ -19,6 +19,13 @@ export const autoBanSetting: FlagSetting = {
     emoji: "🚫",
     defaultValue: true,
 };
+
+export interface ReportedUser extends Pick<
+    UserEntity,
+    "botId" | "telegramId" | "firstName" | "username"
+> {
+    languageCode: Language | undefined;
+}
 
 export class UsersService {
     private readonly usersRepository: UsersRepository;
@@ -39,15 +46,28 @@ export class UsersService {
     }
 
     async findOrCreateByTelegramId(
-        data: Pick<UserEntity, "botId" | "telegramId"> & UserProfile,
+        reported: ReportedUser,
     ): Promise<UserLookup> {
-        return this.usersRepository.findOneByTelegramIdOrCreate({
-            ...data,
-            isBanned: await this.settingsService.read(
-                autoBanSetting,
-                data.botId,
-            ),
-        });
+        const { user, isCreated } =
+            await this.usersRepository.findOneByTelegramIdOrCreate({
+                botId: reported.botId,
+                telegramId: reported.telegramId,
+                ...profileOf(reported, defaultLanguage),
+                isBanned: await this.settingsService.read(
+                    autoBanSetting,
+                    reported.botId,
+                ),
+            });
+        const profile = profileOf(reported, user.languageCode);
+
+        if (isSameProfile(user, profile)) {
+            return { user, isCreated };
+        }
+
+        return {
+            user: await this.usersRepository.updateProfile(user._id, profile),
+            isCreated,
+        };
     }
 
     async grantAccess(userId: ObjectId, grants: string[]): Promise<UserEntity> {
@@ -61,6 +81,25 @@ export class UsersService {
 
         return user;
     }
+}
+
+function profileOf(
+    { languageCode, firstName, username }: ReportedUser,
+    fallbackLanguage: Language,
+): UserProfile {
+    return {
+        languageCode: languageCode ?? fallbackLanguage,
+        firstName,
+        username,
+    };
+}
+
+function isSameProfile(user: UserEntity, profile: UserProfile): boolean {
+    return (
+        user.languageCode === profile.languageCode &&
+        user.firstName === profile.firstName &&
+        user.username === profile.username
+    );
 }
 
 export default fp(
