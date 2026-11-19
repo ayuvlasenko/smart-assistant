@@ -340,6 +340,56 @@ void describe("/bots", () => {
         );
     });
 
+    void it("takes a new token of the same Telegram bot and sets its webhook again", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657021 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const newToken = "42:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD";
+        const childApi = bot.childApis.get("42");
+
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.tokenButton);
+        await bot.sendText(admin, newToken);
+
+        assert.equal((await bot.botsRegistry.find(childId))?.token, newToken);
+        assert.equal(childApi?.setWebhook.mock.callCount(), 2);
+        assert.ok(bot.readSentTexts().includes(en.tokenReplaced));
+    });
+
+    void it("starts a stopped bot again and serves it", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657022 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+
+        await bot.botsService.stop(actor, childId);
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.startButton);
+
+        assert.ok(await bot.telegramBots.find(childId));
+        assert.equal(
+            (await bot.botsRepository.findOneById(childId))?.disabledAt,
+            undefined,
+        );
+        assert.equal(bot.childApis.get("42")?.setWebhook.mock.callCount(), 2);
+    });
+
+    void it("sets the webhook of a bot again on a press", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657023 });
+        const actor = await allowAdmin(bot, admin);
+
+        await addChild(bot, actor);
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.webhookButton);
+
+        assert.equal(bot.childApis.get("42")?.setWebhook.mock.callCount(), 2);
+    });
+
     void it("offers no owner link for a stopped bot and redraws an open one as unavailable", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987657007 });
