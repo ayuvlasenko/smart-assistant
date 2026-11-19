@@ -1,6 +1,6 @@
 import { InlineKeyboardButton, WebhookInfo } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
-import { inviteDeepLinkName } from "../invites/invites-handlers.js";
+import { inviteDeepLinkOf } from "../invites/invite-entity.js";
 import { buildTelegramDeepLinkUrl } from "../telegram/telegram-deep-links.js";
 import {
     buildTelegramHtmlMessage,
@@ -218,10 +218,7 @@ export async function renderBotOwnerInvite(
         );
     }
 
-    const url = buildTelegramDeepLinkUrl(bot.username, {
-        name: inviteDeepLinkName,
-        value: token,
-    });
+    const url = buildTelegramDeepLinkUrl(bot.username, inviteDeepLinkOf(token));
 
     return buildTelegramHtmlMessage(
         [

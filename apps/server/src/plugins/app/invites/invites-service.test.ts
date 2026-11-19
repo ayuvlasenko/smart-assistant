@@ -2,17 +2,17 @@ import { ForbiddenError } from "@casl/ability";
 import { ObjectId } from "mongodb";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
-import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
+import {
+    buildInvitesBot,
+    createInviteAs,
+    InvitesBot,
+} from "../../../test/invites-bot.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { testBotId } from "../../../test/telegram-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import { pingGrant } from "../ping/ping-handlers.js";
 import { UserEntity } from "../users/user-entity.js";
 import { InviteEntity, InvitesSubjects } from "./invite-entity.js";
-import {
-    InviteGrantNotAllowedError,
-    InviteWithoutGrantsError,
-} from "./invites-errors.js";
 
 const testMongo = useTestMongo();
 
@@ -21,7 +21,7 @@ void describe("InvitesService create", () => {
         const bot = await buildBot(t);
         const admin = await createUser(bot, "987654701", [adminGrant]);
 
-        const invite = await bot.invitesService.create(admin, {
+        const invite = await createInviteAs(bot, admin, {
             grants: [pingGrant, pingGrant],
             maxUses: 3,
         });
@@ -34,6 +34,33 @@ void describe("InvitesService create", () => {
         assert.deepEqual(
             await bot.invitesRepository.findOneById(invite._id),
             invite,
+        );
+    });
+
+    void it("sets the expiry from the days and refuses a limit out of range", async (t) => {
+        const bot = await buildBot(t);
+        const admin = await createUser(bot, "987654706", [adminGrant]);
+        const twoDays = 2 * 24 * 60 * 60 * 1000;
+        const startedAt = Date.now();
+
+        const invite = await createInviteAs(bot, admin, {
+            grants: [pingGrant],
+            validForDays: 2,
+        });
+
+        assert.ok(invite.expiresAt);
+        assert.ok(invite.expiresAt.getTime() >= startedAt + twoDays);
+        await assert.rejects(
+            bot.invitesService.create(admin, {
+                grants: [pingGrant],
+                maxUses: 0,
+            }),
+        );
+        await assert.rejects(
+            bot.invitesService.create(admin, {
+                grants: [pingGrant],
+                validForDays: 366,
+            }),
         );
     });
 
@@ -51,13 +78,15 @@ void describe("InvitesService create", () => {
         const bot = await buildBot(t);
         const admin = await createUser(bot, "987654703", [adminGrant]);
 
-        await assert.rejects(
-            bot.invitesService.create(admin, { grants: [] }),
-            InviteWithoutGrantsError,
+        assert.deepEqual(
+            await bot.invitesService.create(admin, { grants: [] }),
+            { status: "noGrants" },
         );
-        await assert.rejects(
-            bot.invitesService.create(admin, { grants: ["missing.grant"] }),
-            InviteGrantNotAllowedError,
+        assert.deepEqual(
+            await bot.invitesService.create(admin, {
+                grants: ["missing.grant"],
+            }),
+            { status: "grantNotAllowed", grant: "missing.grant" },
         );
     });
 
@@ -65,9 +94,9 @@ void describe("InvitesService create", () => {
         const bot = await buildInvitesBot({ testMongo, t, modules: ["poker"] });
         const admin = await createUser(bot, "987654705", [adminGrant]);
 
-        await assert.rejects(
-            bot.invitesService.create(admin, { grants: [pingGrant] }),
-            new InviteGrantNotAllowedError(pingGrant),
+        assert.deepEqual(
+            await bot.invitesService.create(admin, { grants: [pingGrant] }),
+            { status: "grantNotAllowed", grant: pingGrant },
         );
         assert.equal(
             await bot.invitesService.canGrant(admin, pingGrant),
@@ -94,13 +123,13 @@ void describe("InvitesService create", () => {
 
         const inviter = await createUser(bot, "987654704", ["test.inviter"]);
 
-        await assert.rejects(
-            bot.invitesService.create(inviter, { grants: [pingGrant] }),
-            new InviteGrantNotAllowedError(pingGrant),
+        assert.deepEqual(
+            await bot.invitesService.create(inviter, { grants: [pingGrant] }),
+            { status: "grantNotAllowed", grant: pingGrant },
         );
         assert.deepEqual(
             (
-                await bot.invitesService.create(inviter, {
+                await createInviteAs(bot, inviter, {
                     grants: ["test.inviter"],
                 })
             ).grants,
@@ -311,10 +340,10 @@ void describe("InvitesService access to single invites", () => {
             "test.ownInvites",
             pingGrant,
         ]);
-        const own = await bot.invitesService.create(first, {
+        const own = await createInviteAs(bot, first, {
             grants: [pingGrant],
         });
-        const foreign = await bot.invitesService.create(second, {
+        const foreign = await createInviteAs(bot, second, {
             grants: [pingGrant],
         });
         const page = await bot.invitesService.list(first, {
@@ -572,7 +601,7 @@ void describe("InvitesService bootstrap", () => {
             updatedAt: new Date(),
         });
 
-        const adminInvite = await bot.invitesService.create(admin, {
+        const adminInvite = await createInviteAs(bot, admin, {
             grants: [pingGrant],
         });
 

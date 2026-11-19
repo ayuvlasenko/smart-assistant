@@ -1,5 +1,8 @@
 import { ObjectId } from "mongodb";
 import { BaseEntity } from "../../../entity.js";
+import { TelegramDeepLink } from "../telegram/telegram-deep-links.js";
+
+export const inviteDeepLinkName = "invite";
 
 export interface InviteActivation {
     userId: ObjectId;
@@ -43,4 +46,8 @@ export function readInviteStatus(
     }
 
     return "active";
+}
+
+export function inviteDeepLinkOf(token: string): TelegramDeepLink {
+    return { name: inviteDeepLinkName, value: token };
 }

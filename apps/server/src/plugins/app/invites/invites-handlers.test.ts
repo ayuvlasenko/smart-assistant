@@ -1,7 +1,11 @@
 import { Chat } from "@grammyjs/types";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
-import { buildInvitesBot, InvitesBot } from "../../../test/invites-bot.js";
+import {
+    buildInvitesBot,
+    createInviteAs,
+    InvitesBot,
+} from "../../../test/invites-bot.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramCommandUpdate,
@@ -85,10 +89,10 @@ void describe("Invites and the start module", () => {
             "poker",
         );
 
-        const pokerInvite = await bot.invitesService.create(admin, {
+        const pokerInvite = await createInviteAs(bot, admin, {
             grants: [pokerJoinGrant],
         });
-        const pingInvite = await bot.invitesService.create(admin, {
+        const pingInvite = await createInviteAs(bot, admin, {
             grants: [pingGrant],
         });
 
@@ -188,6 +192,37 @@ void describe("Invites scenes", () => {
 
         const [message] = await bot.readMessageTexts(admin.id);
 
+        assert.ok(message?.includes(en.nothingSelected));
+    });
+
+    void it("drops a chosen grant of a module that was turned off when the invite is created", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987654833 });
+
+        await createAdmin(bot, admin);
+        await bot.sendText(admin, "/invites");
+        await bot.pressButton(admin, en.newInviteButton);
+        await bot.pressButton(admin, en.accessButton);
+        await bot.pressButton(admin, "Ping (0/1)");
+        await bot.pressButton(admin, "⬜ Use /ping");
+        await bot.pressButton(admin, en.backButton);
+        await bot.pressButton(admin, en.backButton);
+        await bot.botsRepository.updateModules(bot.botsRegistry.rootId, [
+            "poker",
+        ]);
+        await bot.pressButton(admin, en.createButton);
+
+        const [message] = await bot.readMessageTexts(admin.id);
+
+        assert.equal(
+            await testMongo.mongo.collection("invites").countDocuments(),
+            0,
+        );
+        assert.equal(
+            bot.telegramApiService.answerCallbackQuery.mock.calls.at(-1)
+                ?.arguments[0].text,
+            en.accessNotAllowed,
+        );
         assert.ok(message?.includes(en.nothingSelected));
     });
 

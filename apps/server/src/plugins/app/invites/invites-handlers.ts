@@ -11,7 +11,11 @@ import { TelegramRouter } from "../telegram/telegram-router.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
 import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
-import { InvitesSubjects } from "./invite-entity.js";
+import {
+    inviteDeepLinkName,
+    inviteDeepLinkOf,
+    InvitesSubjects,
+} from "./invite-entity.js";
 import { InvitesEvents } from "./invites-events.js";
 import { invitesLocales } from "./invites-locales.js";
 import {
@@ -21,8 +25,6 @@ import {
     inviteTopic,
 } from "./invites-scene.js";
 import { InvitesService } from "./invites-service.js";
-
-export const inviteDeepLinkName = "invite";
 
 export default fp(
     async function (fastify: FastifyInstance) {
@@ -53,10 +55,10 @@ export default fp(
             invitesService,
             access,
             (botId, token) =>
-                telegramBotService.resolveDeepLinkUrl(botId, {
-                    name: inviteDeepLinkName,
-                    value: token,
-                }),
+                telegramBotService.resolveDeepLinkUrl(
+                    botId,
+                    inviteDeepLinkOf(token),
+                ),
         );
 
         router.scene(invitesScene);
@@ -94,7 +96,11 @@ export default fp(
             const result = await invitesService.activate(ctx.user, token);
 
             ctx.log.info(
-                { inviteResult: result.status },
+                {
+                    inviteResult: result.status,
+                    inviteId:
+                        "invite" in result ? result.invite._id : undefined,
+                },
                 "Invite link is used",
             );
 
