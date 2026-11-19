@@ -205,6 +205,7 @@ export function createSettingsScene(
                     }
 
                     await settingsService.write(ctx.user, setting, value);
+                    scene.state.numberSetting = null;
                 },
             },
         },

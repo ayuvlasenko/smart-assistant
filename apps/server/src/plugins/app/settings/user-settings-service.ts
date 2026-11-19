@@ -8,6 +8,10 @@ import { readUserSetting, UserEntity } from "../users/user-entity.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { SettingsSubjects } from "./setting-entity.js";
 import { SettingsEvents } from "./settings-events.js";
+import {
+    SettingsRegistry,
+    SettingsRegistrySection,
+} from "./settings-registry.js";
 import { SettingOption } from "./settings-service.js";
 
 export interface UserChoiceSetting {
@@ -21,17 +25,12 @@ export interface UserChoiceSetting {
 
 export type UserSetting = UserChoiceSetting;
 
-export interface UserSettingsSection {
-    name: string;
-    title: (t: Translate) => string;
-    settings: UserSetting[];
-}
-
-const settingNamePattern = /^[a-z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/;
+export type UserSettingsSection = SettingsRegistrySection<UserSetting>;
 
 export class UserSettingsService {
-    private readonly sections: UserSettingsSection[] = [];
-    private readonly settings = new Map<string, UserSetting>();
+    private readonly registry = new SettingsRegistry<UserSetting>(
+        "User setting",
+    );
     private readonly usersRepository: UsersRepository;
     private readonly access: AccessControl<SettingsSubjects>;
     private readonly eventEmitter: Emittery<SettingsEvents>;
@@ -50,37 +49,15 @@ export class UserSettingsService {
     }
 
     register(section: UserSettingsSection): void {
-        if (this.sections.some(({ name }) => name === section.name)) {
-            throw new Error(
-                `User settings section "${section.name}" is already registered`,
-            );
-        }
-
-        for (const { name } of section.settings) {
-            if (!settingNamePattern.test(name)) {
-                throw new Error(
-                    `User setting "${name}" must be named <domain>.<name>`,
-                );
-            }
-
-            if (this.settings.has(name)) {
-                throw new Error(`User setting "${name}" is already registered`);
-            }
-        }
-
-        this.sections.push(section);
-
-        for (const setting of section.settings) {
-            this.settings.set(setting.name, setting);
-        }
+        this.registry.register(section);
     }
 
     listSections(botId: string): Promise<UserSettingsSection[]> {
-        return this.access.listEnabled(botId, this.sections);
+        return this.access.listEnabled(botId, this.registry.sections);
     }
 
     find(name: string): UserSetting | undefined {
-        return this.settings.get(name);
+        return this.registry.find(name);
     }
 
     async write(
