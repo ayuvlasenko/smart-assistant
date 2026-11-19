@@ -769,7 +769,7 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 **Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text. The [command menu](#access-and-the-command-menu) then shows `/start` with the description of the entry, so the menu names what `/start` opens.
 
-**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` reads the bot from MongoDB on every `/start` and takes its `startModule`.
+**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` takes `startModule` from `ctx.bot`, the bot that the route read from MongoDB for this update.
 
 **Walk-through.**
 

@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { UserEntity } from "../users/user-entity.js";
-import { TelegramBot, TelegramBots } from "./telegram-bots.js";
+import { TelegramBot } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramCommandMessageUpdate } from "./telegram-filters.js";
 import { isAllowed, TelegramGuard } from "./telegram-guard.js";
@@ -24,11 +24,6 @@ export interface TelegramStartEntry {
 
 export class TelegramStartEntries {
     private readonly entries = new Map<string, TelegramStartEntry>();
-    private readonly telegramBots: TelegramBots;
-
-    constructor(telegramBots: TelegramBots) {
-        this.telegramBots = telegramBots;
-    }
 
     register(
         module: string,
@@ -65,8 +60,7 @@ export class TelegramStartEntries {
     async open(
         ctx: TelegramContext<TelegramCommandMessageUpdate>,
     ): Promise<boolean> {
-        const bot = await this.telegramBots.find(ctx.user.botId);
-        const entry = bot && (await this.find(bot, ctx.user));
+        const entry = await this.find(ctx.bot, ctx.user);
 
         if (!entry) {
             return false;
@@ -80,15 +74,9 @@ export class TelegramStartEntries {
 
 export default fp(
     async function (fastify: FastifyInstance) {
-        fastify.decorate(
-            "telegramStartEntries",
-            new TelegramStartEntries(
-                fastify.getDecorator<TelegramBots>("telegramBots"),
-            ),
-        );
+        fastify.decorate("telegramStartEntries", new TelegramStartEntries());
     },
     {
         name: "telegram-start-entries",
-        dependencies: ["telegram-bots"],
     },
 );

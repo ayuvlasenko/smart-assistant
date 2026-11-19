@@ -401,6 +401,7 @@ export class TelegramChats {
             telegramUserId,
             (session, signal) => {
                 const ctx = new TelegramContext({
+                    bot,
                     update,
                     user,
                     session,

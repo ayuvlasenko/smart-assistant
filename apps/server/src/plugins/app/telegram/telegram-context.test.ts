@@ -11,6 +11,8 @@ import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramPrivateChat,
     buildTelegramTextMessageUpdate,
+    testBotId,
+    testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { I18nService } from "../i18n-service.js";
@@ -29,6 +31,11 @@ function buildContext<TUpdate extends Update>(
     const log = Fastify({ logger: false }).log;
 
     return new TelegramContext({
+        bot: {
+            id: testBotId,
+            telegramId: testTelegramBotId,
+            api: telegramApiService,
+        },
         update,
         user: buildUserEntity(),
         session: new TelegramSession(
