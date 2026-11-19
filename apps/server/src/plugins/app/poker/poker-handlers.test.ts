@@ -342,6 +342,14 @@ void describe("Poker rooms", () => {
 
         assert.ok(message.includes("Round 1 · revealed"));
         assert.ok(message.includes(en.agreementUnanimous));
+
+        const output = await bot.metrics.metrics();
+
+        assert.match(output, /^poker_room_changes_total\{change="voted"\} 2$/m);
+        assert.match(
+            output,
+            /^poker_room_changes_total\{change="revealed"\} 1$/m,
+        );
     });
 
     void it("lets any participant step the votes of auto reveal from the room menu", async (t) => {

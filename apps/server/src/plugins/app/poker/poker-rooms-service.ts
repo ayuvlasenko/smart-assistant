@@ -393,11 +393,10 @@ export class PokerRoomsService {
         );
 
         if (saved) {
-            await this.emitChanged(
-                saved,
-                reveal.round ? "revealed" : change,
-                room,
-            );
+            await this.emitChanged(saved, change, {
+                previous: room,
+                autoRevealed: reveal.round !== undefined,
+            });
         }
 
         return saved;
@@ -406,7 +405,10 @@ export class PokerRoomsService {
     private async emitChanged(
         room: PokerRoomEntity,
         change: PokerRoomChange,
-        previous?: PokerRoomEntity,
+        {
+            previous,
+            autoRevealed = false,
+        }: { previous?: PokerRoomEntity; autoRevealed?: boolean } = {},
     ): Promise<void> {
         const userIds = new Map(
             [
@@ -420,6 +422,7 @@ export class PokerRoomsService {
             botId: room.botId,
             roomId: room._id,
             change,
+            autoRevealed,
             userIds: [...userIds.values()],
         });
     }
