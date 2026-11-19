@@ -5,7 +5,6 @@ import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
 import {
@@ -42,7 +41,6 @@ export class TelegramCommandMenus {
     private readonly cache: CacheService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly config: Pick<Env, "ENVIRONMENT">;
 
     constructor(
         log: FastifyBaseLogger,
@@ -53,7 +51,6 @@ export class TelegramCommandMenus {
         cache: CacheService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
-        config: Pick<Env, "ENVIRONMENT">,
     ) {
         this.log = log;
         this.telegramBots = telegramBots;
@@ -63,24 +60,6 @@ export class TelegramCommandMenus {
         this.cache = cache;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
-        this.config = config;
-    }
-
-    async setOnStart(): Promise<void> {
-        if (this.config.ENVIRONMENT === "preview") {
-            return;
-        }
-
-        for (const bot of await this.listBotsOnStart()) {
-            try {
-                await this.syncBot(bot);
-            } catch (err) {
-                this.log.error(
-                    { err, botId: bot.id },
-                    "Failed to set the commands of a bot on start",
-                );
-            }
-        }
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
@@ -215,15 +194,6 @@ export class TelegramCommandMenus {
         );
     }
 
-    private async listBotsOnStart(): Promise<TelegramBot[]> {
-        try {
-            return await this.telegramBots.list();
-        } catch (err) {
-            this.log.error({ err }, "Failed to read the bots on start");
-            return [];
-        }
-    }
-
     private buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
         const user = buildUserWithoutGrants(bot.id);
 
@@ -306,7 +276,6 @@ export default fp(
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-            fastify.getDecorator<Env>("config"),
         );
 
         fastify.decorate("telegramCommandMenus", telegramCommandMenus);
@@ -316,15 +285,10 @@ export default fp(
             .on("users.accessChanged", ({ data }) =>
                 telegramCommandMenus.syncUser(data.user),
             );
-
-        fastify.addHook("onListen", async () => {
-            await telegramCommandMenus.setOnStart();
-        });
     },
     {
         name: "telegram-command-menus",
         dependencies: [
-            "@fastify/env",
             "app-logger",
             "cache",
             "emittery",

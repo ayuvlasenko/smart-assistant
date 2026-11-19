@@ -72,7 +72,7 @@ export class TelegramBotService {
         this.config = config;
     }
 
-    async setWebhooksOnStart(): Promise<void> {
+    async setUpOnStart(): Promise<void> {
         if (this.config.ENVIRONMENT === "preview") {
             this.log.info(
                 "Telegram webhooks are not set on preview start, claim them with POST /api/telegram/webhook/refresh",
@@ -81,14 +81,8 @@ export class TelegramBotService {
         }
 
         for (const bot of await this.listBotsOnStart()) {
-            try {
-                await this.setWebhookOnStart(bot);
-            } catch (err) {
-                this.log.error(
-                    { err, botId: bot.id },
-                    "Failed to set the webhook of a bot on start",
-                );
-            }
+            await this.setWebhookOnStart(bot);
+            await this.syncCommandMenusOnStart(bot);
         }
     }
 
@@ -151,12 +145,6 @@ export class TelegramBotService {
         return webhooks;
     }
 
-    async resolveBotUrl(botId: string): Promise<string> {
-        return buildTelegramBotUrl(
-            await this.resolveUsername(await this.telegramBots.get(botId)),
-        );
-    }
-
     async resolveDeepLinkUrl(
         botId: string,
         link: TelegramDeepLink,
@@ -177,6 +165,17 @@ export class TelegramBotService {
     }
 
     private async setWebhookOnStart(bot: TelegramBot): Promise<void> {
+        try {
+            await this.setClaimedWebhook(bot);
+        } catch (err) {
+            this.log.error(
+                { err, botId: bot.id },
+                "Failed to set the webhook of a bot on start",
+            );
+        }
+    }
+
+    private async setClaimedWebhook(bot: TelegramBot): Promise<void> {
         const claim = await this.lockService.tryAcquire(
             `telegram:${bot.telegramId}:webhook:set`,
             telegramWebhookClaimTtlMilliseconds,
@@ -195,10 +194,21 @@ export class TelegramBotService {
         }
     }
 
+    private async syncCommandMenusOnStart(bot: TelegramBot): Promise<void> {
+        try {
+            await this.telegramCommandMenus.syncBot(bot);
+        } catch (err) {
+            this.log.error(
+                { err, botId: bot.id },
+                "Failed to set the commands of a bot on start",
+            );
+        }
+    }
+
     private async refreshWebhook(
         bot: TelegramBot,
     ): Promise<TelegramBotWebhook> {
-        const botUrl = await this.resolveBotUrl(bot.id);
+        const botUrl = buildTelegramBotUrl(await this.resolveUsername(bot));
         const webhookUrl = await this.setWebhook(bot);
 
         await this.telegramCommandMenus.refresh(bot);
@@ -235,7 +245,7 @@ export default fp(
         fastify.decorate("telegramBotService", telegramBotService);
 
         fastify.addHook("onListen", async () => {
-            await telegramBotService.setWebhooksOnStart();
+            await telegramBotService.setUpOnStart();
         });
     },
     {
