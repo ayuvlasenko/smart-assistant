@@ -1,33 +1,14 @@
 import closeWithGrace from "close-with-grace";
-import Fastify, { FastifyServerOptions } from "fastify";
+import Fastify from "fastify";
 import fp from "fastify-plugin";
 import serviceApp, { options } from "./app.js";
-import {
-    buildLoggerOptions,
-    buildPrettyLoggerOptions,
-} from "./logger-options.js";
-
-function getLoggerOptions(): FastifyServerOptions["logger"] {
-    const level = process.env.LOG_LEVEL ?? "info";
-
-    if (process.stdout.isTTY) {
-        return {
-            ...buildPrettyLoggerOptions(level),
-            transport: {
-                target: "pino-pretty",
-                options: {
-                    translateTime: "HH:MM:ss Z",
-                    ignore: "pid,hostname",
-                },
-            },
-        };
-    }
-
-    return buildLoggerOptions(level);
-}
+import { Env } from "./env.js";
+import { buildLoggerOptions } from "./logger-options.js";
 
 const app = Fastify({
-    logger: getLoggerOptions(),
+    logger: buildLoggerOptions(process.env.LOG_LEVEL ?? "info", {
+        pretty: process.stdout.isTTY,
+    }),
     ...options,
 });
 
@@ -55,7 +36,7 @@ async function init() {
 
     try {
         await app.listen({
-            port: Number(process.env.PORT ?? 3020),
+            port: app.getDecorator<Env>("config").PORT,
             host: process.env.HOST ?? "0.0.0.0",
         });
     } catch (err) {
