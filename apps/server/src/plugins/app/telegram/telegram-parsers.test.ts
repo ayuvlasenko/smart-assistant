@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 import {
     addDays,
     formatDate,
-    isTimeZone,
     parseDate,
     parseNumber,
 } from "./telegram-parsers.js";
@@ -59,13 +58,5 @@ void describe("addDays", () => {
     void it("moves the date across month and year ends", () => {
         assert.equal(addDays("2026-10-01", -1), "2026-09-30");
         assert.equal(addDays("2026-12-31", 1), "2027-01-01");
-    });
-});
-
-void describe("isTimeZone", () => {
-    void it("accepts IANA time zones and rejects other text", () => {
-        assert.equal(isTimeZone("Europe/Kyiv"), true);
-        assert.equal(isTimeZone("UTC"), true);
-        assert.equal(isTimeZone("Mars/Base"), false);
     });
 });

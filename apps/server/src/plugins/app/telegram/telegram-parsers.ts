@@ -58,15 +58,6 @@ export function addDays(date: string, days: number): string {
     return result.toISOString().slice(0, 10);
 }
 
-export function isTimeZone(timeZone: string): boolean {
-    try {
-        new Intl.DateTimeFormat("en-US", { timeZone });
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 function buildDate(
     year: string | undefined,
     month: string | undefined,
