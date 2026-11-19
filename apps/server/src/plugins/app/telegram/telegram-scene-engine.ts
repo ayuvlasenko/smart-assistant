@@ -216,7 +216,17 @@ export class TelegramSceneEngine {
         ctx: TelegramContext,
         action: () => Promise<T>,
     ): Promise<T> {
-        const update = this.updateFor(ctx);
+        const update = new TelegramSceneUpdate(
+            new TelegramSceneStorage(
+                ctx.session,
+                (name) => this.scenes.get(name),
+                this.screens,
+                ctx.log,
+            ),
+        );
+
+        this.updates.set(ctx.session, update);
+
         const stopRecording = ctx.events.on(
             ["messageSent", "messageEdited", "messageRemoved"],
             ({ data }) => {
@@ -350,24 +360,34 @@ export class TelegramSceneEngine {
             : storage.idFor(scene, state);
     }
 
-    private async canStart(
+    private canStart(
         ctx: TelegramContext,
         scene: TelegramScene,
         id: string,
         source?: TelegramSceneInstance,
     ): Promise<boolean> {
+        return this.admit(ctx, scene, [id, source?.id], {
+            checkFocus: !!scene.blocking,
+            nextTitle: scene.title?.(ctx.t),
+        });
+    }
+
+    private async admit(
+        ctx: TelegramContext,
+        scene: TelegramScene,
+        ownIds: (string | undefined)[],
+        { checkFocus, nextTitle }: { checkFocus: boolean; nextTitle?: string },
+    ): Promise<boolean> {
         const blocker = await this.updateFor(ctx).storage.blocking();
 
-        if (blocker && blocker.id !== id && blocker.id !== source?.id) {
-            await this.rejectBlocked(ctx, scene, blocker, scene.title?.(ctx.t));
+        if (blocker && !ownIds.includes(blocker.id)) {
+            await this.rejectBlocked(ctx, scene, blocker, nextTitle);
             return false;
         }
 
-        const focused = scene.blocking
-            ? await this.focusedInput(ctx)
-            : undefined;
+        const focused = checkFocus ? await this.focusedInput(ctx) : undefined;
 
-        if (focused && focused.id !== id && focused.id !== source?.id) {
+        if (focused && !ownIds.includes(focused.id)) {
             await this.rejectBlocked(ctx, scene, focused);
             return false;
         }
@@ -482,17 +502,11 @@ export class TelegramSceneEngine {
             return;
         }
 
-        const blocker = await this.updateFor(ctx).storage.blocking();
-
-        if (blocker && blocker.id !== instance.id) {
-            await this.rejectBlocked(ctx, instance.scene, blocker);
-            return;
-        }
-
-        const focused = await this.focusedInput(ctx);
-
-        if (focused && focused.id !== instance.id) {
-            await ctx.notify(ctx.t("telegram:inputBusy"));
+        if (
+            !(await this.admit(ctx, instance.scene, [instance.id], {
+                checkFocus: true,
+            }))
+        ) {
             return;
         }
 
@@ -595,18 +609,10 @@ export class TelegramSceneEngine {
     }
 
     private updateFor(ctx: TelegramContext): TelegramSceneUpdate {
-        let update = this.updates.get(ctx.session);
+        const update = this.updates.get(ctx.session);
 
         if (!update) {
-            update = new TelegramSceneUpdate(
-                new TelegramSceneStorage(
-                    ctx.session,
-                    (name) => this.scenes.get(name),
-                    this.screens,
-                    ctx.log,
-                ),
-            );
-            this.updates.set(ctx.session, update);
+            throw new Error("Telegram scenes are used outside withScenes");
         }
 
         return update;
