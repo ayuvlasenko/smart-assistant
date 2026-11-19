@@ -7,6 +7,7 @@ import {
     InvitesBot,
 } from "../../../test/invites-bot.js";
 import { useTestMongo } from "../../../test/mongo.js";
+import { setTestBotModules } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
@@ -185,9 +186,7 @@ void describe("Invites scenes", () => {
         await bot.pressButton(admin, en.newInviteButton);
         await bot.pressButton(admin, en.accessButton);
         await bot.pressButton(admin, "Ping (0/1)");
-        await bot.botsRepository.updateModules(bot.botsRegistry.rootId, [
-            "poker",
-        ]);
+        await setTestBotModules(bot.app, bot.botsRegistry.rootId, ["poker"]);
         await bot.pressButton(admin, "⬜ Use /ping");
 
         const [message] = await bot.readMessageTexts(admin.id);
@@ -207,9 +206,7 @@ void describe("Invites scenes", () => {
         await bot.pressButton(admin, "⬜ Use /ping");
         await bot.pressButton(admin, en.backButton);
         await bot.pressButton(admin, en.backButton);
-        await bot.botsRepository.updateModules(bot.botsRegistry.rootId, [
-            "poker",
-        ]);
+        await setTestBotModules(bot.app, bot.botsRegistry.rootId, ["poker"]);
         await bot.pressButton(admin, en.createButton);
 
         const [message] = await bot.readMessageTexts(admin.id);

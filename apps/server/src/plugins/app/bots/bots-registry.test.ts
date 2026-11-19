@@ -4,7 +4,10 @@ import { describe, it } from "node:test";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
-import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
+import {
+    buildTelegramBotServiceTestApp,
+    setTestBotModules,
+} from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramPrivateChat,
     testTelegramBotId,
@@ -257,9 +260,7 @@ void describe("Bot modules", () => {
 
         assert.deepEqual(await allowed(), ["cancel", "invites", "settings"]);
 
-        await app
-            .getDecorator<PokerBot["botsRepository"]>("botsRepository")
-            .updateModules(botsRegistry.rootId, ["poker", "ping"]);
+        await setTestBotModules(app, botsRegistry.rootId, ["poker", "ping"]);
 
         assert.deepEqual(await allowed(), [
             "cancel",
@@ -272,7 +273,7 @@ void describe("Bot modules", () => {
 });
 
 async function setModules(bot: PokerBot, modules: string[]): Promise<void> {
-    await bot.botsRepository.updateModules(bot.botsRegistry.rootId, modules);
+    await setTestBotModules(bot.app, bot.botsRegistry.rootId, modules);
 }
 
 async function createBot(

@@ -12,6 +12,7 @@ import { Env } from "../env.js";
 import accessDefaultGrantsPlugin from "../plugins/app/access/access-default-grants.js";
 import accessPlugin from "../plugins/app/access/access-service.js";
 import appLoggerPlugin from "../plugins/app/app-logger.js";
+import { BotEntity } from "../plugins/app/bots/bot-entity.js";
 import { BotTokenCipher } from "../plugins/app/bots/bot-token-cipher.js";
 import botsRegistryPlugin, {
     BotsRegistry,
@@ -70,7 +71,7 @@ import envPlugin, {
 import valkeyPlugin, {
     valkeyKeyPrefixOf,
 } from "../plugins/external/kv-valkey.js";
-import mongoPlugin from "../plugins/external/mongo.js";
+import mongoPlugin, { readMongoDb } from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
@@ -227,7 +228,7 @@ export async function buildTelegramBotServiceTestApp({
 
     const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
     const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
-    await botsRepository.updateModules(botsRegistry.rootId, modules);
+    await setTestBotModules(app, botsRegistry.rootId, modules);
 
     return {
         app,
@@ -278,6 +279,16 @@ export async function buildTwoBotsTestApp(
     }
 
     return { ...app, child, childBotId: bot._id };
+}
+
+export async function setTestBotModules(
+    app: FastifyInstance,
+    botId: string,
+    modules: string[],
+): Promise<void> {
+    await readMongoDb(app)
+        .collection<BotEntity>("bots")
+        .updateOne({ _id: botId }, { $set: { modules } });
 }
 
 function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
