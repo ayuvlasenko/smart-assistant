@@ -13,7 +13,7 @@ import { InvitesService } from "../invites/invites-service.js";
 import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotEntity, BotsSubjects } from "./bot-entity.js";
-import { BotProfile, BotsConnector } from "./bots-connector.js";
+import { BotsConnector } from "./bots-connector.js";
 import { BotTelegramIdTakenError } from "./bots-errors.js";
 import { BotsEvents } from "./bots-events.js";
 import { botsModule, BotsRegistry } from "./bots-registry.js";
@@ -271,10 +271,15 @@ export class BotsService {
             return { status: "keyMissing" };
         }
 
-        const profile = await this.botsConnector.readProfile(token);
         const current = await this.botsRepository.findOneById(botId);
 
-        if (!profile || !current) {
+        if (!current) {
+            throw new Error(`Bot ${botId} is not stored`);
+        }
+
+        const profile = await this.botsConnector.readProfile(token);
+
+        if (!profile) {
             return { status: "invalidToken" };
         }
 
@@ -287,14 +292,25 @@ export class BotsService {
         }
 
         const previous = await this.botsConnector.find(botId);
-        const bot = await this.takeTelegramBot(botId, profile, token);
+        let bot: BotEntity | null;
 
-        if (bot === "taken") {
-            return this.alreadyAdded(profile.telegramId);
+        try {
+            bot = await this.botsRepository.moveToTelegramBot(
+                botId,
+                profile.telegramId,
+                this.botsRegistry.encrypt(token),
+                profile.username,
+            );
+        } catch (err) {
+            if (err instanceof BotTelegramIdTakenError) {
+                return this.alreadyAdded(profile.telegramId);
+            }
+
+            throw err;
         }
 
         if (!bot) {
-            return { status: "invalidToken" };
+            throw new Error(`Bot ${botId} is not stored`);
         }
 
         if (previous) {
@@ -355,27 +371,6 @@ export class BotsService {
     private assertNotRoot(botId: string): void {
         if (this.isRoot(botId)) {
             throw new Error("The root bot lives in TELEGRAM_BOT_TOKEN");
-        }
-    }
-
-    private async takeTelegramBot(
-        botId: string,
-        profile: BotProfile,
-        token: string,
-    ): Promise<BotEntity | null | "taken"> {
-        try {
-            return await this.botsRepository.moveToTelegramBot(
-                botId,
-                profile.telegramId,
-                this.botsRegistry.encrypt(token),
-                profile.username,
-            );
-        } catch (err) {
-            if (err instanceof BotTelegramIdTakenError) {
-                return "taken";
-            }
-
-            throw err;
         }
     }
 
