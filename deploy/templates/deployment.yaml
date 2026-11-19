@@ -50,7 +50,7 @@ spec:
             {{- toYaml .Values.server.probes.readiness | nindent 12 }}
           livenessProbe:
             httpGet:
-              path: /status
+              path: /live
               port: {{ .Values.server.port }}
             {{- toYaml .Values.server.probes.liveness | nindent 12 }}
           lifecycle:

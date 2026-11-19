@@ -12,6 +12,8 @@ import {
 } from "./telegram-api-service-mock.js";
 import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
 
+const pressureWaitMilliseconds = 15_000;
+
 type BuildOptions = {
     t: TestContext;
     logger?: FastifyServerOptions["logger"];
@@ -65,7 +67,15 @@ export async function buildTestApp({ t, ...opts }: BuildOptions) {
 }
 
 async function waitUntilNotUnderPressure(app: FastifyInstance): Promise<void> {
+    const deadline = Date.now() + pressureWaitMilliseconds;
+
     while (app.isUnderPressure()) {
+        if (Date.now() > deadline) {
+            throw new Error(
+                `The test app stays under pressure after ${pressureWaitMilliseconds} ms: is MongoDB or Valkey down?`,
+            );
+        }
+
         await setTimeout(50);
     }
 }
