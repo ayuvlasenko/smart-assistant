@@ -161,7 +161,7 @@ export class TelegramSceneButtons {
         instance.record.confirming = undefined;
     }
 
-    forgetInputButtons(instance: TelegramSceneInstance): void {
+    forgetInput(instance: TelegramSceneInstance): void {
         const state = instance.record.buttons;
 
         state.messages = state.messages.flatMap((message) => {

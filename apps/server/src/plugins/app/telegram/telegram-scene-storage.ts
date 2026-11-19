@@ -114,7 +114,7 @@ export class TelegramSceneStorage {
             messages: [],
             topics: [],
         };
-        const instance = this.toInstance(id, scene, record);
+        const instance = { id, scene, record };
 
         this.screens.start(instance);
         this.instances.set(id, instance);
@@ -288,7 +288,7 @@ export class TelegramSceneStorage {
             Value.Check(scene.state, record.state) &&
             this.screens.isValid(scene, record.screen, record.stack)
         ) {
-            return this.toInstance(id, scene, record);
+            return { id, scene, record };
         }
 
         this.log.warn(
@@ -297,18 +297,6 @@ export class TelegramSceneStorage {
         );
         this.session.remove(sceneField(id));
         this.unindexTopics(record.name, id, record.topics);
-    }
-
-    private toInstance(
-        id: string,
-        scene: TelegramScene,
-        record: TelegramSceneRecord,
-    ): TelegramSceneInstance {
-        return {
-            id,
-            scene,
-            record,
-        };
     }
 }
 
