@@ -396,7 +396,7 @@ rate-limit:telegram:<telegramId>:global:waiting:background  sorted set: pod id �
 rate-limit:telegram:<telegramId>:commands                   hash: tokens, updatedAt
 ```
 
-`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script by its hash and loads the script again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script.
+`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script through `defineValkeyScript`, an ioredis command: ioredis sends the text of the script once per connection and its hash after that, and sends the text again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script. `CacheService` runs its scripts the same way.
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
