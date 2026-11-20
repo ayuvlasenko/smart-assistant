@@ -192,6 +192,8 @@ void describe("Invites scenes", () => {
         const [message] = await bot.readMessageTexts(admin.id);
 
         assert.ok(message?.includes(en.nothingSelected));
+        assert.ok(message?.includes(en.sectionMissing));
+        assert.deepEqual(await bot.readButtonLabels(admin.id), [en.backButton]);
     });
 
     void it("drops a chosen grant of a module that was turned off when the invite is created", async (t) => {

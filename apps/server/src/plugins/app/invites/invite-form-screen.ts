@@ -79,7 +79,14 @@ export async function renderInviteFormSection(
     const section = sections.find(({ name }) => name === sectionName);
 
     if (!section) {
-        return renderInviteFormSections(view, 0);
+        return buildTelegramHtmlMessage(
+            [
+                ...describeDraft(view),
+                "",
+                escapeTelegramHtml(t("invites:sectionMissing")),
+            ],
+            [[scene.backButton(t("invites:backButton"))]],
+        );
     }
 
     const { grants } = scene.state.draft;
