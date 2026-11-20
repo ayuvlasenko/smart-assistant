@@ -412,7 +412,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 
 **Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 
-1. `TelegramChats.withContext` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call outside a session, such as `setMyCommands` before the lock, gets the class `interactive` and its own 60 s timeout signal.
+1. `TelegramChats.runScenes` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call of an update outside its session, such as `setMyCommands` before the lock, runs in the scope that `TelegramUpdateHandler` opens, with the class `interactive` and its own 60 s timeout signal per call.
 2. `TelegramApiService.call` reads the scope and asks `telegramRateLimitBuckets` for the buckets of `editMessageText`: the chat bucket, then the global one.
 3. `RateLimiter.acquire` puts the call into the queue of the chat bucket. Every bucket has one `RateLimitQueue` in the pod, and only the loop of the queue asks Valkey, so the calls that wait for one bucket cost about one request per token and not one request per waiting call. The script takes a token or returns the time to the next one, and the loop sleeps until then. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one. A queue leaves the memory of the pod when it has served its last call.
 4. The queue of the global bucket has one line per class, and its loop serves both. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
@@ -696,8 +696,8 @@ sequenceDiagram
     C->>S: findIndexed for every topic
     S->>C: user ids and scene ids
     loop every user
-        C->>C: load user by bot and Telegram id, skip banned
-        C->>C: withChat: session lock + context without update
+        C->>C: delivery permit, then the session lock of the user
+        C->>C: load user by bot and Telegram id, skip banned, context without update
         C->>E: redraw(ctx, sceneId, topics) for every scene of the user
         E->>E: skip a scene that stopped watching or fails its guard
         E->>E: render the screen, save
@@ -730,8 +730,8 @@ sequenceDiagram
     P->>C: deliver(scene, targets, handle?)
     Note over C: returns at once, runs in the background
     loop every target user
-        C->>C: load user, skip banned
-        C->>C: withChat: session lock + context without update
+        C->>C: delivery permit, then the session lock of the user
+        C->>C: load user, skip banned, context without update
         C->>E: deliver(ctx, scene, key)
         E->>E: find the scene instance by key, run handle
         E->>E: render the screen, save
@@ -812,7 +812,7 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
 5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules or the start module of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
 
-**Edge cases.** A new user with the commands of the bot costs no API call; in a bot that bans its newcomers a new user is banned and costs none either, and the invite that gives access sets the menu of the chat through `users.accessChanged`. A user banned by hand in MongoDB loses the menu of the chat on the next update. When `users.autoBan` changes, the setting change sets the menu of the bot again; a chat that showed the menu of the bot gets its own menu on the next update or grant of its user, so until then it shows the new menu of the bot. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
+**Edge cases.** A new user with the commands of the bot costs no API call; in a bot that bans its newcomers a new user is banned and costs none either, and the invite that gives access sets the menu of the chat through `users.accessChanged`. A user banned by hand in MongoDB loses the menu of the chat on the next update and sees the menu of the bot, which is empty only while the bot bans its newcomers. When `users.autoBan` changes, the setting change sets the menu of the bot again; a chat that showed the menu of the bot gets its own menu on the next update or grant of its user, so until then it shows the new menu of the bot. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 
 **Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<telegramId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 65 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. That is longer than the 60 s for which an update may hold its session lock, so an update that holds the lock at the start of the close ends by itself, also when it waits for the rate limiter. The 65 s do not cover an update that has not taken the lock yet. The sync of the command menu runs before the lock, and its call has its own 60 s for the rate limiter; an update in the queue of its chat waits for the update before it. Such an update takes the lock late and can still be cut; its claim then makes the retry of Telegram a duplicate. A pod with no running update closes at once. The cluster kills the pod 75 s after the start of the shutdown.
 
@@ -858,6 +858,6 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 To read the code in order:
 
 1. `telegram-update-handler.ts`, `handle()`: the whole path of an update.
-2. `telegram-chats.ts`, `withContext()`: how a context and the scenes get their session.
-3. `telegram-scene-engine.ts`, `handle()` and `withScenes()`: how scenes get updates and when they are saved and drawn.
-4. `telegram-chats.test.ts` and `telegram-scene-engine.test.ts`: small complete scenes that show the API in use.
+2. `telegram-chats.ts`, `withUpdate()` and `runScenes()`: how a context and the scenes get their session.
+3. `telegram-scene-engine.ts`, `withScenes()`, and `telegram-scene-run.ts`, `handle()`: how scenes get updates and when they are saved and drawn.
+4. `telegram-chats.test.ts` and `test/telegram-scene-fixtures.ts`: small complete scenes that show the API in use.
