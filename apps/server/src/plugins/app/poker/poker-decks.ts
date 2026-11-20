@@ -1,3 +1,5 @@
+import { Translate } from "../i18n-service.js";
+
 export const pokerDeckNames = [
     "fibonacciShort",
     "fibonacciModified",
@@ -43,4 +45,19 @@ const decks: Record<
 
 export function readPokerDeck(name: PokerDeckName): PokerDeck {
     return { name, ...decks[name] };
+}
+
+export function formatPokerDeckName(t: Translate, deck: PokerDeckName): string {
+    switch (deck) {
+        case "fibonacciShort":
+            return t("poker:deckFibonacciShort");
+        case "fibonacciModified":
+            return t("poker:deckFibonacciModified");
+        case "fibonacci":
+            return t("poker:deckFibonacci");
+        case "powersOfTwo":
+            return t("poker:deckPowersOfTwo");
+        case "tShirt":
+            return t("poker:deckTShirt");
+    }
 }

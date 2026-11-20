@@ -285,7 +285,7 @@ The screen shows no mean. One outlier moves the mean far, and planning poker aim
 
 ## Participant labels
 
-`describePokerParticipants` in `poker-format.ts` builds the label of every participant for the viewer:
+`describePokerParticipants` in `poker-participant-labels.ts` builds the label of every participant for the viewer:
 
 1. The name is `firstName`, else `@username`, else `Participant`, cut to 20 graphemes with `…`. `Intl.Segmenter` cuts by graphemes, so an emoji or a letter with a diacritic stays whole.
 2. When two participants have the same name, the label adds `(@username)` of each one who has it.
@@ -303,7 +303,7 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal                   | [A room document](#a-room-document)                           |
 | `poker-room-transitions.ts`                                               | A new room and the changes of a room as pure functions                                                       | [A room document](#a-room-document)                           |
-| `poker-decks.ts`                                                          | The decks                                                                                                    | [Using the bot](#using-the-bot)                               |
+| `poker-decks.ts`                                                          | The decks and their names                                                                                    | [Using the bot](#using-the-bot)                               |
 | `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                                        | [A room document](#a-room-document)                           |
 | `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, removals, lists; the participant limit | [Joining a room](#joining-a-room)                             |
 | `poker-participant-emojis.ts`                                             | The emoji pool                                                                                               | [Joining a room](#joining-a-room)                             |
@@ -312,5 +312,6 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene with its state and button schemas: the room lists and the form                             | [Using the bot](#using-the-bot)                               |
 | `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene with its state and button schemas: voting, the revealed round, the history             | [Updates for the participants](#updates-for-the-participants) |
 | `poker-participants-screen.ts`                                            | The list of the participants and the card of one                                                             | [Leaving a room](#leaving-a-room)                             |
-| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                                               | [Participant labels](#participant-labels)                     |
+| `poker-participant-labels.ts`                                             | The label of every participant for the viewer                                                                | [Participant labels](#participant-labels)                     |
+| `poker-format.ts`                                                         | HTML message parts, room titles, the texts of a summary, the title check of a step                           | [The round summary](#the-round-summary)                       |
 | `poker-events.ts`, `poker-locales.ts`                                     | `poker.roomChanged`, texts                                                                                   |                                                               |

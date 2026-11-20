@@ -6,8 +6,11 @@ import {
     formatTelegramHtmlLabeled,
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { pokerDeckNames, readPokerDeck } from "./poker-decks.js";
-import { formatPokerDeckName } from "./poker-format.js";
+import {
+    formatPokerDeckName,
+    pokerDeckNames,
+    readPokerDeck,
+} from "./poker-decks.js";
 import { PokerDraft, PokerView } from "./poker-scene.js";
 
 export function renderPokerForm({

@@ -1,23 +1,15 @@
-import { ObjectId } from "mongodb";
 import { Translate } from "../i18n-service.js";
 import {
     escapeTelegramHtml,
     formatTelegramHtmlBold,
 } from "../telegram/telegram-html.js";
-import { UserEntity } from "../users/user-entity.js";
-import { PokerDeckName } from "./poker-decks.js";
-import {
-    isPokerTitleTooLong,
-    listKnownPokerParticipants,
-    PokerRoomEntity,
-} from "./poker-room-entity.js";
+import { isPokerTitleTooLong, PokerRoomEntity } from "./poker-room-entity.js";
 import {
     PokerAgreement,
     PokerCardVotes,
     PokerRoundSummary,
 } from "./poker-round-summary.js";
 
-const nameGraphemes = 20;
 const maxListedVoters = 10;
 const agreementIcons: Record<PokerAgreement, string> = {
     none: "—",
@@ -25,7 +17,6 @@ const agreementIcons: Record<PokerAgreement, string> = {
     close: "👍",
     spread: "⚠️",
 };
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function formatPokerHeader(
     room: PokerRoomEntity,
@@ -65,60 +56,6 @@ export function formatPokerRoomTime(date: Date, timeZone: string): string {
         parts.find((part) => part.type === type)?.value ?? "";
 
     return `${readPart("day")}.${readPart("month")} ${readPart("hour")}:${readPart("minute")}`;
-}
-
-export function formatPokerDeckName(t: Translate, deck: PokerDeckName): string {
-    switch (deck) {
-        case "fibonacciShort":
-            return t("poker:deckFibonacciShort");
-        case "fibonacciModified":
-            return t("poker:deckFibonacciModified");
-        case "fibonacci":
-            return t("poker:deckFibonacci");
-        case "powersOfTwo":
-            return t("poker:deckPowersOfTwo");
-        case "tShirt":
-            return t("poker:deckTShirt");
-    }
-}
-
-export function describePokerParticipants(
-    t: Translate,
-    room: PokerRoomEntity,
-    users: UserEntity[],
-    viewerId: ObjectId,
-): Map<string, string> {
-    const named = listKnownPokerParticipants(room).map((participant) => {
-        const user = users.find(({ _id }) => _id.equals(participant.userId));
-
-        return {
-            participant,
-            user,
-            name: truncateName(
-                user?.firstName ??
-                    (user?.username ? `@${user.username}` : undefined) ??
-                    t("poker:participant"),
-            ),
-        };
-    });
-
-    return new Map(
-        named.map(({ participant, user, name }) => {
-            const isNameShared =
-                named.filter((other) => other.name === name).length > 1;
-            const parts = [`${participant.emoji} ${name}`];
-
-            if (isNameShared && user?.username && user.firstName) {
-                parts.push(`(@${user.username})`);
-            }
-
-            if (participant.userId.equals(viewerId)) {
-                parts.push(`(${t("poker:you")})`);
-            }
-
-            return [participant.userId.toHexString(), parts.join(" ")];
-        }),
-    );
 }
 
 export function formatPokerAgreement(
@@ -184,14 +121,6 @@ export function validatePokerTitle(
     return isPokerTitleTooLong(text, max)
         ? t("poker:titleTooLong", { max })
         : undefined;
-}
-
-function truncateName(name: string): string {
-    const parts = [...graphemes.segment(name)].map(({ segment }) => segment);
-
-    return parts.length > nameGraphemes
-        ? `${parts.slice(0, nameGraphemes).join("")}…`
-        : name;
 }
 
 function formatVoters(
