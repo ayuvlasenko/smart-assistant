@@ -183,15 +183,19 @@ export class TelegramResponder {
             );
         }
 
-        unwrapTelegramResponse(
-            "answerCallbackQuery",
-            await this.telegramApiService.answerCallbackQuery({
-                callback_query_id: this.callbackQuery.id,
-                ...(text === undefined ? {} : { text }),
-            }),
-        );
+        const result = await this.telegramApiService.answerCallbackQuery({
+            callback_query_id: this.callbackQuery.id,
+            ...(text === undefined ? {} : { text }),
+        });
 
         this.isCallbackAnswered = true;
+
+        if (!result.ok) {
+            this.log.warn(
+                { description: result.description },
+                "Failed to answer callback query",
+            );
+        }
     }
 
     hasPendingCallback(): boolean {

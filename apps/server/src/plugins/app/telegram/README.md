@@ -455,7 +455,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 - A repeated `send*` whose first request did run leaves two messages in the chat. The scene records only the second one, so a button of the first answers `telegram:buttonExpired`.
 - A repeated edit whose first request did run gets `message is not modified`. `TelegramResponder.edit` and `editKeyboard` take that answer as a success, and `removeKeyboard` logs it and goes on.
 - A repeated delete whose first request did run gets an error answer, and `TelegramResponder.deleteMessage` returns `false` as for any message that is already gone.
-- We have not measured what Telegram answers to a second `answerCallbackQuery` for one press. `TelegramResponder` throws on an answer that is not `ok`, so such a repeat may end the update with `telegram:error`.
+- `TelegramResponder.answerCallback` logs an answer that is not `ok`, `Failed to answer callback query`, and goes on: the notice over the chat is the only thing the answer carries. So a repeated `answerCallbackQuery`, and an answer that comes after the press waited for the session lock or the rate limiter longer than Telegram keeps the query open (`query is too old`), never turn a refused or expired press into `telegram:error`.
 - `telegram_api_requests_total{result="network_error"}` and `{result="bad_answer"}` count every attempt, so one call that fails three times adds 3.
 
 ## Scene instances

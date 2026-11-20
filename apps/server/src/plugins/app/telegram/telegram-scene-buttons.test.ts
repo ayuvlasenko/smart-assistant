@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
+import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramCallbackQueryUpdate,
@@ -43,6 +44,35 @@ void describe("TelegramSceneButtons", () => {
 
         assert.deepEqual(bot.readSentTexts().slice(-1), ["Hi A"]);
         assert.deepEqual(readAnswerTexts(bot), [undefined]);
+    });
+
+    void it("stays silent when Telegram refuses the late answer of an expired press", async (t) => {
+        const logs = createLoggerCollector();
+        const chat = buildTelegramPrivateChat({ id: 987654398 });
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            logger: logs.logger,
+        });
+
+        bot.telegramApiService.answerCallbackQuery.mock.mockImplementation(
+            async () => ({
+                ok: false,
+                error_code: 400,
+                description:
+                    "Bad Request: query is too old and response timeout expired or query ID is invalid",
+            }),
+        );
+
+        await bot.allowUser(chat.id);
+        await bot.sendCallback(chat, "missing:1");
+
+        assert.deepEqual(bot.readSentTexts(), []);
+        assert.ok(
+            logs
+                .readEntries()
+                .some(({ msg }) => msg === "Failed to answer callback query"),
+        );
     });
 
     void it("reports an error once when the session is lost after a press", async (t) => {
