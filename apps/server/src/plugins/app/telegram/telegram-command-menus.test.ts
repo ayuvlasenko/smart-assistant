@@ -25,6 +25,7 @@ void describe("TelegramCommandMenus on start", () => {
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
+                autoBan: false,
                 registerRoutes: (router) => {
                     router.command("help", async () => undefined, {
                         description: (translate) =>
@@ -65,6 +66,7 @@ void describe("TelegramCommandMenus on start", () => {
             await buildTwoBotsTestApp({
                 testMongo,
                 t,
+                autoBan: false,
                 telegramApiService: failing,
                 logger: logs.logger,
             });
@@ -350,6 +352,29 @@ void describe("TelegramCommandMenus chat menus", () => {
         ]);
     });
 
+    void it("removes the chat menu of a user who was banned", async (t) => {
+        const { telegramApiService, telegramCommandMenus } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+        const user = await insertUser({
+            telegramId: "987654612",
+            grants: ["vip"],
+        });
+
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser({
+            ...(await readUser(user)),
+            isBanned: true,
+        });
+
+        assert.deepEqual(
+            telegramApiService.deleteMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [[{ scope: { type: "chat", chat_id: 987654612 } }]],
+        );
+        assert.equal((await readUser(user)).commandMenu, undefined);
+    });
+
     void it("doesn't set chat commands for banned users", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
@@ -454,6 +479,52 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 });
 
+void describe("TelegramCommandMenus of a bot that bans its newcomers", () => {
+    void it("shows newcomers no menu, because they can run no command", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                autoBan: true,
+            });
+
+        await telegramBotService.setUpOnStart();
+
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
+        assert.deepEqual(
+            telegramApiService.deleteMyCommands.mock.calls.map(
+                (call) => call.arguments[0].language_code,
+            ),
+            [undefined, "en", "uk", "ru"],
+        );
+    });
+
+    void it("gives a user with access a menu of the chat", async (t) => {
+        const { telegramApiService, telegramCommandMenus } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                autoBan: true,
+            });
+        const user = await insertUser({ telegramId: "987654613" });
+
+        await telegramCommandMenus.syncUser(user);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [
+                [
+                    {
+                        commands: buildExpectedCommands("en"),
+                        scope: { type: "chat", chat_id: 987654613 },
+                    },
+                ],
+            ],
+        );
+        assert.notEqual((await readUser(user)).commandMenu, undefined);
+    });
+});
+
 async function insertUser(overrides: Partial<UserEntity>): Promise<UserEntity> {
     const user = buildUserEntity(overrides);
 
@@ -478,6 +549,7 @@ function buildMenuAppOptions(
     return {
         testMongo,
         t,
+        autoBan: false,
         registerRoutes: (router) => {
             router.command("help", async () => undefined, {
                 description: (translate) =>

@@ -333,7 +333,7 @@ void describe("telegram plugin on listen", () => {
 
         assert.equal(telegramApiService.getMe.mock.callCount(), 0);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
-        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
+        assert.equal(telegramApiService.deleteMyCommands.mock.callCount(), 4);
     });
 
     void it("reports the skipped webhook on preview", async (t) => {

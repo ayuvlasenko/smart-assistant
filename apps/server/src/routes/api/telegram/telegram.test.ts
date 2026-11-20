@@ -282,7 +282,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             ],
         );
         assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls.map(
+            telegramApiService.deleteMyCommands.mock.calls.map(
                 (call) => call.arguments[0].language_code ?? "default",
             ),
             ["default", "en", "uk", "ru"],

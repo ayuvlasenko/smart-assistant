@@ -1,6 +1,5 @@
-import { ObjectId } from "mongodb";
 import { BaseEntity } from "../../../entity.js";
-import { defaultLanguage, Language } from "../i18n-service.js";
+import { Language } from "../i18n-service.js";
 
 export type UserSettings = Record<string, Record<string, unknown>>;
 
@@ -29,20 +28,4 @@ export function readUserSetting(
     const [domain = "", key = ""] = name.split(".");
 
     return user.settings?.[domain]?.[key];
-}
-
-export function buildUserWithoutGrants(botId: string): UserEntity {
-    const now = new Date();
-
-    return {
-        _id: new ObjectId(),
-        version: 0,
-        createdAt: now,
-        updatedAt: now,
-        botId,
-        telegramId: "0",
-        isBanned: false,
-        grants: [],
-        languageCode: defaultLanguage,
-    };
 }

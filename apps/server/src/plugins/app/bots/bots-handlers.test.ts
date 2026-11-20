@@ -10,6 +10,7 @@ import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
 } from "../../../test/telegram-api-service-mock.js";
+import { setTestBotAutoBan } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
@@ -336,6 +337,7 @@ void describe("/bots", () => {
             defaultGrants,
             [pokerJoinGrant],
         );
+        await setTestBotAutoBan(bot.app, childId, false);
         await bot.botsService.setStartModule(actor, childId, "poker");
 
         assert.deepEqual(

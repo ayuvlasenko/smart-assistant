@@ -40,7 +40,7 @@ void describe("Settings menu", () => {
     });
 
     void it("switches the language of a user at once, with the command menu of the chat", async (t) => {
-        const bot = await buildBot(t);
+        const bot = await buildBot(t, false);
         const user = buildTelegramPrivateChat({ id: 987655308 });
         const ru = settingsLocales.ru;
 
@@ -163,7 +163,7 @@ void describe("Settings menu", () => {
     });
 
     void it("puts the command that the default access opens into the menu of the bot", async (t) => {
-        const bot = await buildBot(t);
+        const bot = await buildBot(t, false);
         const admin = await allowAdmin(bot, 987655306);
         const user = buildTelegramPrivateChat({ id: 987655307 });
 
@@ -193,10 +193,11 @@ void describe("Settings menu", () => {
     });
 });
 
-function buildBot(t: TestContext): Promise<PokerBot> {
+function buildBot(t: TestContext, autoBan = true): Promise<PokerBot> {
     return buildPokerBot({
         testMongo,
         t,
+        autoBan,
         plugins: [settingsHandlersPlugin],
     });
 }

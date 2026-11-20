@@ -14,10 +14,12 @@ import {
     languages,
     Translate,
 } from "../i18n-service.js";
-import { buildUserWithoutGrants, UserEntity } from "../users/user-entity.js";
+import { UserEntity } from "../users/user-entity.js";
 import { languageOf } from "../users/user-language.js";
 import { UsersEvents } from "../users/users-events.js";
 import { UsersRepository } from "../users/users-repository.js";
+import { UsersService } from "../users/users-service.js";
+import { TelegramMethodArgs } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { unwrapTelegramResponse } from "./telegram-errors.js";
 import { isAllowed } from "./telegram-guard.js";
@@ -30,6 +32,10 @@ interface TelegramBotMenu {
     commands: BotCommand[];
 }
 
+type TelegramMenuTarget = NonNullable<
+    TelegramMethodArgs<"deleteMyCommands">[0]
+>;
+
 const botMenuHashTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
 
 export class TelegramCommandMenus {
@@ -38,6 +44,7 @@ export class TelegramCommandMenus {
     private readonly telegramRouter: TelegramRouter;
     private readonly telegramStartEntries: TelegramStartEntries;
     private readonly usersRepository: UsersRepository;
+    private readonly usersService: UsersService;
     private readonly cache: CacheService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
@@ -48,6 +55,7 @@ export class TelegramCommandMenus {
         telegramRouter: TelegramRouter,
         telegramStartEntries: TelegramStartEntries,
         usersRepository: UsersRepository,
+        usersService: UsersService,
         cache: CacheService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
@@ -57,6 +65,7 @@ export class TelegramCommandMenus {
         this.telegramRouter = telegramRouter;
         this.telegramStartEntries = telegramStartEntries;
         this.usersRepository = usersRepository;
+        this.usersService = usersService;
         this.cache = cache;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
@@ -68,12 +77,10 @@ export class TelegramCommandMenus {
         await this.cache.delete(botMenuKeyOf(bot));
 
         for (const { languageCode, commands } of menus) {
-            unwrapTelegramResponse(
-                "setMyCommands",
-                await bot.api.setMyCommands({
-                    commands,
-                    ...(languageCode ? { language_code: languageCode } : {}),
-                }),
+            await setMenu(
+                bot,
+                commands,
+                languageCode ? { language_code: languageCode } : {},
             );
         }
 
@@ -127,10 +134,6 @@ export class TelegramCommandMenus {
     }
 
     async sync(bot: TelegramBot, user: UserEntity): Promise<void> {
-        if (user.isBanned) {
-            return;
-        }
-
         try {
             await this.syncChatMenu(bot, user);
         } catch (err) {
@@ -142,6 +145,7 @@ export class TelegramCommandMenus {
         bot: TelegramBot,
         user: UserEntity,
     ): Promise<void> {
+        const newcomer = await this.usersService.buildNewcomer(user.botId);
         const [commands, defaultCommands] = await Promise.all([
             this.describeCommandsOf(
                 bot,
@@ -150,13 +154,14 @@ export class TelegramCommandMenus {
             ),
             this.describeCommandsOf(
                 bot,
-                buildUserWithoutGrants(user.botId),
+                newcomer,
                 this.i18nService.getT(user.languageCode),
             ),
         ]);
-        const commandMenu = isDeepStrictEqual(commands, defaultCommands)
-            ? undefined
-            : hashMenus(bot, [{ commands }]);
+        const commandMenu =
+            user.isBanned || isDeepStrictEqual(commands, defaultCommands)
+                ? undefined
+                : hashMenus(bot, [{ commands }]);
 
         if (commandMenu === user.commandMenu) {
             this.telegramMetrics.recordCommandMenuSync("unchanged");
@@ -194,8 +199,8 @@ export class TelegramCommandMenus {
         );
     }
 
-    private buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
-        const user = buildUserWithoutGrants(bot.id);
+    private async buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
+        const user = await this.usersService.buildNewcomer(bot.id);
 
         return Promise.all(
             [undefined, ...languages].map(async (languageCode) => ({
@@ -214,6 +219,10 @@ export class TelegramCommandMenus {
         user: UserEntity,
         t: Translate,
     ): Promise<BotCommand[]> {
+        if (user.isBanned) {
+            return [];
+        }
+
         const startEntry = await this.telegramStartEntries.find(bot, user);
         const commands: BotCommand[] = startEntry
             ? [{ command: "start", description: startEntry.description(t) }]
@@ -236,21 +245,29 @@ export class TelegramCommandMenus {
         chatId: number,
         commands: BotCommand[] | undefined,
     ): Promise<void> {
-        const scope = { type: "chat", chat_id: chatId } as const;
-
-        if (commands) {
-            unwrapTelegramResponse(
-                "setMyCommands",
-                await bot.api.setMyCommands({ commands, scope }),
-            );
-            return;
-        }
-
-        unwrapTelegramResponse(
-            "deleteMyCommands",
-            await bot.api.deleteMyCommands({ scope }),
-        );
+        await setMenu(bot, commands ?? [], {
+            scope: { type: "chat", chat_id: chatId },
+        });
     }
+}
+
+async function setMenu(
+    bot: TelegramBot,
+    commands: BotCommand[],
+    target: TelegramMenuTarget,
+): Promise<void> {
+    if (commands.length) {
+        unwrapTelegramResponse(
+            "setMyCommands",
+            await bot.api.setMyCommands({ commands, ...target }),
+        );
+        return;
+    }
+
+    unwrapTelegramResponse(
+        "deleteMyCommands",
+        await bot.api.deleteMyCommands(target),
+    );
 }
 
 function hashMenus(bot: TelegramBot, menus: TelegramBotMenu[]): string {
@@ -273,6 +290,7 @@ export default fp(
             fastify.getDecorator<TelegramRouter>("telegramRouter"),
             fastify.getDecorator<TelegramStartEntries>("telegramStartEntries"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
+            fastify.getDecorator<UsersService>("usersService"),
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
@@ -298,6 +316,7 @@ export default fp(
             "telegram-router",
             "telegram-start-entries",
             "users-repository",
+            "users-service",
         ],
     },
 );
