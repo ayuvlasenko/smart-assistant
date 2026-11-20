@@ -294,7 +294,7 @@ X-Telegram-Bot-Api-Secret-Token                                 base64url of HMA
 1. The route reads `telegramId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
 2. The route reads the bot from MongoDB with `TelegramBots.findByTelegramId`. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
-4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
+4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id once it holds the permit and the session lock of the user, so a ban, a grant or a language that the running update of the user changed already counts. It skips a bot that the registry does not serve, such as a stopped one, and a missing or banned user.
 
 **Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 

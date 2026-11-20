@@ -24,6 +24,7 @@ import {
 } from "./telegram-scene-storage.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSessionStore } from "./telegram-session-store.js";
+import { TelegramSession } from "./telegram-session.js";
 
 export interface TelegramChatOptions {
     bot: TelegramBot;
@@ -88,7 +89,19 @@ export class TelegramChats {
         { update, responder, ...chat }: TelegramUpdateOptions,
         handle: (ctx: TelegramContext<Update>) => Promise<T>,
     ): Promise<T> {
-        return this.withContext(chat, update, responder, handle);
+        return this.sessionStore.withSession(
+            chat.bot.telegramId,
+            chat.telegramUserId,
+            (session, signal) =>
+                this.runScenes(
+                    chat,
+                    session,
+                    signal,
+                    update,
+                    responder,
+                    handle,
+                ),
+        );
     }
 
     deliver<TStateSchema extends TObject>(
@@ -170,7 +183,7 @@ export class TelegramChats {
             this.telegramMetrics.startRecipientDelivery("deliver");
 
         try {
-            await this.withUser(
+            await this.withStoredUser(
                 await bot,
                 target.telegramUserId,
                 { scene: scene.name },
@@ -276,7 +289,7 @@ export class TelegramChats {
             this.telegramMetrics.startRecipientDelivery("publish");
 
         try {
-            await this.withUser(
+            await this.withStoredUser(
                 bot,
                 telegramUserId,
                 { topics },
@@ -341,20 +354,13 @@ export class TelegramChats {
         void delivery.finally(() => this.pendingDeliveries.delete(delivery));
     }
 
-    private async withUser(
+    private async withStoredUser(
         bot: TelegramBot | undefined,
         telegramUserId: number,
         bindings: Record<string, unknown>,
         handle: (ctx: TelegramContext<undefined>) => Promise<unknown>,
     ): Promise<void> {
-        const user =
-            bot &&
-            (await this.usersRepository.findOneByTelegramId(
-                bot.id,
-                String(telegramUserId),
-            ));
-
-        if (!bot || !user || user.isBanned) {
+        if (!bot) {
             return;
         }
 
@@ -363,57 +369,66 @@ export class TelegramChats {
             telegramUserId,
             ...bindings,
         });
-
-        await this.withChat({ bot, telegramUserId, user, log }, handle);
-    }
-
-    private withChat<T>(
-        chat: TelegramChatOptions,
-        handle: (ctx: TelegramContext<undefined>) => Promise<T>,
-    ): Promise<T> {
         const responder = new TelegramResponder(
-            chat.telegramUserId,
+            telegramUserId,
             undefined,
-            chat.bot.api,
-            chat.log,
+            bot.api,
+            log,
         );
 
-        return this.deliveryPermits.run(chat.bot.id, () =>
-            this.withContext(chat, undefined, responder, handle),
+        await this.deliveryPermits.run(bot.id, () =>
+            this.sessionStore.withSession(
+                bot.telegramId,
+                telegramUserId,
+                async (session, signal) => {
+                    const user = await this.usersRepository.findOneByTelegramId(
+                        bot.id,
+                        String(telegramUserId),
+                    );
+
+                    if (!user || user.isBanned) {
+                        return;
+                    }
+
+                    await this.runScenes(
+                        { bot, telegramUserId, user, log },
+                        session,
+                        signal,
+                        undefined,
+                        responder,
+                        handle,
+                    );
+                },
+            ),
         );
     }
 
-    private withContext<TUpdate extends Update | undefined, T>(
-        { bot, telegramUserId, user, log }: TelegramChatOptions,
+    private runScenes<TUpdate extends Update | undefined, T>(
+        { bot, user, log }: TelegramChatOptions,
+        session: TelegramSession,
+        signal: AbortSignal,
         update: TUpdate,
         responder: TelegramResponder,
         handle: (ctx: TelegramContext<TUpdate>) => Promise<T>,
     ): Promise<T> {
-        return this.sessionStore.withSession(
-            bot.telegramId,
-            telegramUserId,
-            (session, signal) => {
-                const ctx = new TelegramContext({
-                    bot,
-                    update,
-                    user,
-                    session,
-                    log,
-                    translatorOf: (current) =>
-                        this.i18nService.getT(languageOf(current)),
-                    timeZone: user.timeZone ?? this.config.TIME_ZONE,
-                    responder,
-                });
+        const ctx = new TelegramContext({
+            bot,
+            update,
+            user,
+            session,
+            log,
+            translatorOf: (current) =>
+                this.i18nService.getT(languageOf(current)),
+            timeZone: user.timeZone ?? this.config.TIME_ZONE,
+            responder,
+        });
 
-                return telegramApiScope.run(
-                    {
-                        signal,
-                        priority:
-                            update === undefined ? "background" : "interactive",
-                    },
-                    () => this.sceneEngine.withScenes(ctx, () => handle(ctx)),
-                );
+        return telegramApiScope.run(
+            {
+                signal,
+                priority: update === undefined ? "background" : "interactive",
             },
+            () => this.sceneEngine.withScenes(ctx, () => handle(ctx)),
         );
     }
 }

@@ -272,6 +272,41 @@ void describe("TelegramChats", () => {
         assert.deepEqual(await readWatchers(bot, "board:b"), [ada.id]);
     });
 
+    void it("reads a waiting watcher after its running update, so a ban in that update counts", async (t) => {
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654472 });
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+
+        await bot.sendText(ada, "/board");
+        boards.slowSwitch = { entered, gate: gate.promise, view: "a" };
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+
+        const press = bot.pressButton(ada, "Slow b");
+
+        await entered.promise;
+        bot.telegramChats.publish(testBotId, ["board:a"]);
+
+        try {
+            await setTimeout(200);
+            await testMongo.mongo
+                .collection("users")
+                .updateOne(
+                    { telegramId: String(ada.id) },
+                    { $set: { isBanned: true } },
+                );
+        } finally {
+            gate.resolve();
+            await press;
+        }
+
+        boards.a = 1;
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), []);
+    });
+
     void it("skips a watcher who fails the guard of the scene or is banned", async (t) => {
         const boards: TestBoards = { a: 0, b: 0 };
         const bot = await buildBoardBot(t, boards);
@@ -343,6 +378,7 @@ interface TestBoards {
     slowSwitch?: {
         entered: PromiseWithResolvers<void>;
         gate: Promise<void>;
+        view?: "a" | "b";
     };
 }
 
@@ -417,7 +453,7 @@ async function buildBoardBot(
                 handle: async (ctx, scene) => {
                     boards.slowSwitch?.entered.resolve();
                     await boards.slowSwitch?.gate;
-                    scene.state.view = "b";
+                    scene.state.view = boards.slowSwitch?.view ?? "b";
                 },
             },
         },
