@@ -201,6 +201,50 @@ void describe("BotsRegistry", () => {
     });
 });
 
+void describe("BotsRegistry root token of a stored bot", () => {
+    void it("makes the stored bot of the root token the root bot, with the bots module", async (t) => {
+        const key = randomBytes(32).toString("base64");
+        const first = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: { BOTS_ENCRYPTION_KEY: key },
+        });
+        const child = await first.botsRepository.createIfMissing({
+            telegramId: "42",
+            username: "child_bot",
+            token: new BotTokenCipher(key).encrypt("42:child-token"),
+        });
+
+        assert.ok(child);
+
+        const second = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: {
+                BOTS_ENCRYPTION_KEY: key,
+                TELEGRAM_BOT_TOKEN: "42:child-token",
+            },
+        });
+
+        assert.equal(second.botsRegistry.rootId, child._id);
+        assert.deepEqual(
+            await testMongo.mongo
+                .collection<BotEntity>("bots")
+                .find({ isRoot: true })
+                .map(({ _id }) => _id)
+                .toArray(),
+            [child._id],
+        );
+        assert.ok(
+            (await second.botsRegistry.modulesOf(child._id)).includes("bots"),
+        );
+        assert.equal(
+            await second.botsRegistry.find(first.botsRegistry.rootId),
+            undefined,
+        );
+    });
+});
+
 void describe("Bot modules", () => {
     void it("closes the commands and the old buttons of a module that is off, also for an admin", async (t) => {
         const bot = await buildPokerBot({ testMongo, t });
