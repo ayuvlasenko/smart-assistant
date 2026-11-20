@@ -162,18 +162,13 @@ function readRemoveButton(
         ? "poker:leaveButton"
         : "poker:removeButton";
 
-    return {
-        ...scene.button(
-            ctx.t(
-                scene.isConfirming("remove")
-                    ? "poker:confirmRemoveButton"
-                    : label,
-            ),
-            "remove",
-            participant.userId.toHexString(),
+    return scene.button(
+        ctx.t(
+            scene.isConfirming("remove") ? "poker:confirmRemoveButton" : label,
         ),
-        style: "danger",
-    };
+        "remove",
+        participant.userId.toHexString(),
+    );
 }
 
 function isOwn({ ctx }: PokerRoomView, participant: PokerParticipant): boolean {

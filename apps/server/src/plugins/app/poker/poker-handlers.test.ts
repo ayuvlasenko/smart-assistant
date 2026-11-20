@@ -656,25 +656,35 @@ void describe("Poker rooms", () => {
 
         await bot.pressButton(creator, en.moreButton);
 
-        assert.deepEqual(
+        const lastRows = async () =>
             (await readRoomKeyboard(bot, creator))
                 .slice(-2)
-                .map((row) => row.map(({ text, style }) => ({ text, style }))),
+                .map((row) => row.map(({ text, style }) => ({ text, style })));
+
+        assert.deepEqual(await lastRows(), [
             [
-                [
-                    { text: en.autoRevealButton, style: undefined },
-                    { text: en.leaveButton, style: "danger" },
-                ],
-                [
-                    { text: en.backButton, style: undefined },
-                    { text: en.closeButton, style: "danger" },
-                ],
+                { text: en.autoRevealButton, style: undefined },
+                { text: en.leaveButton, style: undefined },
             ],
-        );
+            [
+                { text: en.backButton, style: undefined },
+                { text: en.closeButton, style: undefined },
+            ],
+        ]);
 
         await bot.pressButton(creator, en.leaveButton);
 
         assert.equal((await readRoom()).participants.length, 2);
+        assert.deepEqual(await lastRows(), [
+            [
+                { text: en.autoRevealButton, style: undefined },
+                { text: en.confirmRemoveButton, style: "danger" },
+            ],
+            [
+                { text: en.backButton, style: undefined },
+                { text: en.closeButton, style: undefined },
+            ],
+        ]);
 
         await bot.pressButton(creator, en.confirmRemoveButton);
         await bot.telegramChats.idle();
@@ -734,17 +744,23 @@ void describe("Poker rooms", () => {
         await joinRoom(bot, member);
         await bot.pressButton(member, en.moreButton);
 
-        assert.deepEqual(
+        const navigationRow = async () =>
             (await readRoomKeyboard(bot, member))
                 .at(-1)
-                ?.map(({ text, style }) => ({ text, style })),
-            [
-                { text: en.backButton, style: undefined },
-                { text: en.closeButton, style: "danger" },
-            ],
-        );
+                ?.map(({ text, style }) => ({ text, style }));
+
+        assert.deepEqual(await navigationRow(), [
+            { text: en.backButton, style: undefined },
+            { text: en.closeButton, style: undefined },
+        ]);
 
         await bot.pressButton(member, en.closeButton);
+
+        assert.deepEqual(await navigationRow(), [
+            { text: en.backButton, style: undefined },
+            { text: en.confirmCloseButton, style: "danger" },
+        ]);
+
         await bot.pressButton(member, en.historyButton);
         await bot.pressButton(member, en.backButton);
         await bot.pressButton(member, en.closeButton);

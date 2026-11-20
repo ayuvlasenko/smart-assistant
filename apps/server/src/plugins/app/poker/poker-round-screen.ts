@@ -189,18 +189,15 @@ function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
         ],
         [
             scene.backButton(t("poker:backButton")),
-            {
-                ...scene.button(
-                    t(
-                        scene.isConfirming("close")
-                            ? "poker:confirmCloseButton"
-                            : "poker:closeButton",
-                    ),
-                    "close",
-                    null,
+            scene.button(
+                t(
+                    scene.isConfirming("close")
+                        ? "poker:confirmCloseButton"
+                        : "poker:closeButton",
                 ),
-                style: "danger",
-            },
+                "close",
+                null,
+            ),
         ],
     ];
 }
@@ -220,18 +217,15 @@ function readWatchButton(view: PokerRoomView): InlineKeyboardButton {
 }
 
 function readLeaveButton({ ctx, scene }: PokerRoomView): InlineKeyboardButton {
-    return {
-        ...scene.button(
-            ctx.t(
-                scene.isConfirming("remove")
-                    ? "poker:confirmRemoveButton"
-                    : "poker:leaveButton",
-            ),
-            "remove",
-            ctx.user._id.toHexString(),
+    return scene.button(
+        ctx.t(
+            scene.isConfirming("remove")
+                ? "poker:confirmRemoveButton"
+                : "poker:leaveButton",
         ),
-        style: "danger",
-    };
+        "remove",
+        ctx.user._id.toHexString(),
+    );
 }
 
 function describeAutoReveal({ ctx, room }: PokerRoomView): string[] {

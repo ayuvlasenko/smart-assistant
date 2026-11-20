@@ -187,7 +187,7 @@ events.on("reports.reportChanged", ({ data }) => {
 
 A screen without params takes no second argument: `scene.push("form")`. Each move cancels the waiting input of the scene and a pending confirmation. A `guard` on a screen hides it: the engine refuses a move to it and shows `root` instead when the user loses the access.
 
-**Confirmation.** Mark a destructive button `confirm: true`. The first press only remembers the button and its value and draws the screen again; the second press of the same button with the same value runs `handle`. Any other button of the scene and any move cancel it. Draw the second label with `scene.isConfirming(name)`, such as `⛔ Sure?`.
+**Confirmation.** Mark a destructive button `confirm: true`. The first press only remembers the button and its value and draws the screen again; the second press of the same button with the same value runs `handle`. Any other button of the scene and any move cancel it. Draw the second label with `scene.isConfirming(name)`, such as `⛔ Sure?`. `scene.button` gives the button that waits for its second press `style: "danger"` by itself, so a screen never colours a destructive button.
 
 **Text.** Build an HTML text message with `buildTelegramHtmlMessage(lines, keyboard)` from `telegram-html.ts`. It drops the empty rows of the keyboard and cuts a text over 4096 characters at a line, with `…` at the end. `formatTelegramHtmlBold` and `formatTelegramHtmlLabeled` escape what they format; split a long row of buttons with `inRowsOf` from `telegram-keyboard.ts`.
 
@@ -229,7 +229,7 @@ Every inline keyboard follows the same layout, so a user finds the same kind of 
 1. Order the rows from top to bottom: the options to pick from (items, cards, decks), the page row, the main action of the screen, the secondary actions, and the navigation row.
 2. Put the navigation row last. `‹ Back` stands on its left. The action that finishes the screen, such as `✅ Create`, `🔒 Close` or `⛔ Revoke`, stands on its right. A screen without `‹ Back` puts its dismiss button, such as `✖️ Hide`, in that row.
 3. Put at most two buttons in a row. A grid of options is the exception: up to six cards, or up to three choices of a period.
-4. Colour only two kinds of buttons through `style`: the main action gets `primary` or `success`, a destructive action gets `danger`. A client without `style` shows plain buttons, so the text of a button must make sense without the colour.
+4. Colour only two kinds of buttons through `style`: the main action gets `primary` or `success`, and a destructive action gets `danger` only while it waits for its second press. The engine sets that red, so the button is plain until the user presses it once, and the red marks the press that cannot be undone. A client without `style` shows plain buttons, so the text of a button must make sense without the colour.
 5. Ask for a destructive action twice: declare its button with `confirm: true`. The second label is short, such as `⛔ Sure?`, so it still fits next to `‹ Back`. Any other button of the scene cancels the confirmation.
 6. Name the action on a button and show the values in the text of the message. A form button reads `🃏 Deck`, not `🃏 Deck: Fibonacci`, so two field buttons fit in one row.
 
@@ -531,7 +531,7 @@ A `scene` button runs a handler from `buttons` of the scene. A `screen` button, 
 - A message that the scene edited without a button, or deleted, no longer holds that button. A press on it, or on a message of an ended scene, gets `telegram:buttonExpired`.
 - A value that no longer matches the schema of its button after a deploy also gets `buttonExpired`. A failed guard gets an empty callback answer, so the press says nothing about the access of the user.
 - A press does not need the input focus, so the buttons of every running scene work at the same time.
-- A button with `confirm: true` keeps `confirming` in the record after the first press and runs `handle` only on the second press with the same value. Every other press of the scene, a `screen` or `back` button, an `input` button, a button with another value, and every move clear `confirming` first. `publish` and `deliver` redraw the screen and keep it, because the user pressed nothing.
+- A button with `confirm: true` keeps `confirming` in the record after the first press and runs `handle` only on the second press with the same value. While `confirming` names it, `scene.button` draws it with `style: "danger"`. Every other press of the scene, a `screen` or `back` button, an `input` button, a button with another value, and every move clear `confirming` first. `publish` and `deliver` redraw the screen and keep it, because the user pressed nothing.
 
 ## Screens and messages
 
