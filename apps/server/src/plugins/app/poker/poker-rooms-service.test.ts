@@ -158,6 +158,34 @@ void describe("PokerRoomsService create and join", () => {
         });
         assert.equal(await bot.pokerRoomsService.find(admin, room._id), null);
     });
+
+    void it("shows a room to an admin of its bot only while a participant", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+        const admin = await createUser(bot, [adminGrant]);
+
+        assert.equal(await bot.pokerRoomsService.find(admin, room._id), null);
+        assert.equal(
+            await bot.pokerRoomsService.vote(admin, room._id, {
+                round: 1,
+                card: "5",
+            }),
+            null,
+        );
+
+        await joinMember(bot, room, admin);
+        await bot.pokerRoomsService.removeParticipant(
+            creator,
+            room._id,
+            admin._id,
+        );
+
+        assert.equal(await bot.pokerRoomsService.find(admin, room._id), null);
+        assert.equal(
+            await bot.pokerRoomsService.isRemoved(admin, room._id),
+            true,
+        );
+    });
 });
 
 void describe("PokerRoomsService rounds", () => {

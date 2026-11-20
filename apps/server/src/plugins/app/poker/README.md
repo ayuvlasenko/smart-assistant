@@ -37,7 +37,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 | `read PokerRoom`   | `participants: { $elemMatch: { userId } }` | both           |
 | `create PokerRoom` | `createdBy: user._id`                      | `poker.create` |
 
-Inside a room every participant has the same rights, the creator included: `createdBy` only records who created the room. So a user reads a room only while a participant of it, and a creator who left loses the room like anybody else.
+Inside a room every participant has the same rights, the creator included: `createdBy` only records who created the room. So a user reads a room only while a participant of it, and a creator who left loses the room like anybody else. An admin of the bot passes `read PokerRoom` for every room through `manage all`, so `PokerRoomsService.find` and `list` also match `participants.userId` of the actor: an admin sees only the rooms they take part in.
 
 The flow of a user:
 
@@ -149,7 +149,7 @@ Before the write, the service runs `revealPokerRoundIfDue` on the changed room a
 
 **Walk-through.**
 
-1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets the `/start` answer.
+1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets no answer.
 2. The service loads the room by the bot of the user and the token, so a link of another bot gives `notFound` too. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
 3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
 4. It writes `participants` with the new participant through `PokerRoomsRepository.save`. A match gives `joined` and emits `poker.roomChanged`.
@@ -208,7 +208,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 2. `🚫 Remove` is a button with `confirm: true`, so the second press on `🚫 Sure?` calls `PokerRoomsService.removeParticipant`.
 3. `removePokerParticipant` moves the participant to `removedParticipants` and drops the vote of a `voting` round. The write is a change like any other, see [A room document](#a-room-document), so a removal of the last voter without a vote reveals the round.
 4. The service emits `poker.roomChanged` with the removed user among `userIds`, so the `/poker` list of that user redraws without the room.
-5. The room scene of the removed user redraws too. `PokerRoomsService.find` gives nothing, because the user has no `read PokerRoom` any more, and `PokerRoomsService.isRemoved` tells the removal from a missing room. The message turns into `You were removed from this room. Open its link to join again.` with `✖️ Hide`.
+5. The room scene of the removed user redraws too. `PokerRoomsService.find` gives nothing, because the user is no longer in `participants`, and `PokerRoomsService.isRemoved` tells the removal from a missing room. The message turns into `You were removed from this room. Open its link to join again.` with `✖️ Hide`.
 
 **Edge cases.**
 
