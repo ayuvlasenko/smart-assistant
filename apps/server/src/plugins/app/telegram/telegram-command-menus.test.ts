@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { setTimeout } from "node:timers/promises";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -149,6 +150,82 @@ void describe("TelegramCommandMenus chat menus", () => {
         await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 10);
+    });
+
+    void it("sets the newer menus last when two refreshes of a bot overlap", async (t) => {
+        const {
+            botsRegistry,
+            botsRepository,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            plugins: [registerStartEntry("ping")],
+        });
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+        const newerCalled = Promise.withResolvers<void>();
+
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => {
+                entered.resolve();
+                await gate.promise;
+
+                return { ok: true, result: true };
+            },
+            0,
+        );
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => {
+                newerCalled.resolve();
+
+                return { ok: true, result: true };
+            },
+            1,
+        );
+
+        const older = telegramCommandMenus.refresh(await telegramBots.root());
+
+        await entered.promise;
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+
+        const newer = telegramCommandMenus.refresh(await telegramBots.root());
+
+        await Promise.race([newerCalled.promise, setTimeout(300)]);
+        gate.resolve();
+        await Promise.all([older, newer]);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls
+                .slice(-4)
+                .map((call) => call.arguments[0].commands[0]?.command),
+            ["start", "start", "start", "start"],
+        );
+    });
+
+    void it("builds the menus from the bot as it is once the refresh holds the lock", async (t) => {
+        const {
+            botsRegistry,
+            botsRepository,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            plugins: [registerStartEntry("ping")],
+        });
+        const snapshot = await telegramBots.root();
+
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+        await telegramCommandMenus.refresh(snapshot);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments[0].commands[0]?.command,
+            ),
+            ["start", "start", "start", "start"],
+        );
     });
 
     void it("leaves a user whose commands are the menu of the bot without a chat menu", async (t) => {

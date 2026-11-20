@@ -14,6 +14,7 @@ import {
     languages,
     Translate,
 } from "../i18n-service.js";
+import { LockOptions, LockService } from "../lock-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { languageOf } from "../users/user-language.js";
 import { UsersEvents } from "../users/users-events.js";
@@ -37,6 +38,11 @@ type TelegramMenuTarget = NonNullable<
 >;
 
 const botMenuHashTtlMilliseconds = 30 * 24 * 60 * 60 * 1000;
+const botMenuLockOptions: LockOptions = {
+    name: "telegram_bot_menu",
+    ttlMilliseconds: 30_000,
+    maxHoldMilliseconds: 5 * 60 * 1000,
+};
 
 export class TelegramCommandMenus {
     private readonly log: FastifyBaseLogger;
@@ -46,6 +52,7 @@ export class TelegramCommandMenus {
     private readonly usersRepository: UsersRepository;
     private readonly usersService: UsersService;
     private readonly cache: CacheService;
+    private readonly lockService: LockService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
 
@@ -57,6 +64,7 @@ export class TelegramCommandMenus {
         usersRepository: UsersRepository,
         usersService: UsersService,
         cache: CacheService,
+        lockService: LockService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
     ) {
@@ -67,33 +75,24 @@ export class TelegramCommandMenus {
         this.usersRepository = usersRepository;
         this.usersService = usersService;
         this.cache = cache;
+        this.lockService = lockService;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
-        const menus = await this.buildBotMenus(bot);
-
-        await this.cache.delete(botMenuKeyOf(bot));
-
-        for (const { languageCode, commands } of menus) {
-            await setMenu(
-                bot,
-                commands,
-                languageCode ? { language_code: languageCode } : {},
-            );
-        }
-
-        await this.cache.set(botMenuKeyOf(bot), hashMenus(bot, menus), {
-            ttlMilliseconds: botMenuHashTtlMilliseconds,
-        });
-        this.log.info(
-            {
-                botId: bot.id,
-                commands: menus[0]?.commands.map(({ command }) => command),
-            },
-            "Telegram commands set successfully",
+        const lock = await this.lockService.acquire(
+            `telegram:${bot.telegramId}:commands:lock`,
+            botMenuLockOptions,
         );
+
+        try {
+            await this.setBotMenus(
+                (await this.telegramBots.find(bot.id)) ?? bot,
+            );
+        } finally {
+            await lock[Symbol.asyncDispose]();
+        }
     }
 
     async syncBot(bot: TelegramBot): Promise<void> {
@@ -199,6 +198,31 @@ export class TelegramCommandMenus {
         );
     }
 
+    private async setBotMenus(bot: TelegramBot): Promise<void> {
+        const menus = await this.buildBotMenus(bot);
+
+        await this.cache.delete(botMenuKeyOf(bot));
+
+        for (const { languageCode, commands } of menus) {
+            await setMenu(
+                bot,
+                commands,
+                languageCode ? { language_code: languageCode } : {},
+            );
+        }
+
+        await this.cache.set(botMenuKeyOf(bot), hashMenus(bot, menus), {
+            ttlMilliseconds: botMenuHashTtlMilliseconds,
+        });
+        this.log.info(
+            {
+                botId: bot.id,
+                commands: menus[0]?.commands.map(({ command }) => command),
+            },
+            "Telegram commands set successfully",
+        );
+    }
+
     private async buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
         const user = await this.usersService.buildNewcomer(bot.id);
 
@@ -292,6 +316,7 @@ export default fp(
             fastify.getDecorator<UsersRepository>("usersRepository"),
             fastify.getDecorator<UsersService>("usersService"),
             fastify.getDecorator<CacheService>("cache"),
+            fastify.getDecorator<LockService>("lockService"),
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
         );
@@ -311,6 +336,7 @@ export default fp(
             "cache",
             "emittery",
             "i18n-service",
+            "lock-service",
             "telegram-bots",
             "telegram-metrics",
             "telegram-router",
