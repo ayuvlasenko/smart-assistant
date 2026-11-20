@@ -29,7 +29,7 @@ void describe("TelegramSceneButtons", () => {
         await bot.pressButton(chat, "Greet Ada");
 
         assert.deepEqual(bot.readSentTexts(), ["Press the button", "Hi Ada"]);
-        assert.deepEqual(readAnswerTexts(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("keeps the buttons of every message of a scene", async (t) => {
@@ -43,7 +43,7 @@ void describe("TelegramSceneButtons", () => {
         await bot.pressButton(chat, "Greet A");
 
         assert.deepEqual(bot.readSentTexts().slice(-1), ["Hi A"]);
-        assert.deepEqual(readAnswerTexts(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("stays silent when Telegram refuses the late answer of an expired press", async (t) => {
@@ -158,7 +158,7 @@ void describe("TelegramSceneButtons", () => {
             "Press the button",
             telegramLocales.en.error,
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("answers a press that nothing handles", async (t) => {
@@ -168,7 +168,7 @@ void describe("TelegramSceneButtons", () => {
         await bot.sendCallback(chat, "legacy-data", 3);
 
         assert.deepEqual(bot.readSentTexts(), []);
-        assert.deepEqual(readAnswerTexts(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("rejects a scene registered twice", async (t) => {
@@ -204,7 +204,7 @@ void describe("TelegramSceneButtons", () => {
         );
 
         assert.deepEqual(bot.readSentTexts(), []);
-        assert.deepEqual(readAnswerTexts(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 });
 
@@ -277,10 +277,4 @@ function registerDropScene(
 
     router.scene(dropScene);
     router.command("drop", (ctx) => sceneEngine.start(ctx, dropScene, {}));
-}
-
-function readAnswerTexts(bot: TelegramSceneBot): (string | undefined)[] {
-    return bot.telegramApiService.answerCallbackQuery.mock.calls.map(
-        (call) => call.arguments[0].text,
-    );
 }

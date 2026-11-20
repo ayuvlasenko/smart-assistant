@@ -69,7 +69,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "+10");
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [undefined, undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined, undefined]);
         assert.deepEqual(readEditedTexts(bot), ["Card 1"]);
     });
 
@@ -83,7 +83,7 @@ void describe("Telegram guards on scenes", () => {
         await setGrants(chat.id, []);
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
         assert.deepEqual(readEditedTexts(bot), []);
     });
 
@@ -95,7 +95,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "Note");
 
         assert.deepEqual(bot.readSentTexts(), ["Card 0"]);
-        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("passes the text for a guarded input to the routes after the user loses the grant", async (t) => {
@@ -280,12 +280,6 @@ async function setGrants(telegramId: number, grants: string[]): Promise<void> {
     await testMongo.mongo
         .collection("users")
         .updateOne({ telegramId: String(telegramId) }, { $set: { grants } });
-}
-
-function readCallbackAnswers(bot: TelegramSceneBot): (string | undefined)[] {
-    return bot.telegramApiService.answerCallbackQuery.mock.calls.map(
-        (call) => call.arguments[0].text,
-    );
 }
 
 function readEditedTexts(bot: TelegramSceneBot): (string | undefined)[] {

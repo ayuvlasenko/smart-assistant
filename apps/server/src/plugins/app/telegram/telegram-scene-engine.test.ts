@@ -287,7 +287,7 @@ void describe("TelegramSceneEngine inputs", () => {
         await bot.sendText(chat, "/cancel");
         await bot.pressButton(chat, "18");
 
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             telegramLocales.en.buttonExpired,
             telegramLocales.en.buttonExpired,
         ]);
@@ -308,7 +308,7 @@ void describe("TelegramSceneEngine inputs", () => {
         await bot.sendText(chat, "/skip");
 
         assert.deepEqual(completed, [{ name: "Grace", age: 41 }]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             telegramLocales.en.buttonExpired,
         ]);
     });
@@ -367,7 +367,7 @@ void describe("TelegramSceneEngine scenes", () => {
             "Count 1",
             "Count 2",
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [undefined, undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined, undefined]);
     });
 
     void it("reuses a keyed scene instead of starting it again", async (t) => {
@@ -417,7 +417,7 @@ void describe("TelegramSceneEngine scenes", () => {
             "Counter main",
             "Your age?",
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [telegramLocales.en.inputBusy]);
+        assert.deepEqual(bot.readAnswerTexts(), [telegramLocales.en.inputBusy]);
     });
 
     void it("deletes the question and the answer after the step when cleanup is on", async (t) => {
@@ -581,7 +581,7 @@ void describe("TelegramSceneEngine scenes", () => {
             telegramLocales.en.error,
         ]);
         assert.equal(
-            readAnswerTexts(bot).at(-1),
+            bot.readAnswerTexts().at(-1),
             telegramLocales.en.buttonExpired,
         );
     });
@@ -599,7 +599,7 @@ void describe("TelegramSceneEngine scenes", () => {
             "New label?",
             "Renamed to Neo",
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [telegramLocales.en.inputBusy]);
+        assert.deepEqual(bot.readAnswerTexts(), [telegramLocales.en.inputBusy]);
     });
 
     void it("keeps the new answer when a handler fails after it asks", async (t) => {
@@ -671,7 +671,7 @@ void describe("TelegramSceneEngine scenes", () => {
         await bot.sendText(chat, "Neo");
 
         assert.deepEqual(bot.readSentTexts(), ["Counter main", "New label?"]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             undefined,
             undefined,
             telegramLocales.en.buttonExpired,
@@ -687,7 +687,7 @@ void describe("TelegramSceneEngine scenes", () => {
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Counter main", "Ended"]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             undefined,
             telegramLocales.en.buttonExpired,
         ]);
@@ -720,7 +720,7 @@ void describe("TelegramSceneEngine scenes", () => {
         await bot.sendCallback(chat, "stored:2", 7);
 
         assert.deepEqual(bot.readSentTexts(), []);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             telegramLocales.en.buttonExpired,
             telegramLocales.en.buttonExpired,
         ]);
@@ -750,7 +750,7 @@ void describe("TelegramSceneEngine scenes", () => {
             "Count 1",
             "Count 2",
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             undefined,
             undefined,
             telegramLocales.en.buttonExpired,
@@ -768,7 +768,7 @@ void describe("TelegramSceneEngine scenes", () => {
         await bot.pressButton(chat, "+1");
 
         assert.deepEqual(bot.readSentTexts(), ["Counter main", "Count 1"]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             undefined,
             telegramLocales.en.buttonExpired,
         ]);
@@ -924,7 +924,7 @@ void describe("TelegramSceneEngine blocking scenes", () => {
             "Survey done with Ada",
             "New label?",
         ]);
-        assert.deepEqual(readAnswerTexts(bot), [
+        assert.deepEqual(bot.readAnswerTexts(), [
             blockedText("Survey"),
             undefined,
             undefined,
@@ -1108,7 +1108,9 @@ void describe("TelegramSceneEngine hand over", () => {
 
         assert.deepEqual(handOvers, [true]);
         assert.deepEqual(bot.readSentTexts(), ["menu", "Name?", "Answer?"]);
-        assert.ok(!readAnswerTexts(bot).includes(telegramLocales.en.inputBusy));
+        assert.ok(
+            !bot.readAnswerTexts().includes(telegramLocales.en.inputBusy),
+        );
         assert.deepEqual(await bot.readMessageTexts(chat.id), [
             "Survey",
             "Answer?",
@@ -1155,7 +1157,7 @@ void describe("TelegramSceneEngine hand over", () => {
         await bot.pressButton(chat, "Open A");
 
         assert.deepEqual(handOvers, [false]);
-        assert.equal(readAnswerTexts(bot).at(-1), blockedText("Wall"));
+        assert.equal(bot.readAnswerTexts().at(-1), blockedText("Wall"));
         assert.deepEqual(await bot.readMessageTexts(chat.id), ["menu"]);
     });
 
@@ -1190,7 +1192,7 @@ void describe("TelegramSceneEngine hand over", () => {
         await bot.sendCallback(chat, nameButton.callback_data, 1);
 
         assert.equal(
-            readAnswerTexts(bot).at(-1),
+            bot.readAnswerTexts().at(-1),
             telegramLocales.en.buttonExpired,
         );
     });
@@ -2102,12 +2104,6 @@ function blockedText(currentTitle: string, nextTitle?: string): string {
 function readDeletedMessageIds(bot: TelegramSceneBot): number[] {
     return bot.telegramApiService.deleteMessage.mock.calls.map(
         (call) => call.arguments[0].message_id,
-    );
-}
-
-function readAnswerTexts(bot: TelegramSceneBot): (string | undefined)[] {
-    return bot.telegramApiService.answerCallbackQuery.mock.calls.map(
-        (call) => call.arguments[0].text,
     );
 }
 
