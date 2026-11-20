@@ -252,13 +252,14 @@ flowchart TD
     router -->|"handle, before the routes"| engine
     router -->|"command / on / when"| domain["Domain handlers"]
 
-    engine --> update[TelegramSceneUpdate]
-    update --> storage[TelegramSceneStorage]
+    engine -->|"one per update"| run[TelegramSceneRun]
     engine --> presses[TelegramScenePresses]
+    presses -->|"touch, control"| run
     presses --> buttons[TelegramSceneButtons]
-    engine --> inputs[TelegramSceneInputs]
-    engine --> screens[TelegramSceneScreens]
-    engine --> messages[TelegramSceneMessages]
+    run --> storage[TelegramSceneStorage]
+    run --> inputs[TelegramSceneInputs]
+    run --> screens[TelegramSceneScreens]
+    run --> messages[TelegramSceneMessages]
     inputs --> steps["telegram-steps.ts"]
 
     ctx --> responder[TelegramResponder]
@@ -484,7 +485,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 1. `sceneEngine.start(ctx, scene, state)` checks the guard of the scene and builds the id. With a `key`, the id is the first 12 characters of `sha256("<scene name>:<key>")` in base64url, so the same key always gives the same id. Without a `key`, the id is 8 random bytes.
 2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its messages move to the bottom of the chat, and the state and the screen stay as they are.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
-4. Every call that gives a handler the scene object marks the instance as touched in `TelegramSceneUpdate`.
+4. `withScenes` creates one `TelegramSceneRun` for the update, and each entry point marks the instance it works on as touched there with `touch`: a start, a press, an answer to an input, `/cancel`, a delivery and a redraw. Building the scene object for a handler marks nothing, so a new entry point calls `touch` before it changes the record, or the change is neither saved nor drawn.
 5. After the update, the engine draws the current screen of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
@@ -836,9 +837,9 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
-| `telegram-scene-engine.ts`                                         | Start, find, hand over and end instances; route presses and input text       | [Scene instances](#scene-instances)                         |
+| `telegram-scene-engine.ts`                                         | The registered scenes; one run per update; route presses and input text      | [Scene instances](#scene-instances)                         |
 | `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                         | [Scene instances](#scene-instances)                         |
-| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them                     | [Scene instances](#scene-instances)                         |
+| `telegram-scene-run.ts`                                            | The scenes of one update: start, hand over, end; renders and saves them      | [Scene instances](#scene-instances)                         |
 | `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                          | [Buttons](#buttons)                                         |
 | `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler              | [Buttons](#buttons)                                         |
 | `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                                  | [Screens and messages](#screens-and-messages)               |

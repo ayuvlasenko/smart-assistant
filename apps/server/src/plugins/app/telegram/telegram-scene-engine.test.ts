@@ -451,6 +451,45 @@ void describe("TelegramSceneEngine scenes", () => {
         );
     });
 
+    void it("takes no text as the answer after /cancel of a scene that does not block", async (t) => {
+        const bot = await buildCounterBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654418 });
+
+        await bot.sendText(chat, "/counter");
+        await bot.pressButton(chat, "Rename");
+        await bot.sendText(chat, "/cancel");
+        await bot.sendText(chat, "Neo");
+
+        assert.deepEqual(bot.readSentTexts(), ["Counter main", "New label?"]);
+    });
+
+    void it("deletes an unexpected message and its hint with the step when cleanup is on", async (t) => {
+        const bot = await buildCounterBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654419 });
+
+        await bot.sendText(chat, "/counter");
+        await bot.pressButton(chat, "Rename");
+        const photo = await bot.sendPhoto(chat);
+        const answer = await bot.sendText(chat, "Neo");
+
+        assert.deepEqual(
+            bot.telegramApiService.deleteMessages.mock.calls.map(
+                (call) => call.arguments[0].message_ids,
+            ),
+            [
+                [
+                    await readSentMessageId(bot, "New label?"),
+                    photo.message?.message_id,
+                    await readSentMessageId(
+                        bot,
+                        telegramLocales.en.sceneUnexpected,
+                    ),
+                    answer.message?.message_id,
+                ],
+            ],
+        );
+    });
+
     void it("cancels only the answer of a scene on /cancel and cleans up silently", async (t) => {
         const bot = await buildCounterBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654415 });
@@ -928,6 +967,26 @@ void describe("TelegramSceneEngine blocking scenes", () => {
                 },
             ],
         );
+    });
+
+    void it("keeps a cancelled answer cancelled when the end of the blocking scene fails", async (t) => {
+        const bot = await buildWizardBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654472 });
+
+        await bot.sendText(chat, "/survey");
+        await bot.pressButton(chat, "Answer");
+        bot.telegramApiService.editMessageReplyMarkup.mock.mockImplementation(
+            () => Promise.reject(new Error("network down")),
+        );
+        await bot.sendText(chat, "/cancel");
+        await bot.sendText(chat, "Late");
+
+        assert.deepEqual(bot.readSentTexts(), [
+            "Survey",
+            "Your survey answer?",
+            "Survey stopped",
+            telegramLocales.en.error,
+        ]);
     });
 
     void it("stores the blocking scene for the scene's time to live", async (t) => {
