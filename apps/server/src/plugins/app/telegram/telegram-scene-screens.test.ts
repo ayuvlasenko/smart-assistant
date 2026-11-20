@@ -1,28 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { describe, it, TestContext } from "node:test";
+import { describe, it } from "node:test";
 import { useTestMongo } from "../../../test/mongo.js";
 import {
     buildTelegramPrivateChat,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
-import {
-    buildTelegramSceneBot,
-    TelegramSceneBot,
-} from "../../../test/telegram-scene-bot.js";
-import { message } from "./telegram-filters.js";
+import { buildShopBot } from "../../../test/telegram-scene-fixtures.js";
 import { telegramLocales } from "./telegram-locales.js";
-import { complete, defineScene } from "./telegram-scene.js";
-import { choiceStep } from "./telegram-steps.js";
-
-interface Shop {
-    stock: Record<string, number>;
-    removed: string[];
-    notes: string[];
-    ratings: string[];
-    isVip: boolean;
-}
 
 const shopSceneField = `scene:${createHash("sha256")
     .update("shop:shop")
@@ -33,7 +19,7 @@ const testMongo = useTestMongo();
 
 void describe("Telegram scene screens", () => {
     void it("shows the root screen and edits its message when the params change", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654701 });
 
         await bot.sendText(chat, "/shop");
@@ -44,7 +30,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("returns to the previous screen with its params", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654702 });
 
         await bot.sendText(chat, "/shop");
@@ -63,7 +49,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("sends the later messages again when an earlier one must be sent anew", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654703 });
 
         await bot.sendText(chat, "/shop");
@@ -84,7 +70,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("replaces a screen, so going back skips it", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654704 });
 
         await bot.sendText(chat, "/shop");
@@ -102,7 +88,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("resets to the root screen and forgets the previous screens", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654705 });
 
         await bot.sendText(chat, "/shop");
@@ -116,7 +102,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("refuses a screen that its guard hides", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654706 });
 
         await bot.sendText(chat, "/shop");
@@ -130,143 +116,8 @@ void describe("Telegram scene screens", () => {
         );
     });
 
-    void it("runs a confirmed button on the second press only", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654707 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Remove");
-
-        assert.deepEqual(shop.removed, []);
-        assert.deepEqual(await bot.readMessageTexts(chat.id), [
-            "Item a: 0",
-            "Actions a",
-        ]);
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Sure?"));
-
-        await bot.pressButton(chat, "Sure?");
-
-        assert.deepEqual(shop.removed, ["a"]);
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
-    });
-
-    void it("asks again on a double tap, which sends the first button twice", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654720 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await Promise.all([
-            bot.pressButton(chat, "Remove"),
-            bot.pressButton(chat, "Remove"),
-        ]);
-
-        assert.deepEqual(shop.removed, []);
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Sure?"));
-
-        await bot.pressButton(chat, "Sure?");
-
-        assert.deepEqual(shop.removed, ["a"]);
-    });
-
-    void it("colours only the button that waits for its second press", async (t) => {
-        const { bot } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654719 });
-        const styleOf = (label: string) =>
-            bot.telegramApiService.editMessageText.mock.calls
-                .at(-1)
-                ?.arguments[0].reply_markup?.inline_keyboard.flat()
-                .find(({ text }) => text === label)?.style;
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Remove");
-
-        assert.equal(styleOf("Sure?"), "danger");
-        assert.equal(styleOf("Remove copy"), undefined);
-        assert.equal(styleOf("Restock"), undefined);
-
-        await bot.pressButton(chat, "Restock");
-
-        assert.equal(styleOf("Remove"), undefined);
-    });
-
-    void it("forgets a pending confirmation when the user leaves the screen and comes back", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654708 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Remove");
-        await bot.pressButton(chat, "Form");
-        await bot.pressButton(chat, "Back");
-
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
-        assert.ok(!(await bot.readButtonLabels(chat.id)).includes("Sure?"));
-
-        await bot.pressButton(chat, "Remove");
-
-        assert.deepEqual(shop.removed, []);
-    });
-
-    void it("forgets a pending confirmation when another button of the scene is pressed", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654714 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Remove");
-        await bot.pressButton(chat, "Restock");
-
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
-
-        await bot.pressButton(chat, "Remove");
-
-        assert.deepEqual(shop.removed, []);
-        assert.deepEqual(shop.stock.a, 1);
-    });
-
-    void it("forgets a pending confirmation when an input button is pressed", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654715 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Rate");
-        await bot.pressButton(chat, "Remove");
-        await bot.pressButton(chat, "Good");
-
-        assert.deepEqual(shop.ratings, ["good"]);
-        assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
-
-        await bot.pressButton(chat, "Remove");
-
-        assert.deepEqual(shop.removed, []);
-    });
-
-    void it("asks again when the confirmed button comes back with another value", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654716 });
-
-        await bot.sendText(chat, "/shop");
-        await bot.pressButton(chat, "Open a");
-        await bot.pressButton(chat, "Remove");
-        await bot.pressButton(chat, "Remove copy");
-
-        const labels = await bot.readButtonLabels(chat.id);
-
-        assert.deepEqual(shop.removed, []);
-        assert.ok(labels.includes("Sure? copy"));
-        assert.ok(labels.includes("Remove"));
-
-        await bot.pressButton(chat, "Sure? copy");
-
-        assert.deepEqual(shop.removed, ["a-copy"]);
-    });
-
     void it("shows the root screen when the guard of the current screen stops letting the user in", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
+        const { bot, shop } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654717 });
 
         shop.isVip = true;
@@ -283,7 +134,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("refuses a move of a handler into a screen that its guard hides", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654718 });
 
         await bot.sendText(chat, "/shop");
@@ -294,7 +145,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("cancels a waiting input when the screen changes", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
+        const { bot, shop } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654709 });
 
         await bot.sendText(chat, "/shop");
@@ -314,7 +165,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("redraws the screen that watches a published topic", async (t) => {
-        const { bot, shop } = await buildShopBot(t);
+        const { bot, shop } = await buildShopBot(testMongo, t);
         const ada = buildTelegramPrivateChat({ id: 987654710 });
         const bob = buildTelegramPrivateChat({ id: 987654711 });
 
@@ -333,7 +184,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("shows the running scene again on the same screen", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654712 });
 
         await bot.sendText(chat, "/shop");
@@ -353,7 +204,7 @@ void describe("Telegram scene screens", () => {
     });
 
     void it("drops a scene whose stored screen is no longer defined", async (t) => {
-        const { bot } = await buildShopBot(t);
+        const { bot } = await buildShopBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654713 });
 
         await bot.sendText(chat, "/shop");
@@ -377,217 +228,3 @@ void describe("Telegram scene screens", () => {
         );
     });
 });
-
-async function buildShopBot(
-    t: TestContext,
-): Promise<{ bot: TelegramSceneBot; shop: Shop }> {
-    const shop: Shop = {
-        stock: { a: 0, b: 0 },
-        removed: [],
-        notes: [],
-        ratings: [],
-        isVip: false,
-    };
-    const shopScene = defineScene({
-        name: "shop",
-        state: Type.Object({}),
-        ttl: 60_000,
-        key: () => "shop",
-        root: { name: "list", params: { page: 0 } },
-        screens: {
-            list: {
-                params: Type.Object({ page: Type.Integer({ minimum: 0 }) }),
-                watch: () => ["shop.list"],
-                render: async (ctx, scene, { page }) => [
-                    {
-                        kind: "text",
-                        text: `List ${page}`,
-                        keyboard: [
-                            [
-                                scene.button("Next", "page", page + 1),
-                                scene.screenButton("Open a", "item", {
-                                    id: "a",
-                                }),
-                            ],
-                            [
-                                scene.screenButton("Form", "form"),
-                                scene.screenButton("Secret", "secret"),
-                            ],
-                            [
-                                scene.screenButton("VIP", "vip"),
-                                scene.button(
-                                    "Force secret",
-                                    "forceSecret",
-                                    null,
-                                ),
-                            ],
-                            [scene.backButton("Up")],
-                        ],
-                    },
-                ],
-            },
-            item: {
-                params: Type.Object({ id: Type.String() }),
-                watch: ({ id }) => [`shop.item:${id}`],
-                render: async (ctx, scene, { id }) => [
-                    { kind: "text", text: `Item ${id}: ${shop.stock[id]}` },
-                    {
-                        kind: "text",
-                        text: `Actions ${id}`,
-                        keyboard: [
-                            [
-                                scene.screenButton("Form", "form"),
-                                scene.screenButton("Open b", "item", {
-                                    id: "b",
-                                }),
-                            ],
-                            [
-                                scene.button("Restock", "restock", id),
-                                scene.button("Rate", "rate", null),
-                            ],
-                            [
-                                scene.button(
-                                    scene.isConfirming("remove", `${id}-copy`)
-                                        ? "Sure? copy"
-                                        : "Remove copy",
-                                    "remove",
-                                    `${id}-copy`,
-                                ),
-                            ],
-                            [
-                                scene.backButton("Back"),
-                                scene.button(
-                                    scene.isConfirming("remove", id)
-                                        ? "Sure?"
-                                        : "Remove",
-                                    "remove",
-                                    id,
-                                ),
-                            ],
-                        ],
-                    },
-                ],
-            },
-            form: {
-                params: Type.Object({}),
-                render: async (ctx, scene) => [
-                    {
-                        kind: "text",
-                        text: "Form",
-                        keyboard: [
-                            [
-                                scene.button("Note", "note", null),
-                                scene.button("Save", "save", null),
-                            ],
-                            [
-                                scene.backButton("Back"),
-                                scene.button("Home", "home", null),
-                            ],
-                        ],
-                    },
-                ],
-            },
-            secret: {
-                params: Type.Object({}),
-                guard: () => false,
-                render: async () => [{ kind: "text", text: "Secret" }],
-            },
-            vip: {
-                params: Type.Object({}),
-                guard: () => shop.isVip,
-                watch: () => ["shop.vip"],
-                render: async () => [{ kind: "text", text: "VIP" }],
-            },
-        },
-        buttons: {
-            page: {
-                value: Type.Integer({ minimum: 0 }),
-                handle: async (ctx, scene, page) => {
-                    if (scene.screen.name === "list") {
-                        scene.screen.params.page = page;
-                    }
-                },
-            },
-            remove: {
-                value: Type.String(),
-                confirm: true,
-                handle: async (ctx, scene, id) => {
-                    shop.removed.push(id);
-                },
-            },
-            note: {
-                value: Type.Null(),
-                handle: (ctx, scene) => scene.ask("note"),
-            },
-            restock: {
-                value: Type.String(),
-                handle: async (ctx, scene, id) => {
-                    shop.stock[id] = (shop.stock[id] ?? 0) + 1;
-                },
-            },
-            rate: {
-                value: Type.Null(),
-                handle: (ctx, scene) => scene.ask("rating"),
-            },
-            forceSecret: {
-                value: Type.Null(),
-                handle: (ctx, scene) => scene.push("secret"),
-            },
-            save: {
-                value: Type.Null(),
-                handle: (ctx, scene) => scene.replace("item", { id: "b" }),
-            },
-            home: {
-                value: Type.Null(),
-                handle: (ctx, scene) => scene.reset(),
-            },
-        },
-        inputs: {
-            note: {
-                payload: Type.Object({ text: Type.String() }),
-                cleanup: true,
-                steps: (step) => [
-                    step("text", message("text"), {
-                        enter: async (ctx) => {
-                            await ctx.reply("Note?");
-                        },
-                        handle: async (ctx) =>
-                            complete({ text: ctx.update.message.text }),
-                    }),
-                ],
-                complete: async (ctx, scene, { text }) => {
-                    shop.notes.push(text);
-                },
-            },
-            rating: {
-                payload: Type.Object({ rating: Type.String() }),
-                steps: (step) => [
-                    choiceStep(step, {
-                        name: "rating",
-                        property: "rating",
-                        prompt: () => "Rating?",
-                        load: async () => ({
-                            items: [{ label: "Good", value: "good" }],
-                            total: 1,
-                        }),
-                    }),
-                ],
-                complete: async (ctx, scene, { rating }) => {
-                    shop.ratings.push(rating);
-                },
-            },
-        },
-    });
-    const bot = await buildTelegramSceneBot({
-        testMongo,
-        t,
-        registerRoutes: (router, sceneEngine) => {
-            router.scene(shopScene);
-            router.command("shop", (ctx) =>
-                sceneEngine.start(ctx, shopScene, {}),
-            );
-        },
-    });
-
-    return { bot, shop };
-}
