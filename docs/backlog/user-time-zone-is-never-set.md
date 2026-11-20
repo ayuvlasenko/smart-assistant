@@ -1,12 +1,12 @@
 ---
 worth: later
-where: apps/server/src/plugins/app/users/user-entity.ts:11
+where: apps/server/src/plugins/app/users/user-entity.ts:14
 added: 2026-10-15
 ---
 
 # the time zone of a user is never set
 
-`UserEntity.timeZone` exists, but nothing sets it, so every user gets `TIME_ZONE` (`UTC` by default). For users far from `TIME_ZONE`, Today, Yesterday and partial dates in `dateStep` use the wrong calendar day for some hours of the day.
+`UserEntity.timeZone` exists, but nothing sets it, so every user gets `TIME_ZONE` (`UTC` by default) through `ctx.timeZone`. What users see today: the creation time that names a poker room without a title is plain text in `TIME_ZONE`, so a user far from it reads a time that is hours off. The dates of invites are `<tg-time>`, which each client shows in its own time zone, so only their fallback text uses `TIME_ZONE`. `dateStep`, whose Today, Yesterday and partial dates would pick the wrong calendar day, has no production caller yet.
 
 Options:
 

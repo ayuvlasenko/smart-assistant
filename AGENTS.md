@@ -10,7 +10,7 @@ pnpm --filter server build      # Compile TypeScript only
 pnpm --filter server typecheck  # Run full TypeScript checks, including tests and fixtures
 pnpm test                       # Run all tests: root scripts and every workspace
 pnpm --filter server test       # Run server tests
-pnpm lint                       # Run every check of CI: Markdown, Prettier and ESLint
+pnpm lint                       # Run the lint checks of CI: Markdown, Prettier and ESLint
 pnpm --filter server lint       # Run ESLint for backend
 pnpm format                     # Format Markdown, root scripts and all workspaces
 pnpm --filter server format     # Run ESLint fix + Prettier for backend
@@ -101,7 +101,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep test setup direct. When a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, look for a simpler behavior boundary or a small explicit test helper.
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
-- A test never writes to the database that `DATABASE_URL` names: in CI it is the shared dev database of the previews. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
+- A test never writes to the database that `DATABASE_URL` names: locally it is your dev database, and CI takes it from the secret `TEST_DATABASE_URL`, which other runs share. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
 - Create a test database through `useTestMongo` in a test file, or through `buildTestApp`: both use `buildTestMongo`, which runs every migration, so the database has the indexes of production. A database made any other way has no index, and a test of a unique constraint passes there without the constraint. `useTestMongo` empties every collection before each test; do not add a `beforeEach` that empties a hand-picked list.
 - When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
@@ -110,12 +110,12 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values. The tests load `apps/server/.env.test` over them, so a variable in that file never comes from the root `.env`.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
-- Production runs 2 to 4 pods under the autoscaler of `deploy/templates/hpa.yaml`, set in `server.replicas` of `deploy/values.yaml`; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
+- Production runs 2 to 4 pods; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - The liveness probe reads `/live`, which calls nothing outside the process and skips `@fastify/under-pressure` through `pressureExemptConfig`. `/status` checks MongoDB and Valkey and serves the startup and readiness probes. Never point liveness at a check of an external system: an outage then restarts every pod at once and fixes nothing.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
 - The `s3` client of `plugins/external/s3.ts` and the five `S3_*` variables of `src/env.ts` have no reader yet: they are kept for a planned feature. Do not remove them as dead code.
-- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `BOTS_ENCRYPTION_KEY`, `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
+- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with the optional variables of its list when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
 - The dashboard and the alert rules of the project live in the `infra` repository, under `monitoring/`. They read the metrics of the server by name and label, and their descriptions quote LogQL for its logs. When you rename a metric, a label, a log level or a quoted message, change them there too.
-- `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.
+- `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1.

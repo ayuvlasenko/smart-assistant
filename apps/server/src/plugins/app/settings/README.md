@@ -59,7 +59,7 @@ The settings of a bot in the code now are `users.autoBan`, `access.defaultGrants
 ```json
 {
     "_id": "6710a3…",
-    "botId": "8123456789",
+    "botId": "6741c2f09a3b5d0012e4a7c1",
     "name": "poker.maxParticipants",
     "value": 12,
     "version": 3,
@@ -72,7 +72,7 @@ The settings of a bot in the code now are `users.autoBan`, `access.defaultGrants
 
 1. The number input of the `settings` scene calls `SettingsService.write`. It checks `update Setting`, which only `admin` has, and checks the value against the setting: the range of a number, the options of the choices.
 2. `SettingsRepository.save` upserts the document, and the service logs `Setting changed`.
-3. The service emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the bot settings of every admin of the bot redraw. It also calls `TelegramCommandMenus.syncBot`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
+3. The service emits `settings.settingChanged` with the bot id. `settings-handlers.ts` publishes the topic `settings` in that bot, so the bot settings of every admin of the bot redraw. It also calls `TelegramCommandMenus.syncBotById`, because a setting such as the default grants changes the commands of the bot, see [Access and the command menu](../telegram/README.md#access-and-the-command-menu).
 4. The next `read` on any pod finds the document and returns 12.
 
 **Edge cases.**
