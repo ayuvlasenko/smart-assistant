@@ -2,6 +2,7 @@ import { WebhookInfo } from "@grammyjs/types";
 import { type Static, Type } from "@sinclair/typebox";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+import { createHash } from "node:crypto";
 import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
@@ -41,7 +42,13 @@ export const telegramBotWebhookSchema = Type.Union([
 
 export type TelegramBotWebhook = Static<typeof telegramBotWebhookSchema>;
 
-const telegramWebhookClaimTtlMilliseconds = 60 * 60 * 1000;
+interface TelegramWebhook {
+    url: string;
+    secret_token: string;
+}
+
+const telegramWebhookTtlMilliseconds = 60 * 60 * 1000;
+const telegramWebhookClaimTtlMilliseconds = 60 * 1000;
 const telegramBotUsernameCacheTtlMilliseconds = 5 * 60 * 1000;
 
 export function resolveTelegramWebhookUrl(
@@ -99,17 +106,13 @@ export class TelegramBotService {
     }
 
     async setWebhook(bot: TelegramBot): Promise<string> {
-        const url = resolveTelegramWebhookUrl(this.config, bot.telegramId);
-        unwrapTelegramResponse(
-            "setWebhook",
-            await bot.api.setWebhook({
-                url,
-                secret_token: telegramWebhookSecret(
-                    this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
-                    bot.telegramId,
-                ),
-            }),
-        );
+        const webhook = this.webhookOf(bot);
+        const { url } = webhook;
+
+        unwrapTelegramResponse("setWebhook", await bot.api.setWebhook(webhook));
+        await this.cache.set(webhookKeyOf(bot), digestOf(webhook), {
+            ttlMilliseconds: telegramWebhookTtlMilliseconds,
+        });
 
         this.log.info(
             { botId: bot.id, url },
@@ -188,10 +191,15 @@ export class TelegramBotService {
     }
 
     private async setClaimedWebhook(bot: TelegramBot): Promise<void> {
-        const claim = await this.lockService.tryAcquire(
-            `telegram:${bot.telegramId}:webhook:set`,
-            telegramWebhookClaimTtlMilliseconds,
-        );
+        const isSet =
+            (await this.cache.get(webhookKeyOf(bot), Type.String())) ===
+            digestOf(this.webhookOf(bot));
+        const claim = isSet
+            ? undefined
+            : await this.lockService.tryAcquire(
+                  `${webhookKeyOf(bot)}:claim`,
+                  telegramWebhookClaimTtlMilliseconds,
+              );
 
         if (!claim) {
             this.log.info({ botId: bot.id }, "Telegram webhook setup skipped");
@@ -200,10 +208,19 @@ export class TelegramBotService {
 
         try {
             await this.setWebhook(bot);
-        } catch (err) {
+        } finally {
             await this.lockService.release(claim);
-            throw err;
         }
+    }
+
+    private webhookOf(bot: TelegramBot): TelegramWebhook {
+        return {
+            url: resolveTelegramWebhookUrl(this.config, bot.telegramId),
+            secret_token: telegramWebhookSecret(
+                this.config.TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                bot.telegramId,
+            ),
+        };
     }
 
     private async syncCommandMenusOnStart(bot: TelegramBot): Promise<void> {
@@ -240,6 +257,16 @@ export class TelegramBotService {
     private async fetchUsername(bot: TelegramBot): Promise<string> {
         return unwrapTelegramResponse("getMe", await bot.api.getMe()).username;
     }
+}
+
+function webhookKeyOf(bot: TelegramBot): string {
+    return `telegram:${bot.telegramId}:webhook`;
+}
+
+function digestOf({ url, secret_token }: TelegramWebhook): string {
+    return createHash("sha256")
+        .update(`${url}\n${secret_token}`)
+        .digest("base64url");
 }
 
 export default fp(
