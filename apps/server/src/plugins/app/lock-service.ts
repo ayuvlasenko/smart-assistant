@@ -130,13 +130,24 @@ export class LockService {
             [Symbol.asyncDispose]: async () => {
                 try {
                     await hold[Symbol.asyncDispose]();
-                    await this.release(lock);
-                    stopTimer();
+                    await this.releaseHeld(lock, options.name);
                 } finally {
+                    stopTimer();
                     leaveQueue();
                 }
             },
         };
+    }
+
+    private async releaseHeld(lock: Lock, name: string): Promise<void> {
+        try {
+            await this.release(lock);
+        } catch (err) {
+            this.log.warn(
+                { err, lock: name },
+                "Lock release failed, the lock expires with its TTL",
+            );
+        }
     }
 
     private async waitForLock(

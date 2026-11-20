@@ -72,6 +72,23 @@ void describe("LockService", () => {
         await stuck[Symbol.asyncDispose]();
     });
 
+    void it("ends the hold when Valkey fails to release the lock, and the TTL frees it", async (t) => {
+        const { cache, lockService } = await buildCacheServiceTestApp({ t });
+        const options = { ...lockOptions, ttlMilliseconds: 300 };
+        const first = await lockService.acquire("lock:12", options);
+
+        t.mock.method(cache, "delete", async () => {
+            throw new Error("Connection is closed.");
+        });
+        await first[Symbol.asyncDispose]();
+        t.mock.restoreAll();
+
+        const next = await lockService.acquire("lock:12", options);
+
+        assert.notEqual(next.token, first.token);
+        await next[Symbol.asyncDispose]();
+    });
+
     void it("waits for a taken lock until its TTL runs out", async (t) => {
         const { client, lockService } = await buildCacheServiceTestApp({ t });
 
