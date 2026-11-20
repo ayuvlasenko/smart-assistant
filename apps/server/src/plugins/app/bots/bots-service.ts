@@ -137,7 +137,8 @@ export class BotsService {
         }
         await this.botsConnector.connect(bot._id);
 
-        const ownerInvite = await this.invitesService.createOwnerInvite(
+        const ownerInvite = await this.invitesService.replaceOwnerInvite(
+            actor,
             bot._id,
         );
 
@@ -147,7 +148,7 @@ export class BotsService {
         return { status: "added", bot, ownerInvite };
     }
 
-    async createOwnerInvite(
+    async replaceOwnerInvite(
         actor: UserEntity,
         botId: string,
     ): Promise<InviteEntity | null> {
@@ -157,7 +158,7 @@ export class BotsService {
             return null;
         }
 
-        return this.invitesService.createOwnerInvite(botId);
+        return this.invitesService.replaceOwnerInvite(actor, botId);
     }
 
     async toggleModule(

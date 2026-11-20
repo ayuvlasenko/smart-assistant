@@ -410,7 +410,7 @@ void describe("/bots", () => {
                 ?.includes(en.ownerInviteUnavailable),
         );
         assert.equal(
-            await bot.botsService.createOwnerInvite(actor, childId),
+            await bot.botsService.replaceOwnerInvite(actor, childId),
             null,
         );
         assert.equal(
@@ -456,6 +456,38 @@ void describe("/bots", () => {
                 ?.includes(
                     `https://t.me/child_42_bot?start=invite_${String(invite.token)}`,
                 ),
+        );
+    });
+
+    void it("revokes the older owner links of a bot when it creates a new one", async (t) => {
+        const logs = createLoggerCollector();
+        const bot = await buildBot(t, { logger: logs.logger });
+        const admin = buildTelegramPrivateChat({ id: 987657009 });
+        const actor = await allowAdmin(bot, admin);
+
+        const childId = await addChild(bot, actor);
+
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.ownerInviteButton);
+
+        const invites = await testMongo.mongo
+            .collection("invites")
+            .find({ botId: childId }, { sort: { createdAt: 1 } })
+            .toArray();
+
+        assert.equal(invites.length, 2);
+        assert.ok(invites[0]?.revokedAt);
+        assert.equal(invites[1]?.revokedAt, undefined);
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Owner invite created")
+                .map(({ botId, revoked }) => ({ botId, revoked })),
+            [
+                { botId: childId, revoked: 0 },
+                { botId: childId, revoked: 1 },
+            ],
         );
     });
 

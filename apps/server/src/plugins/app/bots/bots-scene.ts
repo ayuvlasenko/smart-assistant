@@ -178,7 +178,7 @@ export function createBotsScene(
                 value: botsButtonValues.ownerInvite,
                 guard: canUpdate,
                 handle: async (ctx, scene, botId) => {
-                    const invite = await botsService.createOwnerInvite(
+                    const invite = await botsService.replaceOwnerInvite(
                         ctx.user,
                         botId,
                     );

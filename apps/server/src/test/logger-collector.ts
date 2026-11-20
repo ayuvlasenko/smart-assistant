@@ -14,6 +14,7 @@ export interface LoggerEntry {
     reqId?: string;
     responseTime?: number;
     result?: string;
+    revoked?: number;
     route?: string;
     statusCode?: number;
     updateId?: number;
