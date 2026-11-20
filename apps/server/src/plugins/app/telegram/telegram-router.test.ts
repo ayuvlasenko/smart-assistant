@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, TestContext } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
@@ -9,13 +9,20 @@ import {
     buildTelegramPrivateChat,
     testBotId,
 } from "../../../test/telegram-fixtures.js";
-import { buildTelegramSceneBot } from "../../../test/telegram-scene-bot.js";
+import {
+    buildTelegramSceneBot,
+    TelegramSceneBot,
+} from "../../../test/telegram-scene-bot.js";
 import { UsersRepository } from "../users/users-repository.js";
 import { message, text } from "./telegram-filters.js";
+import { TelegramGuard } from "./telegram-guard.js";
+import { telegramLocales } from "./telegram-locales.js";
 import { TelegramRouter } from "./telegram-router.js";
 import { defineScene, next as nextStep } from "./telegram-scene.js";
 
 const testMongo = useTestMongo();
+
+const isVip: TelegramGuard = (user) => user.grants.includes("vip");
 
 void describe("TelegramRouter", () => {
     void it("handles a command with a bot username suffix", async (t) => {
@@ -179,6 +186,217 @@ void describe("TelegramRouter", () => {
         );
     });
 });
+
+void describe("TelegramRouter guards", () => {
+    void it("answers a guarded command only to users the guard allows", async (t) => {
+        const bot = await buildGuardedRoutesBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654501 });
+
+        await bot.sendText(chat, "/secret");
+        await bot.allowUser(chat.id, ["vip"]);
+        await bot.sendText(chat, "/secret");
+
+        assert.deepEqual(bot.readSentTexts(), ["secret"]);
+    });
+
+    void it("skips a guarded match route for users the guard refuses", async (t) => {
+        const bot = await buildGuardedRoutesBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654502 });
+
+        await bot.sendText(chat, "hi");
+        await bot.allowUser(chat.id, ["vip"]);
+        await bot.sendText(chat, "hi");
+
+        assert.deepEqual(bot.readSentTexts(), ["hi vip"]);
+    });
+});
+
+void describe("TelegramRouter deep links", () => {
+    void it("routes /start with a named payload of a banned user to a deep link that allows banned users", async (t) => {
+        const values: string[] = [];
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.deepLink(
+                    "invite",
+                    async (ctx, value) => {
+                        values.push(value);
+                        await ctx.reply("welcome");
+                    },
+                    { allowBanned: true },
+                );
+            },
+        });
+
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
+            buildCommandUpdate(987654338, "/start invite_secret_A-1"),
+        );
+
+        assert.deepEqual(values, ["secret_A-1"]);
+        assert.deepEqual(bot.readSentTexts(), ["welcome"]);
+    });
+
+    void it("keeps a banned user silent for a deep link without allowBanned or with an unknown name", async (t) => {
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.deepLink("poker", async (ctx) => {
+                    await ctx.reply("poker");
+                });
+                router.deepLink(
+                    "invite",
+                    async (ctx) => {
+                        await ctx.reply("welcome");
+                    },
+                    { allowBanned: true },
+                );
+            },
+        });
+
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
+            buildCommandUpdate(987654339, "/start poker_42"),
+        );
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
+            buildCommandUpdate(987654339, "/start unknown_42"),
+        );
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
+            buildCommandUpdate(987654339, "/start invite"),
+        );
+
+        const user = await bot.usersRepository.findOneByTelegramId(
+            testBotId,
+            "987654339",
+        );
+
+        assert.equal(user?.isBanned, true);
+        assert.deepEqual(bot.readSentTexts(), []);
+    });
+
+    void it("keeps a banned user silent on /start without a payload", async (t) => {
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.deepLink(
+                    "invite",
+                    async (ctx) => {
+                        await ctx.reply("welcome");
+                    },
+                    { allowBanned: true },
+                );
+            },
+        });
+
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
+            buildCommandUpdate(987654340, "/start"),
+        );
+
+        assert.deepEqual(bot.readSentTexts(), []);
+    });
+
+    void it("routes each name to its own deep link and greets on an unknown name", async (t) => {
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.deepLink("invite", async (ctx, value) => {
+                    await ctx.reply(`invite ${value}`);
+                });
+                router.deepLink("poker", async (ctx, value) => {
+                    await ctx.reply(`poker ${value}`);
+                });
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654341 });
+
+        await bot.sendText(chat, "/start invite_abc");
+        await bot.sendText(chat, "/start poker_42");
+        await bot.sendText(chat, "/start other_1");
+
+        assert.deepEqual(bot.readSentTexts(), [
+            "invite abc",
+            "poker 42",
+            telegramLocales.en.welcome,
+        ]);
+    });
+
+    void it("stays silent on a deep link whose guard refuses the user instead of the /start answer", async (t) => {
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.deepLink(
+                    "vip",
+                    async (ctx, value) => {
+                        await ctx.reply(`vip ${value}`);
+                    },
+                    { guard: isVip },
+                );
+            },
+        });
+
+        await bot.sendText(
+            buildTelegramPrivateChat({ id: 987654342 }),
+            "/start vip_1",
+        );
+
+        assert.deepEqual(bot.readSentTexts(), []);
+    });
+
+    void it("refuses a deep link name twice or with characters outside a-z and 0-9", async (t) => {
+        await assert.rejects(
+            buildTelegramBotServiceTestApp({
+                testMongo,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink("invite", async () => undefined);
+                    router.deepLink("invite", async () => undefined);
+                },
+            }),
+            /Telegram deep link "invite" is already registered/,
+        );
+        await assert.rejects(
+            buildTelegramBotServiceTestApp({
+                testMongo,
+                t,
+                registerRoutes: (router) => {
+                    router.deepLink("join_poker", async () => undefined);
+                },
+            }),
+            /Telegram deep link name "join_poker" must match/,
+        );
+    });
+});
+
+function buildGuardedRoutesBot(t: TestContext): Promise<TelegramSceneBot> {
+    return buildTelegramSceneBot({
+        testMongo,
+        t,
+        registerRoutes: (router) => {
+            router.command(
+                "secret",
+                async (ctx) => {
+                    await ctx.reply("secret");
+                },
+                { guard: isVip },
+            );
+            router.on(
+                text("hi"),
+                async (ctx) => {
+                    await ctx.reply("hi vip");
+                },
+                { guard: isVip },
+            );
+        },
+    });
+}
 
 async function createUser(
     usersRepository: UsersRepository,

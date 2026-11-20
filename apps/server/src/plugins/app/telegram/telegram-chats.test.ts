@@ -9,8 +9,11 @@ import {
     LoggerEntry,
 } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
+import { buildTwoBotsTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
+    buildTelegramTextMessageUpdate,
     testBotId,
     testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
@@ -366,6 +369,82 @@ void describe("TelegramChats", () => {
         assert.match(
             await bot.metrics.metrics(),
             /^telegram_scene_events_total\{scene="board",event="delivery_failed"\} 1$/m,
+        );
+    });
+
+    void it("doesn't redraw a watcher of another bot with the same Telegram id", async (t) => {
+        const board = { count: 0 };
+        const boardScene = defineScene({
+            name: "board",
+            state: Type.Object({}),
+            key: () => "board",
+            ttl: 60_000,
+            watch: () => ["board:a"],
+            root: { name: "board", params: {} },
+            screens: {
+                board: {
+                    params: Type.Object({}),
+                    render: async () => [
+                        { kind: "text", text: `Board ${board.count}` },
+                    ],
+                },
+            },
+        });
+        const {
+            child,
+            childBotId,
+            metrics,
+            telegramApiService,
+            telegramBots,
+            telegramChats,
+            telegramUpdateHandler,
+        } = await buildTwoBotsTestApp({
+            testMongo,
+            t,
+            autoBan: false,
+            registerRoutes: (router, sceneEngine) => {
+                router.scene(boardScene);
+                router.command("board", (ctx) =>
+                    sceneEngine.start(ctx, boardScene, {}),
+                );
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654474 });
+
+        await telegramUpdateHandler.handle(
+            await telegramBots.get(childBotId),
+            buildTelegramCommandUpdate(chat, "/board"),
+        );
+        await telegramUpdateHandler.handle(
+            await telegramBots.root(),
+            buildTelegramTextMessageUpdate({
+                message: { chat, text: "hello" },
+            }),
+        );
+        board.count = 1;
+        telegramChats.publish(testBotId, ["board:a"]);
+        await telegramChats.idle();
+
+        assert.equal(telegramApiService.editMessageText.mock.callCount(), 0);
+        assert.equal(child.editMessageText.mock.callCount(), 0);
+
+        telegramChats.publish(childBotId, ["board:a"]);
+        await telegramChats.idle();
+
+        assert.deepEqual(
+            child.editMessageText.mock.calls.map(
+                (call) => call.arguments[0].text,
+            ),
+            ["Board 1"],
+        );
+        assert.equal(telegramApiService.editMessageText.mock.callCount(), 0);
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_delivery_recipients_sum\{kind="publish"\} 1$/m,
+        );
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_delivery_recipients_count\{kind="publish"\} 2$/m,
         );
     });
 });
