@@ -1,4 +1,3 @@
-import { subject } from "@casl/ability";
 import { Type } from "@sinclair/typebox";
 import { ObjectId } from "mongodb";
 import { AccessControl } from "../access/access-service.js";
@@ -88,7 +87,6 @@ export function createPokerRoomScene(
             scene,
             room,
             pokerRoomsService,
-            access,
             resolveRoomUrl,
         );
 
@@ -217,10 +215,6 @@ export function createPokerRoomScene(
                         { userId: new ObjectId(userId), role },
                     );
 
-                    if (scene.screen.name === "menu") {
-                        await scene.reset();
-                    }
-
                     if (scene.screen.name === "participant") {
                         await scene.back();
                     }
@@ -254,7 +248,6 @@ export function createPokerRoomScene(
             },
             close: {
                 value: pokerRoomButtonValues.close,
-                guard: access.guard("update", "PokerRoom"),
                 confirm: true,
                 handle: async (ctx, scene) => {
                     await pokerRoomsService.close(ctx.user, roomIdOf(scene));
@@ -318,7 +311,6 @@ async function buildView(
     scene: PokerRoomSceneControl,
     room: PokerRoomEntity,
     pokerRoomsService: PokerRoomsService,
-    access: AccessControl<PokerSubjects>,
     resolveRoomUrl: PokerRoomUrlResolver,
 ): Promise<PokerRoomView> {
     return {
@@ -333,10 +325,5 @@ async function buildView(
             ctx.user._id,
         ),
         roomUrl: await resolveRoomUrl(ctx.user.botId, room.token),
-        canClose: await access.can(
-            ctx.user,
-            "update",
-            subject("PokerRoom", room),
-        ),
     };
 }

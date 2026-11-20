@@ -163,7 +163,7 @@ function isObserver({ ctx, room }: PokerRoomView): boolean {
 }
 
 function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
-    const { ctx, scene, room, canClose } = view;
+    const { ctx, scene, room } = view;
     const { t } = ctx;
 
     return [
@@ -183,25 +183,21 @@ function readMenuKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
                 page: 0,
             }),
         ],
-        [scene.screenButton(t("poker:autoRevealButton"), "autoReveal")],
+        [
+            scene.screenButton(t("poker:autoRevealButton"), "autoReveal"),
+            readLeaveButton(view),
+        ],
         [
             scene.backButton(t("poker:backButton")),
-            ...(canClose
-                ? [
-                      {
-                          ...scene.button(
-                              t(
-                                  scene.isConfirming("close")
-                                      ? "poker:confirmCloseButton"
-                                      : "poker:closeButton",
-                              ),
-                              "close",
-                              null,
-                          ),
-                          style: "danger" as const,
-                      },
-                  ]
-                : []),
+            scene.button(
+                t(
+                    scene.isConfirming("close")
+                        ? "poker:confirmCloseButton"
+                        : "poker:closeButton",
+                ),
+                "close",
+                null,
+            ),
         ],
     ];
 }
@@ -217,6 +213,18 @@ function readWatchButton(view: PokerRoomView): InlineKeyboardButton {
             userId: ctx.user._id.toHexString(),
             role: isWatching ? "voter" : "observer",
         },
+    );
+}
+
+function readLeaveButton({ ctx, scene }: PokerRoomView): InlineKeyboardButton {
+    return scene.button(
+        ctx.t(
+            scene.isConfirming("remove")
+                ? "poker:confirmRemoveButton"
+                : "poker:leaveButton",
+        ),
+        "remove",
+        ctx.user._id.toHexString(),
     );
 }
 

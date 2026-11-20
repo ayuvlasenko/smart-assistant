@@ -4,11 +4,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
-import {
-    AccessAction,
-    AccessControl,
-    AccessService,
-} from "../access/access-service.js";
+import { AccessControl, AccessService } from "../access/access-service.js";
 import { Page, PageRequest } from "../page.js";
 import {
     NumberSetting,
@@ -204,9 +200,7 @@ export class PokerRoomsService {
             filter: {
                 $and: [
                     await this.access.accessibleBy(actor, "read", "PokerRoom"),
-                    status === "open"
-                        ? { "participants.userId": actor._id }
-                        : { createdBy: actor._id },
+                    { "participants.userId": actor._id },
                 ],
             },
             status,
@@ -307,7 +301,7 @@ export class PokerRoomsService {
             actor,
             roomId,
             userId.equals(actor._id) ? "left" : "removed",
-            (room) => removePokerParticipant(room, userId),
+            (room, now) => removePokerParticipant(room, userId, now),
         );
     }
 
@@ -315,12 +309,8 @@ export class PokerRoomsService {
         actor: UserEntity,
         roomId: ObjectId,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(
-            actor,
-            roomId,
-            "closed",
-            (room, now) => closePokerRoom(now),
-            ["use", "update"],
+        return this.change(actor, roomId, "closed", (room, now) =>
+            closePokerRoom(now),
         );
     }
 
@@ -329,7 +319,6 @@ export class PokerRoomsService {
         roomId: ObjectId,
         change: PokerRoomChange,
         transition: PokerRoomTransition,
-        actions: AccessAction[] = ["use"],
     ): Promise<PokerRoomEntity | null> {
         for (let attempt = 0; attempt < saveAttempts; attempt += 1) {
             const room = await this.find(actor, roomId);
@@ -338,13 +327,7 @@ export class PokerRoomsService {
                 return null;
             }
 
-            for (const action of actions) {
-                await this.access.assert(
-                    actor,
-                    action,
-                    subject("PokerRoom", room),
-                );
-            }
+            await this.access.assert(actor, "use", subject("PokerRoom", room));
 
             const now = new Date();
 
@@ -405,7 +388,6 @@ export class PokerRoomsService {
     ): Promise<void> {
         const userIds = new Map(
             [
-                room.createdBy,
                 ...room.participants.map(({ userId }) => userId),
                 ...(previous?.participants ?? []).map(({ userId }) => userId),
             ].map((userId) => [userId.toHexString(), userId]),
