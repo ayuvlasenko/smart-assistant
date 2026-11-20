@@ -727,28 +727,12 @@ void describe("PokerRoomsService participants", () => {
         );
     });
 
-    void it("keeps the creator in the room and refuses a user outside it", async (t) => {
+    void it("removes the creator like any other participant and refuses a user outside it", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot);
         const member = await joinMember(bot, room);
         const outsider = await createUser(bot, [pokerJoinGrant]);
 
-        assert.equal(
-            await bot.pokerRoomsService.removeParticipant(
-                member,
-                room._id,
-                creator._id,
-            ),
-            null,
-        );
-        assert.equal(
-            await bot.pokerRoomsService.removeParticipant(
-                creator,
-                room._id,
-                creator._id,
-            ),
-            null,
-        );
         assert.equal(
             await bot.pokerRoomsService.removeParticipant(
                 outsider,
@@ -757,7 +741,50 @@ void describe("PokerRoomsService participants", () => {
             ),
             null,
         );
-        assert.equal((await findRoom(room)).participants.length, 2);
+
+        const changed = await bot.pokerRoomsService.removeParticipant(
+            member,
+            room._id,
+            creator._id,
+        );
+
+        assert.ok(changed);
+        assert.deepEqual(
+            changed.participants.map(({ userId }) => userId.toHexString()),
+            [member._id.toHexString()],
+        );
+        assert.equal(changed.closedAt, undefined);
+        assert.equal(await bot.pokerRoomsService.find(creator, room._id), null);
+        assert.equal(
+            await bot.pokerRoomsService.isRemoved(creator, room._id),
+            true,
+        );
+        assert.equal(
+            await bot.pokerRoomsService.close(creator, room._id),
+            null,
+        );
+    });
+
+    void it("closes the room when its last participant leaves", async (t) => {
+        const bot = await buildBot(t);
+        const { room, creator } = await createRoomWithCreator(bot);
+
+        const left = await bot.pokerRoomsService.removeParticipant(
+            creator,
+            room._id,
+            creator._id,
+        );
+
+        assert.ok(left);
+        assert.deepEqual(left.participants, []);
+        assert.ok(left.closedAt);
+        assert.deepEqual(
+            await bot.pokerRoomsService.join(
+                await createUser(bot, [pokerJoinGrant]),
+                room.token,
+            ),
+            { status: "closed" },
+        );
     });
 
     void it("reveals the round by itself when the last voter without a vote is removed", async (t) => {
@@ -808,17 +835,20 @@ void describe("PokerRoomsService participants", () => {
 });
 
 void describe("PokerRoomsService close", () => {
-    void it("closes a room for its creator and stops every change in it", async (t) => {
+    void it("lets any participant close a room and stops every change in it", async (t) => {
         const bot = await buildBot(t);
         const { room, creator } = await createRoomWithCreator(bot);
         const member = await joinMember(bot, room);
 
-        await assert.rejects(
-            bot.pokerRoomsService.close(member, room._id),
-            ForbiddenError,
+        assert.equal(
+            await bot.pokerRoomsService.close(
+                await createUser(bot, [pokerCreateGrant]),
+                room._id,
+            ),
+            null,
         );
 
-        const closed = await bot.pokerRoomsService.close(creator, room._id);
+        const closed = await bot.pokerRoomsService.close(member, room._id);
 
         assert.ok(closed?.closedAt);
         assert.equal(
@@ -845,7 +875,7 @@ void describe("PokerRoomsService close", () => {
             status: "open",
             ...page,
         });
-        const archived = await bot.pokerRoomsService.list(creator, {
+        const archived = await bot.pokerRoomsService.list(member, {
             status: "closed",
             ...page,
         });
@@ -859,7 +889,7 @@ void describe("PokerRoomsService close", () => {
 });
 
 void describe("PokerRoomsService list", () => {
-    void it("lists the open rooms of a participant and the closed rooms of their creator", async (t) => {
+    void it("lists the open and the closed rooms of a participant", async (t) => {
         const bot = await buildBot(t);
         const { room: open, creator } = await createRoomWithCreator(bot);
         const closed = await bot.pokerRoomsService.create(creator, {
@@ -884,12 +914,15 @@ void describe("PokerRoomsService list", () => {
         assert.deepEqual(await ids(creator, "closed"), [
             closed._id.toHexString(),
         ]);
-        assert.deepEqual(await ids(member, "closed"), []);
+        assert.deepEqual(await ids(member, "closed"), [
+            closed._id.toHexString(),
+        ]);
+        assert.deepEqual(await ids(outsider, "closed"), []);
     });
 
-    void it("finds a room only for its participants and its creator", async (t) => {
+    void it("finds a room only for its participants", async (t) => {
         const bot = await buildBot(t);
-        const { room } = await createRoomWithCreator(bot);
+        const { room, creator } = await createRoomWithCreator(bot);
         const outsider = await createUser(bot, [pokerJoinGrant]);
         const member = await joinMember(bot, room);
 
@@ -898,6 +931,14 @@ void describe("PokerRoomsService list", () => {
             null,
         );
         assert.ok(await bot.pokerRoomsService.find(member, room._id));
+
+        await bot.pokerRoomsService.removeParticipant(
+            creator,
+            room._id,
+            creator._id,
+        );
+
+        assert.equal(await bot.pokerRoomsService.find(creator, room._id), null);
     });
 });
 

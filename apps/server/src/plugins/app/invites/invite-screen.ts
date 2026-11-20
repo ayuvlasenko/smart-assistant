@@ -160,18 +160,15 @@ function revokeButton(
     scene: InvitesSceneControl,
     inviteId: string,
 ): InlineKeyboardButton {
-    return {
-        ...scene.button(
-            t(
-                scene.isConfirming("revoke", inviteId)
-                    ? "invites:confirmRevokeButton"
-                    : "invites:revokeButton",
-            ),
-            "revoke",
-            inviteId,
+    return scene.button(
+        t(
+            scene.isConfirming("revoke", inviteId)
+                ? "invites:confirmRevokeButton"
+                : "invites:revokeButton",
         ),
-        style: "danger",
-    };
+        "revoke",
+        inviteId,
+    );
 }
 
 function describeUser(

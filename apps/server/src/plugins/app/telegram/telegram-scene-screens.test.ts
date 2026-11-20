@@ -151,6 +151,28 @@ void describe("Telegram scene screens", () => {
         assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
     });
 
+    void it("colours only the button that waits for its second press", async (t) => {
+        const { bot } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654719 });
+        const styleOf = (label: string) =>
+            bot.telegramApiService.editMessageText.mock.calls
+                .at(-1)
+                ?.arguments[0].reply_markup?.inline_keyboard.flat()
+                .find(({ text }) => text === label)?.style;
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Open a");
+        await bot.pressButton(chat, "Remove");
+
+        assert.equal(styleOf("Sure?"), "danger");
+        assert.equal(styleOf("Remove copy"), undefined);
+        assert.equal(styleOf("Restock"), undefined);
+
+        await bot.pressButton(chat, "Restock");
+
+        assert.equal(styleOf("Remove"), undefined);
+    });
+
     void it("forgets a pending confirmation when the user leaves the screen and comes back", async (t) => {
         const { bot, shop } = await buildShopBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654708 });

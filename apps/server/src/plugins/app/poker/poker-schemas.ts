@@ -121,5 +121,4 @@ export interface PokerRoomView {
     deck: PokerDeck;
     labels: Map<string, string>;
     roomUrl: string;
-    canClose: boolean;
 }

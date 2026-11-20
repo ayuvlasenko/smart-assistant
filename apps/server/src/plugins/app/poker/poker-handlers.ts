@@ -93,12 +93,6 @@ export default fp(
                             rules.can("create", pokerRoom, {
                                 createdBy: user._id,
                             });
-                            rules.can("read", pokerRoom, {
-                                createdBy: user._id,
-                            });
-                            rules.can("update", pokerRoom, {
-                                createdBy: user._id,
-                            });
                         },
                     },
                 ],

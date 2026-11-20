@@ -336,16 +336,13 @@ function switchButton(
         return scene.button(t("bots:startButton"), "start", bot._id);
     }
 
-    return {
-        ...scene.button(
-            t(
-                scene.isConfirming("stop", bot._id)
-                    ? "bots:confirmStopButton"
-                    : "bots:stopButton",
-            ),
-            "stop",
-            bot._id,
+    return scene.button(
+        t(
+            scene.isConfirming("stop", bot._id)
+                ? "bots:confirmStopButton"
+                : "bots:stopButton",
         ),
-        style: "danger",
-    };
+        "stop",
+        bot._id,
+    );
 }

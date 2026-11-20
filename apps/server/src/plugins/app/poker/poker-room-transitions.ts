@@ -156,15 +156,19 @@ export function addPokerParticipant(
 export function removePokerParticipant(
     room: PokerRoomEntity,
     userId: ObjectId,
+    now: Date,
 ): PokerRoomPatch | null {
     const participant = findPokerParticipant(room, userId);
 
-    if (!participant || userId.equals(room.createdBy)) {
+    if (!participant) {
         return null;
     }
 
+    const participants = withoutParticipant(room.participants, userId);
+
     return {
-        participants: withoutParticipant(room.participants, userId),
+        participants,
+        ...(participants.length ? {} : { closedAt: now }),
         removedParticipants: [
             ...withoutParticipant(room.removedParticipants ?? [], userId),
             participant,
