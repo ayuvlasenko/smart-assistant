@@ -15,6 +15,7 @@ const telegramButtonSchema = Type.Union([
         kind: Type.Literal("scene"),
         name: Type.String(),
         value: Type.Unknown(),
+        armed: Type.Optional(Type.Literal(true)),
     }),
     Type.Object({
         kind: Type.Literal("input"),
@@ -46,6 +47,8 @@ export const telegramButtonsStateSchema = Type.Object({
 });
 
 export type TelegramButton = Static<typeof telegramButtonSchema>;
+
+export type TelegramSceneButton = Extract<TelegramButton, { kind: "scene" }>;
 
 export type TelegramMessageMarkup =
     | InlineKeyboardMarkup
@@ -145,10 +148,9 @@ export class TelegramSceneButtons {
 
     confirm(
         instance: TelegramSceneInstance,
-        name: string,
-        value: unknown,
+        { name, value, armed }: TelegramSceneButton,
     ): boolean {
-        if (this.isConfirming(instance, name, value)) {
+        if (armed && this.isConfirming(instance, name, value)) {
             this.cancelConfirmation(instance);
             return true;
         }

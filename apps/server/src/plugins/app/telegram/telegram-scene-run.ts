@@ -225,11 +225,18 @@ export class TelegramSceneRun {
                 return screens.of(instance);
             },
             button: (text, name, value) => {
-                const created = button(text, { kind: "scene", name, value });
+                if (!this.buttons.isConfirming(instance, name, value)) {
+                    return button(text, { kind: "scene", name, value });
+                }
 
-                return this.buttons.isConfirming(instance, name, value)
-                    ? { ...created, style: "danger" }
-                    : created;
+                const armed = {
+                    kind: "scene",
+                    name,
+                    value,
+                    armed: true,
+                } as const;
+
+                return { ...button(text, armed), style: "danger" };
             },
             screenButton: (text, name, ...params) =>
                 button(text, {

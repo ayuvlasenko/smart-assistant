@@ -5,6 +5,7 @@ import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
     TelegramButtonPress,
+    TelegramSceneButton,
     TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
@@ -59,13 +60,7 @@ export class TelegramScenePresses {
             case "back":
                 return this.pressBack(ctx, run, instance);
             case "scene":
-                return this.pressScene(
-                    ctx,
-                    run,
-                    instance,
-                    button.name,
-                    button.value,
-                );
+                return this.pressScene(ctx, run, instance, button);
         }
     }
 
@@ -142,9 +137,9 @@ export class TelegramScenePresses {
         ctx: TelegramContext<Update>,
         run: TelegramSceneRun,
         instance: TelegramSceneInstance,
-        name: string,
-        value: unknown,
+        button: TelegramSceneButton,
     ): Promise<void> {
+        const { name, value } = button;
         const definition = instance.scene.buttons[name];
         const action = `${instance.scene.name}:${name}`;
 
@@ -163,7 +158,7 @@ export class TelegramScenePresses {
 
         if (!definition.confirm) {
             this.buttons.cancelConfirmation(instance);
-        } else if (!this.buttons.confirm(instance, name, value)) {
+        } else if (!this.buttons.confirm(instance, button)) {
             this.record(ctx, instance, name);
             return;
         }

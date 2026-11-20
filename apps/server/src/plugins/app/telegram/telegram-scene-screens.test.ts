@@ -151,6 +151,25 @@ void describe("Telegram scene screens", () => {
         assert.ok((await bot.readButtonLabels(chat.id)).includes("Remove"));
     });
 
+    void it("asks again on a double tap, which sends the first button twice", async (t) => {
+        const { bot, shop } = await buildShopBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654720 });
+
+        await bot.sendText(chat, "/shop");
+        await bot.pressButton(chat, "Open a");
+        await Promise.all([
+            bot.pressButton(chat, "Remove"),
+            bot.pressButton(chat, "Remove"),
+        ]);
+
+        assert.deepEqual(shop.removed, []);
+        assert.ok((await bot.readButtonLabels(chat.id)).includes("Sure?"));
+
+        await bot.pressButton(chat, "Sure?");
+
+        assert.deepEqual(shop.removed, ["a"]);
+    });
+
     void it("colours only the button that waits for its second press", async (t) => {
         const { bot } = await buildShopBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654719 });
