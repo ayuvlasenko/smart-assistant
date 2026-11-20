@@ -20,10 +20,7 @@ import { TelegramChats } from "./telegram-chats.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
     BannedTelegramUserError,
-    DuplicateTelegramUpdateError,
-    NonPrivateChatError,
     TelegramApiError,
-    TelegramUpdateWithoutUserError,
     UnhandledTelegramUpdateError,
 } from "./telegram-errors.js";
 import {
@@ -136,8 +133,7 @@ export class TelegramUpdateHandler {
         telegramUser: User | undefined,
     ): Promise<TelegramUpdateResult> {
         try {
-            await this.process(run, telegramUser);
-            return "handled";
+            return await this.process(run, telegramUser);
         } catch (err) {
             return this.handleFailure(run, err);
         }
@@ -146,12 +142,17 @@ export class TelegramUpdateHandler {
     private async process(
         run: TelegramUpdateRun,
         telegramUser: User | undefined,
-    ): Promise<void> {
-        await this.assertNewUpdate(run);
-        assertPrivateChat(run.update);
+    ): Promise<TelegramUpdateResult> {
+        if (!(await this.claimUpdate(run))) {
+            return "duplicate";
+        }
+
+        if (!isFromPrivateChat(run.update)) {
+            return "ignored";
+        }
 
         if (!telegramUser) {
-            throw new TelegramUpdateWithoutUserError();
+            return "no_user";
         }
 
         const user = await this.resolveUser(run, telegramUser);
@@ -161,20 +162,20 @@ export class TelegramUpdateHandler {
         await this.telegramCommandMenus.sync(run.bot, user);
         run.route = await this.dispatch(run, user, telegramUser.id);
         await run.responder.answerPendingCallback();
+
+        return "handled";
     }
 
-    private async assertNewUpdate({
+    private async claimUpdate({
         bot,
         update,
-    }: TelegramUpdateRun): Promise<void> {
+    }: TelegramUpdateRun): Promise<boolean> {
         const claim = await this.lockService.tryAcquire(
             `telegram:${bot.telegramId}:update:${update.update_id}`,
             updateClaimTtlMilliseconds,
         );
 
-        if (!claim) {
-            throw new DuplicateTelegramUpdateError();
-        }
+        return claim !== undefined;
     }
 
     private async resolveUser(
@@ -224,18 +225,6 @@ export class TelegramUpdateHandler {
         run: TelegramUpdateRun,
         err: unknown,
     ): Promise<TelegramUpdateResult> {
-        if (err instanceof DuplicateTelegramUpdateError) {
-            return "duplicate";
-        }
-
-        if (err instanceof TelegramUpdateWithoutUserError) {
-            return "no_user";
-        }
-
-        if (err instanceof NonPrivateChatError) {
-            return "ignored";
-        }
-
         if (err instanceof BannedTelegramUserError) {
             await run.responder.answerPendingCallback();
             return "banned";
@@ -280,12 +269,10 @@ export class TelegramUpdateHandler {
     }
 }
 
-function assertPrivateChat(update: Update): void {
+function isFromPrivateChat(update: Update): boolean {
     const chat = extractTelegramChat(update);
 
-    if (chat && chat.type !== "private") {
-        throw new NonPrivateChatError();
-    }
+    return !chat || chat.type === "private";
 }
 
 function resultOfError(err: unknown): TelegramUpdateResult {
