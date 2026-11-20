@@ -92,7 +92,7 @@ export function replaceScreen(
     instance: TelegramSceneInstance,
     screen: TelegramScreenState,
 ): void {
-    currentScreen(instance);
+    assertHasScreens(instance);
     instance.record.screen = screen;
 }
 
@@ -110,20 +110,26 @@ export function backScreen(instance: TelegramSceneInstance): void {
 }
 
 export function resetScreens(instance: TelegramSceneInstance): void {
-    currentScreen(instance);
+    assertHasScreens(instance);
     openRootScreen(instance);
 }
 
 export function currentScreen(
     instance: TelegramSceneInstance,
 ): TelegramScreenState {
-    const { screen } = instance.record;
+    assertHasScreens(instance);
 
-    if (!screen) {
+    return instance.record.screen;
+}
+
+function assertHasScreens(
+    instance: TelegramSceneInstance,
+): asserts instance is TelegramSceneInstance & {
+    record: { screen: TelegramScreenState };
+} {
+    if (!instance.record.screen) {
         throw new Error(
             `Telegram scene "${instance.scene.name}" has no screens`,
         );
     }
-
-    return screen;
 }

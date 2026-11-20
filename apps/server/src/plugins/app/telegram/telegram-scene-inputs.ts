@@ -108,7 +108,7 @@ export class TelegramSceneInputs {
             "Telegram scene input started",
         );
 
-        await this.run(instance, () =>
+        await this.dropInputOnError(instance, () =>
             this.enterStep(ctx, scene, instance, {
                 input,
                 step: firstStep,
@@ -124,7 +124,7 @@ export class TelegramSceneInputs {
     ): Promise<void> {
         const active = this.requireActive(instance);
 
-        await this.run(instance, () =>
+        await this.dropInputOnError(instance, () =>
             this.runStep(ctx, scene, instance, active, undefined),
         );
     }
@@ -142,7 +142,7 @@ export class TelegramSceneInputs {
             return false;
         }
 
-        await this.run(instance, () =>
+        await this.dropInputOnError(instance, () =>
             this.runStep(ctx, scene, instance, active, value),
         );
 
@@ -207,7 +207,7 @@ export class TelegramSceneInputs {
         return true;
     }
 
-    private async run(
+    private async dropInputOnError(
         instance: TelegramSceneInstance,
         action: () => Promise<void>,
     ): Promise<void> {
@@ -386,8 +386,7 @@ export class TelegramSceneInputs {
         instance: TelegramSceneInstance,
         active: ActiveInput,
     ): Promise<void> {
-        instance.record.input = undefined;
-        forgetInputButtons(instance);
+        this.abort(instance);
         await this.cleanUp(ctx, active);
     }
 

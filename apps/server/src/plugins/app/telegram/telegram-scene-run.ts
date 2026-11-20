@@ -72,13 +72,13 @@ export class TelegramSceneRun {
     }
 
     async start(scene: TelegramScene, state: SceneState): Promise<boolean> {
-        if (!(await this.canEnter(scene))) {
+        if (!(await this.checkGuard(scene))) {
             return false;
         }
 
         const id = await this.instanceIdFor(scene, state);
 
-        if (!(await this.canStart(scene, id))) {
+        if (!(await this.admitStart(scene, id))) {
             return false;
         }
 
@@ -319,7 +319,7 @@ export class TelegramSceneRun {
         await renderSceneMessages(this.ctx, instance, contents, { reshow });
     }
 
-    private async canEnter(scene: TelegramScene): Promise<boolean> {
+    private async checkGuard(scene: TelegramScene): Promise<boolean> {
         if (this.findScene(scene.name) !== scene) {
             throw new Error(`Telegram scene "${scene.name}" is not registered`);
         }
@@ -355,7 +355,7 @@ export class TelegramSceneRun {
         scene: TelegramScene,
         state: SceneState,
     ): Promise<boolean> {
-        if (!(await this.canEnter(scene))) {
+        if (!(await this.checkGuard(scene))) {
             return false;
         }
 
@@ -367,7 +367,7 @@ export class TelegramSceneRun {
             );
         }
 
-        if (!(await this.canStart(scene, id, source))) {
+        if (!(await this.admitStart(scene, id, source))) {
             return false;
         }
 
@@ -400,7 +400,7 @@ export class TelegramSceneRun {
             : this.storage.idFor(scene, state);
     }
 
-    private canStart(
+    private admitStart(
         scene: TelegramScene,
         id: string,
         source?: TelegramSceneInstance,
