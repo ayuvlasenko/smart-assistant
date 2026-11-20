@@ -3,12 +3,9 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
-import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
-import { TelegramSceneMessages } from "./telegram-scene-messages.js";
 import { TelegramScenePresses } from "./telegram-scene-presses.js";
 import { TelegramSceneRun } from "./telegram-scene-run.js";
-import { TelegramSceneScreens } from "./telegram-scene-screens.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSession } from "./telegram-session.js";
 
@@ -18,22 +15,14 @@ type SceneControl = TelegramSceneControl<SceneState>;
 export class TelegramSceneEngine {
     private readonly scenes = new Map<string, TelegramScene>();
     private readonly runs = new WeakMap<TelegramSession, TelegramSceneRun>();
-    private readonly buttons = new TelegramSceneButtons();
     private readonly inputs: TelegramSceneInputs;
     private readonly presses: TelegramScenePresses;
-    private readonly screens = new TelegramSceneScreens();
-    private readonly messages = new TelegramSceneMessages();
     private readonly telegramMetrics: TelegramMetrics;
 
     constructor(telegramMetrics: TelegramMetrics) {
         this.telegramMetrics = telegramMetrics;
-        this.inputs = new TelegramSceneInputs(telegramMetrics, this.buttons);
-        this.presses = new TelegramScenePresses(
-            telegramMetrics,
-            this.buttons,
-            this.inputs,
-            this.screens,
-        );
+        this.inputs = new TelegramSceneInputs(telegramMetrics);
+        this.presses = new TelegramScenePresses(telegramMetrics, this.inputs);
     }
 
     register(scene: TelegramScene): void {
@@ -107,11 +96,8 @@ export class TelegramSceneEngine {
             ctx,
             (name) => this.scenes.get(name),
             this.telegramMetrics,
-            this.buttons,
             this.inputs,
             this.presses,
-            this.screens,
-            this.messages,
         );
         const stopRecording = ctx.events.on(
             ["messageSent", "messageEdited", "messageRemoved"],

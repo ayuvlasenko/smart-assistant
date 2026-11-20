@@ -5,7 +5,10 @@ import { UserEntity } from "../users/user-entity.js";
 import { TelegramContext } from "./telegram-context.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics, TelegramSceneEvent } from "./telegram-metrics.js";
-import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
+import {
+    createSceneButton,
+    forgetInputButtons,
+} from "./telegram-scene-buttons.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
 import {
     TelegramInputControl,
@@ -35,14 +38,9 @@ interface ActiveInput {
 
 export class TelegramSceneInputs {
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly buttons: TelegramSceneButtons;
 
-    constructor(
-        telegramMetrics: TelegramMetrics,
-        buttons: TelegramSceneButtons,
-    ) {
+    constructor(telegramMetrics: TelegramMetrics) {
         this.telegramMetrics = telegramMetrics;
-        this.buttons = buttons;
     }
 
     async canUse(
@@ -65,7 +63,7 @@ export class TelegramSceneInputs {
 
     abort(instance: TelegramSceneInstance): void {
         instance.record.input = undefined;
-        this.buttons.forgetInput(instance);
+        forgetInputButtons(instance);
     }
 
     accepts(instance: TelegramSceneInstance, update: Update): boolean {
@@ -328,7 +326,7 @@ export class TelegramSceneInputs {
         active: ActiveInput,
     ): Promise<void> {
         active.state.step = active.step.name;
-        this.buttons.forgetInput(instance);
+        forgetInputButtons(instance);
 
         ctx.log.info(
             {
@@ -389,7 +387,7 @@ export class TelegramSceneInputs {
         active: ActiveInput,
     ): Promise<void> {
         instance.record.input = undefined;
-        this.buttons.forgetInput(instance);
+        forgetInputButtons(instance);
         await this.cleanUp(ctx, active);
     }
 
@@ -437,7 +435,7 @@ export class TelegramSceneInputs {
             payload: active.state.payload,
             pressed,
             button: (text, value) =>
-                this.buttons.create(instance, text, {
+                createSceneButton(instance, text, {
                     kind: "input",
                     step: active.step.name,
                     value,

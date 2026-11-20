@@ -25,94 +25,89 @@ type TelegramSceneMessageState = Static<
 
 export type TelegramSceneMessagesRelease = "keep" | "removeButtons" | "delete";
 
-export class TelegramSceneMessages {
-    async render(
-        ctx: TelegramContext,
-        instance: TelegramSceneInstance,
-        contents: TelegramMessageContent[],
-        { reshow = false }: { reshow?: boolean } = {},
-    ): Promise<void> {
-        const messages = instance.record.messages;
-        let mustSend = reshow;
+export async function renderSceneMessages(
+    ctx: TelegramContext,
+    instance: TelegramSceneInstance,
+    contents: TelegramMessageContent[],
+    { reshow = false }: { reshow?: boolean } = {},
+): Promise<void> {
+    const messages = instance.record.messages;
+    let mustSend = reshow;
 
-        for (const [index, content] of contents.entries()) {
-            const previous = messages[index];
-            const hash = hashContent(content);
+    for (const [index, content] of contents.entries()) {
+        const previous = messages[index];
+        const hash = hashContent(content);
 
-            if (!mustSend && previous?.hash === hash) {
-                continue;
-            }
-
-            if (
-                !mustSend &&
-                previous &&
-                canEdit(previous.kind, content.kind) &&
-                (await ctx.edit(previous.messageId, content))
-            ) {
-                messages[index] = { ...previous, kind: content.kind, hash };
-                continue;
-            }
-
-            const message = await ctx.send(content);
-
-            messages[index] = {
-                messageId: message.message_id,
-                kind: content.kind,
-                hash,
-            } satisfies TelegramSceneMessageState;
-            mustSend = true;
-
-            if (previous) {
-                await this.discard(ctx, previous.messageId);
-            }
+        if (!mustSend && previous?.hash === hash) {
+            continue;
         }
 
-        while (messages.length > contents.length) {
-            const extra = messages.at(-1);
+        if (
+            !mustSend &&
+            previous &&
+            canEdit(previous.kind, content.kind) &&
+            (await ctx.edit(previous.messageId, content))
+        ) {
+            messages[index] = { ...previous, kind: content.kind, hash };
+            continue;
+        }
 
-            if (extra) {
-                await this.discard(ctx, extra.messageId);
-            }
+        const message = await ctx.send(content);
 
-            messages.pop();
+        messages[index] = {
+            messageId: message.message_id,
+            kind: content.kind,
+            hash,
+        } satisfies TelegramSceneMessageState;
+        mustSend = true;
+
+        if (previous) {
+            await discardMessage(ctx, previous.messageId);
         }
     }
 
-    async release(
-        ctx: TelegramContext,
-        instance: TelegramSceneInstance,
-        release: TelegramSceneMessagesRelease,
-    ): Promise<void> {
-        for (const message of instance.record.messages) {
-            if (release === "removeButtons") {
-                await ctx.removeKeyboard(message.messageId);
-            } else if (release === "delete") {
-                await this.discard(ctx, message.messageId);
-            }
+    while (messages.length > contents.length) {
+        const extra = messages.at(-1);
+
+        if (extra) {
+            await discardMessage(ctx, extra.messageId);
+        }
+
+        messages.pop();
+    }
+}
+
+export async function releaseSceneMessages(
+    ctx: TelegramContext,
+    instance: TelegramSceneInstance,
+    release: TelegramSceneMessagesRelease,
+): Promise<void> {
+    for (const message of instance.record.messages) {
+        if (release === "removeButtons") {
+            await ctx.removeKeyboard(message.messageId);
+        } else if (release === "delete") {
+            await discardMessage(ctx, message.messageId);
         }
     }
+}
 
-    async handOver(
-        ctx: TelegramContext,
-        source: TelegramSceneInstance,
-        target: TelegramSceneInstance,
-    ): Promise<void> {
-        await this.release(ctx, target, "delete");
-        target.record.messages = source.record.messages.map((message) => ({
-            ...message,
-            hash: "",
-        }));
-        source.record.messages = [];
-    }
+export async function handOverSceneMessages(
+    ctx: TelegramContext,
+    source: TelegramSceneInstance,
+    target: TelegramSceneInstance,
+): Promise<void> {
+    await releaseSceneMessages(ctx, target, "delete");
+    target.record.messages = source.record.messages.map((message) => ({
+        ...message,
+        hash: "",
+    }));
+    source.record.messages = [];
+}
 
-    private async discard(
-        ctx: TelegramContext,
-        messageId: number,
-    ): Promise<void> {
-        if (!(await ctx.deleteMessage(messageId))) {
-            await ctx.removeKeyboard(messageId);
-        }
-    }
+function hashContent(content: TelegramMessageContent): string {
+    return createHash("sha256")
+        .update(JSON.stringify(content))
+        .digest("base64url");
 }
 
 function canEdit(
@@ -122,8 +117,11 @@ function canEdit(
     return previous !== "media" || next === "media";
 }
 
-function hashContent(content: TelegramMessageContent): string {
-    return createHash("sha256")
-        .update(JSON.stringify(content))
-        .digest("base64url");
+async function discardMessage(
+    ctx: TelegramContext,
+    messageId: number,
+): Promise<void> {
+    if (!(await ctx.deleteMessage(messageId))) {
+        await ctx.removeKeyboard(messageId);
+    }
 }

@@ -4,13 +4,16 @@ import { TelegramContext } from "./telegram-context.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
+    cancelConfirmation,
+    confirmSceneButton,
+    findPressedButton,
     TelegramButtonPress,
     TelegramSceneButton,
-    TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import {
-    TelegramSceneScreens,
+    canShowScreen,
+    isKnownScreen,
     TelegramScreenState,
 } from "./telegram-scene-screens.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
@@ -22,20 +25,11 @@ type TelegramSceneControlOf = (
 
 export class TelegramScenePresses {
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly buttons: TelegramSceneButtons;
     private readonly inputs: TelegramSceneInputs;
-    private readonly screens: TelegramSceneScreens;
 
-    constructor(
-        telegramMetrics: TelegramMetrics,
-        buttons: TelegramSceneButtons,
-        inputs: TelegramSceneInputs,
-        screens: TelegramSceneScreens,
-    ) {
+    constructor(telegramMetrics: TelegramMetrics, inputs: TelegramSceneInputs) {
         this.telegramMetrics = telegramMetrics;
-        this.buttons = buttons;
         this.inputs = inputs;
-        this.screens = screens;
     }
 
     async press(
@@ -44,7 +38,7 @@ export class TelegramScenePresses {
         press: TelegramButtonPress,
         control: TelegramSceneControlOf,
     ): Promise<void> {
-        const button = instance && this.buttons.find(instance, press);
+        const button = instance && findPressedButton(instance, press);
 
         if (!instance || !button) {
             return this.rejectExpired(ctx, "unknown");
@@ -83,7 +77,7 @@ export class TelegramScenePresses {
 
         const scene = control(instance);
 
-        this.buttons.cancelConfirmation(instance);
+        cancelConfirmation(instance);
 
         const isHandled = await this.inputs.handleButton(
             ctx,
@@ -108,13 +102,13 @@ export class TelegramScenePresses {
     ): Promise<void> {
         const action = `${instance.scene.name}:screen:${screen.name}`;
 
-        if (!this.screens.isKnown(instance.scene, screen)) {
+        if (!isKnownScreen(instance.scene, screen)) {
             return this.rejectExpired(ctx, action);
         }
 
         if (
             !(await isAllowed(instance.scene.guard, ctx.user)) ||
-            !(await this.screens.canShow(instance, ctx.user, screen))
+            !(await canShowScreen(instance, ctx.user, screen))
         ) {
             return this.rejectForbidden(ctx, action);
         }
@@ -160,8 +154,8 @@ export class TelegramScenePresses {
         const scene = control(instance);
 
         if (!definition.confirm) {
-            this.buttons.cancelConfirmation(instance);
-        } else if (!this.buttons.confirm(instance, button)) {
+            cancelConfirmation(instance);
+        } else if (!confirmSceneButton(instance, button)) {
             this.record(ctx, instance, name);
             return;
         }

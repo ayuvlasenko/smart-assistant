@@ -254,11 +254,11 @@ flowchart TD
 
     engine -->|"one per update"| run[TelegramSceneRun]
     run --> presses[TelegramScenePresses]
-    presses --> buttons[TelegramSceneButtons]
+    presses --> buttons["telegram-scene-buttons.ts"]
     run --> storage[TelegramSceneStorage]
     run --> inputs[TelegramSceneInputs]
-    run --> screens[TelegramSceneScreens]
-    run --> messages[TelegramSceneMessages]
+    run --> screens["telegram-scene-screens.ts"]
+    run --> messages["telegram-scene-messages.ts"]
     inputs --> steps["telegram-steps.ts"]
 
     ctx --> responder[TelegramResponder]

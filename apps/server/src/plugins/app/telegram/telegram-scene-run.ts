@@ -4,30 +4,40 @@ import { extractTelegramCommand } from "./telegram-extractors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
+    cancelConfirmation,
+    createSceneButton,
+    isConfirming,
     parseTelegramButtonPress,
+    rememberSceneButtons,
     TelegramButton,
-    TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import {
-    TelegramSceneMessages,
+    handOverSceneMessages,
+    releaseSceneMessages,
+    renderSceneMessages,
     TelegramSceneMessagesRelease,
 } from "./telegram-scene-messages.js";
 import { TelegramScenePresses } from "./telegram-scene-presses.js";
 import {
-    TelegramSceneScreens,
+    backScreen,
+    canShowScreen,
+    currentScreen,
+    pushScreen,
+    renderCurrentScreen,
+    replaceScreen,
+    resetScreens,
     TelegramScreenState,
 } from "./telegram-scene-screens.js";
 import {
     TelegramSceneInstance,
+    TelegramSceneLookup,
     TelegramSceneStorage,
 } from "./telegram-scene-storage.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 
 type SceneState = Record<string, unknown>;
 type SceneControl = TelegramSceneControl<SceneState>;
-
-export type TelegramSceneLookup = (name: string) => TelegramScene | undefined;
 
 export class TelegramSceneRun {
     private readonly ctx: TelegramContext;
@@ -39,34 +49,24 @@ export class TelegramSceneRun {
     private commandMessageId?: number;
     private readonly findScene: TelegramSceneLookup;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly buttons: TelegramSceneButtons;
     private readonly inputs: TelegramSceneInputs;
     private readonly presses: TelegramScenePresses;
-    private readonly screens: TelegramSceneScreens;
-    private readonly messages: TelegramSceneMessages;
 
     constructor(
         ctx: TelegramContext,
         findScene: TelegramSceneLookup,
         telegramMetrics: TelegramMetrics,
-        buttons: TelegramSceneButtons,
         inputs: TelegramSceneInputs,
         presses: TelegramScenePresses,
-        screens: TelegramSceneScreens,
-        messages: TelegramSceneMessages,
     ) {
         this.ctx = ctx;
         this.findScene = findScene;
         this.telegramMetrics = telegramMetrics;
-        this.buttons = buttons;
         this.inputs = inputs;
         this.presses = presses;
-        this.screens = screens;
-        this.messages = messages;
         this.storage = new TelegramSceneStorage(
             ctx.session,
             findScene,
-            screens,
             ctx.log,
         );
     }
@@ -170,7 +170,7 @@ export class TelegramSceneRun {
 
     rememberButtons({ messageId, markup }: TelegramMessageChange): void {
         for (const instance of this.storage.loaded) {
-            this.buttons.remember(instance, messageId, markup);
+            rememberSceneButtons(instance, messageId, markup);
         }
     }
 
@@ -231,22 +231,21 @@ export class TelegramSceneRun {
         this.touch(instance);
 
         const button = (text: string, data: TelegramButton) =>
-            this.buttons.create(instance, text, data);
+            createSceneButton(instance, text, data);
         const screenOf = (
             name: string,
             params: [] | [Record<string, unknown>],
         ): TelegramScreenState => ({ name, params: params[0] ?? {} });
-        const screens = this.screens;
 
         return {
             id: instance.id,
             name: instance.scene.name,
             state: instance.record.state,
             get screen() {
-                return screens.of(instance);
+                return currentScreen(instance);
             },
             button: (text, name, value) => {
-                if (!this.buttons.isConfirming(instance, name, value)) {
+                if (!isConfirming(instance, name, value)) {
                     return button(text, { kind: "scene", name, value });
                 }
 
@@ -266,28 +265,28 @@ export class TelegramSceneRun {
                 }),
             backButton: (text) => button(text, { kind: "back" }),
             isConfirming: (name, ...value) =>
-                this.buttons.isConfirming(instance, name, ...value),
+                isConfirming(instance, name, ...value),
             push: (name, ...params) => {
                 const screen = screenOf(name, params);
 
                 return this.navigate(instance, screen, () => {
-                    screens.push(instance, screen);
+                    pushScreen(instance, screen);
                 });
             },
             replace: (name, ...params) => {
                 const screen = screenOf(name, params);
 
                 return this.navigate(instance, screen, () => {
-                    screens.replace(instance, screen);
+                    replaceScreen(instance, screen);
                 });
             },
             back: () =>
                 this.navigate(instance, undefined, () => {
-                    screens.back(instance);
+                    backScreen(instance);
                 }),
             reset: () =>
                 this.navigate(instance, undefined, () => {
-                    screens.reset(instance);
+                    resetScreens(instance);
                 }),
             ask: (name) => this.ask(instance, name),
             end: (options) => this.end(instance, options?.messages ?? "keep"),
@@ -311,13 +310,13 @@ export class TelegramSceneRun {
             return;
         }
 
-        const contents = await this.screens.render(
+        const contents = await renderCurrentScreen(
             this.ctx,
             instance,
             this.control(instance),
         );
 
-        await this.messages.render(this.ctx, instance, contents, { reshow });
+        await renderSceneMessages(this.ctx, instance, contents, { reshow });
     }
 
     private async canEnter(scene: TelegramScene): Promise<boolean> {
@@ -382,7 +381,7 @@ export class TelegramSceneRun {
             (await this.create(scene, id, state));
 
         this.touch(target);
-        await this.messages.handOver(this.ctx, source, target);
+        await handOverSceneMessages(this.ctx, source, target);
 
         return true;
     }
@@ -490,7 +489,7 @@ export class TelegramSceneRun {
         messages: TelegramSceneMessagesRelease,
         handedOverTo?: string,
     ): Promise<void> {
-        await this.messages.release(this.ctx, instance, messages);
+        await releaseSceneMessages(this.ctx, instance, messages);
         this.storage.remove(instance);
         this.telegramMetrics.recordSceneEvent(instance.scene.name, "end");
         this.ctx.log.info(
@@ -562,10 +561,7 @@ export class TelegramSceneRun {
         target: TelegramScreenState | undefined,
         move: () => void,
     ): Promise<void> {
-        if (
-            target &&
-            !(await this.screens.canShow(instance, this.ctx.user, target))
-        ) {
+        if (target && !(await canShowScreen(instance, this.ctx.user, target))) {
             this.recordForbidden(instance.scene);
             return;
         }
@@ -573,7 +569,7 @@ export class TelegramSceneRun {
         await this.inputs.cancel(this.ctx, this.control(instance), instance, {
             silent: true,
         });
-        this.buttons.cancelConfirmation(instance);
+        cancelConfirmation(instance);
         move();
     }
 }
