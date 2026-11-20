@@ -42,6 +42,60 @@ import { defineScene } from "./telegram-scene.js";
 const testMongo = useTestMongo();
 
 void describe("TelegramUpdateHandler", () => {
+    void it("hands the logger of the update to every Bot API call of it, also outside the session lock", async (t) => {
+        const logs = createLoggerCollector();
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            logger: { ...logs.logger, serializers: loggerRequestSerializers },
+            registerRoutes: (router) => {
+                router.command("hi", async (ctx) => {
+                    await ctx.reply("hi");
+                });
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654475 });
+        const probe = (method: string) => () => {
+            telegramApiScope.getStore()?.log?.info({ method }, "Scope probe");
+        };
+
+        bot.telegramApiService.setMyCommands.mock.mockImplementation(
+            async () => {
+                probe("setMyCommands")();
+                return { ok: true, result: true };
+            },
+        );
+        bot.telegramApiService.answerCallbackQuery.mock.mockImplementation(
+            async () => {
+                probe("answerCallbackQuery")();
+                return { ok: true, result: true };
+            },
+        );
+        await bot.allowUser(chat.id);
+        await bot.sendText(chat, "/hi");
+        await bot.sendCallback(chat, "unknown");
+
+        const probes = logs
+            .readEntries()
+            .filter(({ msg }) => msg === "Scope probe");
+
+        assert.deepEqual(
+            probes.map(({ method, updateId, userId }) => ({
+                method,
+                hasUpdate: updateId !== undefined,
+                hasUser: userId !== undefined,
+            })),
+            [
+                { method: "setMyCommands", hasUpdate: true, hasUser: true },
+                {
+                    method: "answerCallbackQuery",
+                    hasUpdate: true,
+                    hasUser: true,
+                },
+            ],
+        );
+    });
+
     void it("creates a banned user from a new Telegram user update", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({

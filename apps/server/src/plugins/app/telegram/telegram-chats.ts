@@ -427,6 +427,7 @@ export class TelegramChats {
             {
                 signal,
                 priority: update === undefined ? "background" : "interactive",
+                log,
             },
             () => this.sceneEngine.withScenes(ctx, () => handle(ctx)),
         );

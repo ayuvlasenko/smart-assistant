@@ -14,6 +14,7 @@ import { LockService } from "../lock-service.js";
 import { UserEntity } from "../users/user-entity.js";
 import { languageOf } from "../users/user-language.js";
 import { UsersService } from "../users/users-service.js";
+import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot } from "./telegram-bots.js";
 import { TelegramChats } from "./telegram-chats.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
@@ -105,7 +106,15 @@ export class TelegramUpdateHandler {
             bot.telegramId,
             update,
         );
-        const result = await this.processToResult(run, telegramUser);
+        const result = await telegramApiScope.run(
+            {
+                priority: "interactive",
+                get log() {
+                    return run.log;
+                },
+            },
+            () => this.processToResult(run, telegramUser),
+        );
 
         finishUpdate(result);
         run.log.info(
