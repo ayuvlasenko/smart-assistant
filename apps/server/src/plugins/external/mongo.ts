@@ -14,7 +14,9 @@ export const autoConfig = (fastify: FastifyInstance): FastifyMongodbOptions => {
 
 export function readMongoDb(fastify: FastifyInstance): Db {
     if (!fastify.mongo.db) {
-        throw new Error("MongoDB is not connected");
+        throw new Error(
+            "MongoDB has no database: DATABASE_URL must name the database in its path",
+        );
     }
 
     return fastify.mongo.db;

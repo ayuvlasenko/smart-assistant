@@ -1,20 +1,26 @@
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
-function getDatabaseName(url) {
-    if (!url) {
-        return "";
+function readDatabaseName(url) {
+    const name = url
+        ? decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ""))
+        : "";
+
+    if (!name) {
+        throw new Error(
+            "DATABASE_URL must name the database in its path, such as mongodb://host/smartAssistant",
+        );
     }
 
-    const pathname = new URL(url).pathname.replace(/^\/+/, "");
-
-    return decodeURIComponent(pathname);
+    return name;
 }
 
 export default {
     moduleSystem: "esm",
     mongodb: {
         url: databaseUrl,
-        databaseName: getDatabaseName(databaseUrl),
+        get databaseName() {
+            return readDatabaseName(databaseUrl);
+        },
         options: {},
     },
     migrationsDir: "migrations",
