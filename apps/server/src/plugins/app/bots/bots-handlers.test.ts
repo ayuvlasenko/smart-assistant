@@ -235,6 +235,40 @@ void describe("/bots", () => {
         );
     });
 
+    void it("changes nothing when the start module that is set is picked again", async (t) => {
+        const logs = createLoggerCollector();
+        const bot = await buildBot(t, {
+            logger: logs.logger,
+            plugins: [
+                pokerRoomsRepositoryPlugin,
+                pokerRoomsServicePlugin,
+                pokerHandlersPlugin,
+            ],
+        });
+        const admin = buildTelegramPrivateChat({ id: 987657023 });
+        const actor = await allowAdmin(bot, admin);
+        const childId = await addChild(bot, actor);
+        const pokerTitle = pokerLocales.en.section;
+
+        await bot.botsService.toggleModule(actor, childId, "poker");
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+        await bot.pressButton(admin, en.startModuleButton);
+        await bot.pressButton(admin, `⚪ ${pokerTitle}`);
+        await bot.pressButton(admin, `🔘 ${pokerTitle}`);
+
+        assert.equal(
+            (await bot.telegramBots.find(childId))?.startModule,
+            "poker",
+        );
+        assert.equal(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Bot start module changed").length,
+            1,
+        );
+    });
+
     void it("keeps no start module when the module is turned off while it is picked", async (t) => {
         const bot = await buildBot(t, {
             plugins: [

@@ -198,6 +198,7 @@ export class BotsService {
 
         if (
             !current ||
+            module === (current.startModule ?? null) ||
             (module !== null &&
                 !this.listStartModules(current).some(
                     ({ name }) => name === module,
