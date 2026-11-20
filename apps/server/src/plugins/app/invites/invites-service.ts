@@ -1,6 +1,6 @@
 import { subject } from "@casl/ability";
 import Emittery from "emittery";
-import { FastifyInstance } from "fastify";
+import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
@@ -22,18 +22,19 @@ import {
     InvitesSubjects,
     readInviteStatus,
 } from "./invite-entity.js";
-import {
-    InviteGrantNotAllowedError,
-    InviteWithoutGrantsError,
-} from "./invites-errors.js";
 import { InvitesEvents } from "./invites-events.js";
 import { InviteData, InvitesRepository } from "./invites-repository.js";
 
 export interface NewInvite {
     grants: string[];
     maxUses?: number;
-    expiresAt?: Date;
+    validForDays?: number;
 }
+
+export type InviteCreation =
+    | { status: "created"; invite: InviteEntity }
+    | { status: "noGrants" }
+    | { status: "grantNotAllowed"; grant: string };
 
 export type InviteActivationResult =
     | {
@@ -54,7 +55,11 @@ export interface InvitesBootstrap {
     revoked: number;
 }
 
+export const inviteMaxUsesLimit = 10_000;
+export const inviteValidForDaysLimit = 365;
+
 const inviteTokenBytes = 16;
+const dayMilliseconds = 24 * 60 * 60 * 1000;
 
 export class InvitesService {
     private readonly invitesRepository: InvitesRepository;
@@ -62,6 +67,7 @@ export class InvitesService {
     private readonly usersService: UsersService;
     private readonly access: AccessControl<InvitesSubjects>;
     private readonly eventEmitter: Emittery<InvitesEvents>;
+    private readonly log: FastifyBaseLogger;
 
     constructor(
         invitesRepository: InvitesRepository,
@@ -69,39 +75,59 @@ export class InvitesService {
         usersService: UsersService,
         access: AccessControl<InvitesSubjects>,
         eventEmitter: Emittery<InvitesEvents>,
+        log: FastifyBaseLogger,
     ) {
         this.invitesRepository = invitesRepository;
         this.usersRepository = usersRepository;
         this.usersService = usersService;
         this.access = access;
         this.eventEmitter = eventEmitter;
+        this.log = log;
     }
 
-    async create(actor: UserEntity, draft: NewInvite): Promise<InviteEntity> {
+    async create(actor: UserEntity, draft: NewInvite): Promise<InviteCreation> {
+        assertInRange("maxUses", draft.maxUses, inviteMaxUsesLimit);
+        assertInRange(
+            "validForDays",
+            draft.validForDays,
+            inviteValidForDaysLimit,
+        );
+
         const grants = [...new Set(draft.grants)];
         const data = {
             botId: actor.botId,
             createdBy: actor._id,
             grants,
             maxUses: draft.maxUses,
-            expiresAt: draft.expiresAt,
+            expiresAt: readExpiry(draft.validForDays),
         };
 
         await this.access.assert(actor, "create", subject("Invite", data));
 
         if (!grants.length) {
-            throw new InviteWithoutGrantsError();
+            return { status: "noGrants" };
         }
 
         const grantable = await this.listGrantableSections(actor);
+        const notAllowed = grants.find((grant) => !isGrantIn(grantable, grant));
 
-        for (const grant of grants) {
-            if (!isGrantIn(grantable, grant)) {
-                throw new InviteGrantNotAllowedError(grant);
-            }
+        if (notAllowed !== undefined) {
+            return { status: "grantNotAllowed", grant: notAllowed };
         }
 
-        return this.insert(data);
+        const invite = await this.insert(data);
+
+        this.log.info(
+            {
+                botId: invite.botId,
+                inviteId: invite._id,
+                userId: actor._id,
+                grants,
+            },
+            "Invite created",
+        );
+
+        return { status: "created", invite };
     }
 
     async listGrantableSections(actor: UserEntity): Promise<AccessSection[]> {
@@ -228,6 +254,14 @@ export class InvitesService {
         );
 
         if (revoked) {
+            this.log.info(
+                {
+                    botId: revoked.botId,
+                    inviteId: revoked._id,
+                    userId: actor._id,
+                },
+                "Invite revoked",
+            );
             await this.eventEmitter.emit("invites.inviteChanged", {
                 botId: actor.botId,
                 inviteId: revoked._id,
@@ -356,6 +390,29 @@ export class InvitesService {
     }
 }
 
+function assertInRange(
+    name: string,
+    value: number | undefined,
+    max: number,
+): void {
+    if (
+        value !== undefined &&
+        (!Number.isInteger(value) || value < 1 || value > max)
+    ) {
+        throw new Error(`Invite ${name} ${value} is outside 1 to ${max}`);
+    }
+}
+
+function readExpiry(validForDays: number | undefined): Date | undefined {
+    if (validForDays === undefined) {
+        return;
+    }
+
+    const validForMilliseconds = validForDays * dayMilliseconds;
+
+    return new Date(Date.now() + validForMilliseconds);
+}
+
 function isGrantIn(sections: AccessSection[], grant: string): boolean {
     return sections.some(({ grants }) =>
         grants.some(({ name }) => name === grant),
@@ -364,6 +421,9 @@ function isGrantIn(sections: AccessSection[], grant: string): boolean {
 
 export default fp(
     async function (fastify: FastifyInstance) {
+        const log = fastify
+            .getDecorator<AppLogger>("appLogger")
+            .child({ module: "invites" });
         const invitesService = new InvitesService(
             fastify.getDecorator<InvitesRepository>("invitesRepository"),
             fastify.getDecorator<UsersRepository>("usersRepository"),
@@ -372,10 +432,8 @@ export default fp(
                 .getDecorator<AccessService>("accessService")
                 .subjects<InvitesSubjects>(),
             fastify.getDecorator<Emittery<InvitesEvents>>("eventEmitter"),
+            log,
         );
-        const log = fastify
-            .getDecorator<AppLogger>("appLogger")
-            .child({ module: "invites" });
         const config = fastify.getDecorator<Env>("config");
 
         fastify.decorate("invitesService", invitesService);

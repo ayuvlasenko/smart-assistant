@@ -24,7 +24,7 @@ export const envSchema = Type.Object({
     INVITE_TOKEN: Type.Optional(
         Type.String({ pattern: "^[A-Za-z0-9_-]{1,57}$" }),
     ),
-    TIME_ZONE: Type.String({ default: "UTC" }),
+    TIME_ZONE: Type.String({ default: "UTC", format: "time-zone" }),
     TELEGRAM_WEBHOOK_SECRET_TOKEN: Type.String(),
     TELEGRAM_WEBHOOK_URL: Type.Optional(Type.String()),
     VALKEY_URL: Type.String(),
@@ -32,3 +32,12 @@ export const envSchema = Type.Object({
 });
 
 export type Env = Static<typeof envSchema>;
+
+export function isTimeZone(timeZone: string): boolean {
+    try {
+        new Intl.DateTimeFormat("en-US", { timeZone });
+        return true;
+    } catch {
+        return false;
+    }
+}

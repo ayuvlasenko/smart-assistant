@@ -5,7 +5,7 @@ import {
     formatTelegramHtmlBold,
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { SettingsView } from "./settings-schemas.js";
+import { SettingsView } from "./settings-scene.js";
 import {
     ChoicesSetting,
     Setting,

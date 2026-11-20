@@ -12,6 +12,7 @@ import { Env } from "../env.js";
 import accessDefaultGrantsPlugin from "../plugins/app/access/access-default-grants.js";
 import accessPlugin from "../plugins/app/access/access-service.js";
 import appLoggerPlugin from "../plugins/app/app-logger.js";
+import { BotEntity } from "../plugins/app/bots/bot-entity.js";
 import { BotTokenCipher } from "../plugins/app/bots/bot-token-cipher.js";
 import botsRegistryPlugin, {
     BotsRegistry,
@@ -67,8 +68,10 @@ import emitteryPlugin from "../plugins/external/emittery.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
 } from "../plugins/external/env.js";
-import valkeyPlugin from "../plugins/external/kv-valkey.js";
-import mongoPlugin from "../plugins/external/mongo.js";
+import valkeyPlugin, {
+    valkeyKeyPrefixOf,
+} from "../plugins/external/kv-valkey.js";
+import mongoPlugin, { readMongoDb } from "../plugins/external/mongo.js";
 import requestContextPlugin, {
     autoConfig as requestContextAutoConfig,
 } from "../plugins/external/request-context.js";
@@ -77,7 +80,7 @@ import {
     buildTelegramApiServiceMock,
     TelegramApiServiceMock,
 } from "./telegram-api-service-mock.js";
-import { createTestKeyPrefix, deleteKeysByPrefix } from "./valkey.js";
+import { createTestResourceName, deleteKeysByPrefix } from "./valkey.js";
 
 export interface BuildTelegramBotServiceTestAppOptions {
     testMongo: TestMongo;
@@ -126,11 +129,11 @@ export async function buildTelegramBotServiceTestApp({
     registerRoutes,
     logger = false,
 }: BuildTelegramBotServiceTestAppOptions): Promise<TelegramBotServiceTestApp> {
-    const keyPrefix = createTestKeyPrefix();
-    const resourceName = keyPrefix.slice("smart-assistant:".length, -1);
+    const resourceName = createTestResourceName();
+    const keyPrefix = valkeyKeyPrefixOf(resourceName);
+    const rootToken = env.TELEGRAM_BOT_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN;
     const app = Fastify({
         logger,
-        trustProxy: true,
         ...appOptions,
     });
 
@@ -168,8 +171,13 @@ export async function buildTelegramBotServiceTestApp({
     app.register(rateLimiterPlugin);
     app.register(telegramMetricsPlugin);
     app.register(telegramBotsPlugin, {
-        telegramApiService,
-        telegramApiFactory,
+        telegramApiFactory: (token: string) => {
+            if (token === rootToken || !telegramApiFactory) {
+                return telegramApiService;
+            }
+
+            return telegramApiFactory(token);
+        },
     });
     app.register(telegramSessionStorePlugin, {
         telegramSessionStore: sessionStoreOptions,
@@ -203,25 +211,24 @@ export async function buildTelegramBotServiceTestApp({
         );
     }
 
-    try {
-        await app.ready();
-    } catch (err) {
-        await app.close();
-        throw err;
-    }
-
-    const valkey = app.getDecorator<Redis>("valkey");
-    const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
-    const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
-    await botsRepository.updateModules(botsRegistry.rootId, modules);
-
     t.after(async () => {
         try {
-            await deleteKeysByPrefix(valkey, keyPrefix);
+            if (app.hasDecorator("valkey")) {
+                await deleteKeysByPrefix(
+                    app.getDecorator<Redis>("valkey"),
+                    keyPrefix,
+                );
+            }
         } finally {
             await app.close();
         }
     });
+
+    await app.ready();
+
+    const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
+    const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
+    await setTestBotModules(app, botsRegistry.rootId, modules);
 
     return {
         app,
@@ -272,6 +279,16 @@ export async function buildTwoBotsTestApp(
     }
 
     return { ...app, child, childBotId: bot._id };
+}
+
+export async function setTestBotModules(
+    app: FastifyInstance,
+    botId: string,
+    modules: string[],
+): Promise<void> {
+    await readMongoDb(app)
+        .collection<BotEntity>("bots")
+        .updateOne({ _id: botId }, { $set: { modules } });
 }
 
 function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -252,13 +252,14 @@ flowchart TD
     router -->|"handle, before the routes"| engine
     router -->|"command / on / when"| domain["Domain handlers"]
 
-    engine --> update[TelegramSceneUpdate]
-    update --> storage[TelegramSceneStorage]
+    engine -->|"one per update"| run[TelegramSceneRun]
     engine --> presses[TelegramScenePresses]
+    presses -->|"touch, control"| run
     presses --> buttons[TelegramSceneButtons]
-    engine --> inputs[TelegramSceneInputs]
-    engine --> screens[TelegramSceneScreens]
-    engine --> messages[TelegramSceneMessages]
+    run --> storage[TelegramSceneStorage]
+    run --> inputs[TelegramSceneInputs]
+    run --> screens[TelegramSceneScreens]
+    run --> messages[TelegramSceneMessages]
     inputs --> steps["telegram-steps.ts"]
 
     ctx --> responder[TelegramResponder]
@@ -396,7 +397,7 @@ rate-limit:telegram:<telegramId>:global:waiting:background  sorted set: pod id �
 rate-limit:telegram:<telegramId>:commands                   hash: tokens, updatedAt
 ```
 
-`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script by its hash and loads the script again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script.
+`<telegramId>` is the number before `:` in the token of the bot: a limit belongs to the Telegram bot, so `TelegramApiService` takes the number from its token, and every bot has its own buckets. A bucket refills lazily: a Lua script adds `elapsed × rate` tokens, up to the burst, when somebody reads it, and takes the time from `TIME` in Valkey, so all pods agree on the clock. A hash expires 1 s after it would be full again. A pod runs a script through `defineValkeyScript`, an ioredis command: ioredis sends the text of the script once per connection and its hash after that, and sends the text again when Valkey answers `NOSCRIPT`, so a call does not carry the text of the script. `CacheService` runs its scripts the same way.
 
 `telegram-rate-limits.ts` maps a method to its limits:
 
@@ -484,7 +485,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 1. `sceneEngine.start(ctx, scene, state)` checks the guard of the scene and builds the id. With a `key`, the id is the first 12 characters of `sha256("<scene name>:<key>")` in base64url, so the same key always gives the same id. Without a `key`, the id is 8 random bytes.
 2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its messages move to the bottom of the chat, and the state and the screen stay as they are.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
-4. Every call that gives a handler the scene object marks the instance as touched in `TelegramSceneUpdate`.
+4. `withScenes` creates one `TelegramSceneRun` for the update, and each entry point marks the instance it works on as touched there with `touch`: a start, a press, an answer to an input, `/cancel`, a delivery and a redraw. Building the scene object for a handler marks nothing, so a new entry point calls `touch` before it changes the record, or the change is neither saved nor drawn.
 5. After the update, the engine draws the current screen of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
@@ -769,7 +770,7 @@ A domain registers its link with `router.deepLink(name, handler, options)`; a na
 
 **Idea.** A module declares its start entry in code, and a bot names one of its modules as its start module. `/start` without a deep link opens that entry and falls back to the welcome text. The [command menu](#access-and-the-command-menu) then shows `/start` with the description of the entry, so the menu names what `/start` opens.
 
-**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` reads the bot from MongoDB on every `/start` and takes its `startModule`.
+**Data.** `startModule` of the bot document, see [Bots](../bots/README.md#what-start-opens). `TelegramStartEntries.open` takes `startModule` from `ctx.bot`, the bot that the route read from MongoDB for this update.
 
 **Walk-through.**
 
@@ -836,9 +837,9 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
-| `telegram-scene-engine.ts`                                         | Start, find, hand over and end instances; route presses and input text       | [Scene instances](#scene-instances)                         |
+| `telegram-scene-engine.ts`                                         | The registered scenes; one run per update; route presses and input text      | [Scene instances](#scene-instances)                         |
 | `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                         | [Scene instances](#scene-instances)                         |
-| `telegram-scene-update.ts`                                         | The instances one update touched; renders and saves them                     | [Scene instances](#scene-instances)                         |
+| `telegram-scene-run.ts`                                            | The scenes of one update: start, hand over, end; renders and saves them      | [Scene instances](#scene-instances)                         |
 | `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                          | [Buttons](#buttons)                                         |
 | `telegram-scene-presses.ts`                                        | A button press: the guard checks, the confirmation, the handler              | [Buttons](#buttons)                                         |
 | `telegram-scene-screens.ts`                                        | The current screen, the stack and the moves                                  | [Screens and messages](#screens-and-messages)               |

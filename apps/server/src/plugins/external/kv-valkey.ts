@@ -33,11 +33,43 @@ export default fp(
     },
 );
 
+export type ValkeyScript = (
+    keys: string[],
+    args: (number | string)[],
+) => Promise<unknown>;
+
+type ValkeyScriptCommand = (
+    numberOfKeys: number,
+    ...keysAndArgs: (number | string)[]
+) => Promise<unknown>;
+
+export function defineValkeyScript(
+    client: Redis,
+    name: string,
+    lua: string,
+): ValkeyScript {
+    client.defineCommand(name, { lua });
+
+    const command = (client as unknown as Record<string, ValkeyScriptCommand>)[
+        name
+    ];
+
+    if (!command) {
+        throw new Error(`Valkey script "${name}" is not defined`);
+    }
+
+    return (keys, args) => command.call(client, keys.length, ...keys, ...args);
+}
+
+export function valkeyKeyPrefixOf(resourceName: string): string {
+    return `smart-assistant:${resourceName}:`;
+}
+
 function buildValkeyClient(config: Env): Redis {
     const options: RedisOptions = {
         connectTimeout: config.VALKEY_CONNECT_TIMEOUT_MS,
         enableOfflineQueue: false,
-        keyPrefix: `smart-assistant:${config.RESOURCE_NAME}:`,
+        keyPrefix: valkeyKeyPrefixOf(config.RESOURCE_NAME),
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         retryStrategy: (attempt) =>

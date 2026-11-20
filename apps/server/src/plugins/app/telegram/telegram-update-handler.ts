@@ -11,9 +11,8 @@ import {
 } from "../i18n-service.js";
 import { LockHoldTimeoutError, LockLostError } from "../lock-errors.js";
 import { LockService } from "../lock-service.js";
-import { UserEntity, UserProfile } from "../users/user-entity.js";
+import { UserEntity } from "../users/user-entity.js";
 import { languageOf } from "../users/user-language.js";
-import { UsersRepository } from "../users/users-repository.js";
 import { UsersService } from "../users/users-service.js";
 import { TelegramBot } from "./telegram-bots.js";
 import { TelegramChats } from "./telegram-chats.js";
@@ -51,7 +50,6 @@ export class TelegramUpdateHandler {
     private readonly log: FastifyBaseLogger;
     private readonly telegramRouter: TelegramRouter;
     private readonly telegramChats: TelegramChats;
-    private readonly usersRepository: UsersRepository;
     private readonly usersService: UsersService;
     private readonly lockService: LockService;
     private readonly i18nService: I18nService;
@@ -62,7 +60,6 @@ export class TelegramUpdateHandler {
         log: FastifyBaseLogger,
         telegramRouter: TelegramRouter,
         telegramChats: TelegramChats,
-        usersRepository: UsersRepository,
         usersService: UsersService,
         lockService: LockService,
         i18nService: I18nService,
@@ -72,7 +69,6 @@ export class TelegramUpdateHandler {
         this.log = log;
         this.telegramRouter = telegramRouter;
         this.telegramChats = telegramChats;
-        this.usersRepository = usersRepository;
         this.usersService = usersService;
         this.lockService = lockService;
         this.i18nService = i18nService;
@@ -176,12 +172,13 @@ export class TelegramUpdateHandler {
         run: TelegramUpdateRun,
         telegramUser: User,
     ): Promise<UserEntity> {
-        const languageCode = resolveLanguage(telegramUser.language_code);
         const { user, isCreated } =
             await this.usersService.findOrCreateByTelegramId({
                 botId: run.bot.id,
                 telegramId: String(telegramUser.id),
-                ...readProfile(telegramUser, languageCode ?? defaultLanguage),
+                languageCode: resolveLanguage(telegramUser.language_code),
+                firstName: telegramUser.first_name,
+                username: telegramUser.username,
             });
 
         run.log = run.log.child({ userId: user._id });
@@ -193,16 +190,7 @@ export class TelegramUpdateHandler {
 
         run.log.debug({ isBanned: user.isBanned }, "User for update");
 
-        const profile = readProfile(
-            telegramUser,
-            languageCode ?? user.languageCode,
-        );
-
-        if (isSameProfile(user, profile)) {
-            return user;
-        }
-
-        return this.usersRepository.updateProfile(user._id, profile);
+        return user;
     }
 
     private async dispatch(
@@ -283,22 +271,6 @@ export class TelegramUpdateHandler {
     }
 }
 
-function readProfile(telegramUser: User, languageCode: Language): UserProfile {
-    return {
-        languageCode,
-        firstName: telegramUser.first_name,
-        username: telegramUser.username,
-    };
-}
-
-function isSameProfile(user: UserEntity, profile: UserProfile): boolean {
-    return (
-        user.languageCode === profile.languageCode &&
-        user.firstName === profile.firstName &&
-        user.username === profile.username
-    );
-}
-
 function assertPrivateChat(update: Update): void {
     const chat = extractTelegramChat(update);
 
@@ -331,7 +303,6 @@ export default fp(
                 appLogger.child({ module: "telegram" }),
                 fastify.getDecorator<TelegramRouter>("telegramRouter"),
                 fastify.getDecorator<TelegramChats>("telegramChats"),
-                fastify.getDecorator<UsersRepository>("usersRepository"),
                 fastify.getDecorator<UsersService>("usersService"),
                 fastify.getDecorator<LockService>("lockService"),
                 fastify.getDecorator<I18nService>("i18nService"),
@@ -352,7 +323,6 @@ export default fp(
             "telegram-command-menus",
             "telegram-metrics",
             "telegram-router",
-            "users-repository",
             "users-service",
         ],
     },

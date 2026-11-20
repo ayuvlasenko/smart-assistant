@@ -1,14 +1,19 @@
 import { Redis } from "ioredis";
 import { randomUUID } from "node:crypto";
 import { TestContext } from "node:test";
+import { valkeyKeyPrefixOf } from "../plugins/external/kv-valkey.js";
 
 export interface BuildTestValkeyOptions {
     keyPrefix?: string;
     valkeyUrl?: string;
 }
 
+export function createTestResourceName(): string {
+    return `test:${randomUUID().replaceAll("-", "")}`;
+}
+
 export function createTestKeyPrefix(): string {
-    return `smart-assistant:test:${randomUUID().replaceAll("-", "")}:`;
+    return valkeyKeyPrefixOf(createTestResourceName());
 }
 
 export async function buildTestValkey(

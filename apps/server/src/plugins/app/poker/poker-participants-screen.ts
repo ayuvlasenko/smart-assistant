@@ -13,7 +13,7 @@ import {
     isPokerParticipantIdle,
     PokerParticipant,
 } from "./poker-room-entity.js";
-import { PokerRoomView } from "./poker-schemas.js";
+import { PokerRoomView } from "./poker-room-scene.js";
 
 const participantsPageSize = 8;
 

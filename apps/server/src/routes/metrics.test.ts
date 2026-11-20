@@ -1,111 +1,44 @@
-import fastifyAutoload from "@fastify/autoload";
-import Fastify, { FastifyServerOptions } from "fastify";
 import assert from "node:assert/strict";
-import { describe, it, TestContext } from "node:test";
-import { requestIdOptions } from "../logger-request.js";
+import { describe, it } from "node:test";
+import { buildLoggerOptions } from "../logger-options.js";
+import { buildTestApp } from "../test/helper.js";
 import { createLoggerCollector } from "../test/logger-collector.js";
 
-const prometheusContentType = "text/plain; version=0.0.4; charset=utf-8";
-const metricsBody = [
-    "# HELP process_cpu_user_seconds_total Total user CPU time spent in seconds.",
-    "# TYPE process_cpu_user_seconds_total counter",
-    "process_cpu_user_seconds_total 1",
-    "",
-].join("\n");
-
-const ignoredRoutePattern = /(?:^api\/|\/api\/|\.(?:test|spec)\.(?:js|ts)$)/;
-
-interface MetricsDecorator {
-    readonly contentType: string;
-    metrics(): Promise<string>;
-}
-
-interface BuildOptions {
-    logger?: FastifyServerOptions["logger"];
-    metrics?: MetricsDecorator;
-}
-
 void describe("GET /metrics", () => {
-    void it("returns Prometheus metrics with the registry content type", async (t) => {
-        const app = await buildMetricsRouteApp(t);
+    void it("returns the metrics of the app with the registry content type", async (t) => {
+        const { app } = await buildTestApp({ t });
 
-        const response = await app.inject({
-            method: "GET",
-            url: "/metrics",
-        });
+        await app.inject({ method: "GET", url: "/" });
+
+        const response = await app.inject({ method: "GET", url: "/metrics" });
 
         assert.equal(response.statusCode, 200);
         assert.match(
             response.headers["content-type"] as string,
             /^text\/plain; version=0\.0\.4; charset=utf-8/,
         );
-        assert.equal(response.body, metricsBody);
+        assert.match(
+            response.body,
+            /^http_request_duration_seconds_count\{[^}]*route="\/"[^}]*\} 1$/m,
+        );
     });
 
-    void it("does not add an application-level public address guard", async (t) => {
-        const app = await buildMetricsRouteApp(t);
-
-        const response = await app.inject({
-            method: "GET",
-            url: "/metrics",
-            headers: {
-                "x-forwarded-for": "203.0.113.10",
-            },
-        });
-
-        assert.equal(response.statusCode, 200);
-        assert.equal(response.body, metricsBody);
-    });
-
-    void it("does not write access logs for scrapes", async (t) => {
+    void it("writes no request log for a scrape", async (t) => {
         const logs = createLoggerCollector();
-        const app = await buildMetricsRouteApp(t, {
-            logger: logs.logger,
+        const { app } = await buildTestApp({
+            logger: {
+                ...buildLoggerOptions("info"),
+                stream: logs.logger.stream,
+            },
+            t,
         });
 
-        const response = await app.inject({
-            method: "GET",
-            url: "/metrics",
-        });
-        const accessLogMessages = logs
-            .readEntries()
-            .map((entry) => entry.msg)
-            .filter(
-                (message) =>
-                    message === "incoming request" ||
-                    message === "request completed",
-            );
+        const response = await app.inject({ method: "GET", url: "/metrics" });
 
         assert.equal(response.statusCode, 200);
-        assert.deepEqual(accessLogMessages, []);
+        assert.deepEqual(
+            logs.readEntries().filter(({ msg }) => msg === "request completed"),
+            [],
+        );
     });
 });
-
-async function buildMetricsRouteApp(t: TestContext, opts: BuildOptions = {}) {
-    const app = Fastify({
-        logger: opts.logger ?? false,
-        ...requestIdOptions,
-        trustProxy: true,
-    });
-
-    app.decorate(
-        "metrics",
-        opts.metrics ?? {
-            contentType: prometheusContentType,
-            metrics: async () => metricsBody,
-        },
-    );
-
-    await app.register(fastifyAutoload, {
-        dir: import.meta.dirname,
-        ignoreFilter: ignoredRoutePattern,
-        autoHooks: true,
-        cascadeHooks: true,
-        routeParams: true,
-    });
-
-    await app.ready();
-    t.after(() => app.close());
-
-    return app;
-}

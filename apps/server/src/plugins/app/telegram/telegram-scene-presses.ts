@@ -8,44 +8,37 @@ import {
     TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
+import { type TelegramSceneRun } from "./telegram-scene-run.js";
 import {
     TelegramSceneScreens,
     TelegramScreenState,
 } from "./telegram-scene-screens.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
-import { TelegramSceneControl } from "./telegram-scene.js";
-
-export type TelegramSceneControlFactory = (
-    ctx: TelegramContext,
-    instance: TelegramSceneInstance,
-) => TelegramSceneControl<Record<string, unknown>>;
 
 export class TelegramScenePresses {
     private readonly telegramMetrics: TelegramMetrics;
     private readonly buttons: TelegramSceneButtons;
     private readonly inputs: TelegramSceneInputs;
     private readonly screens: TelegramSceneScreens;
-    private readonly controlOf: TelegramSceneControlFactory;
 
     constructor(
         telegramMetrics: TelegramMetrics,
         buttons: TelegramSceneButtons,
         inputs: TelegramSceneInputs,
         screens: TelegramSceneScreens,
-        controlOf: TelegramSceneControlFactory,
     ) {
         this.telegramMetrics = telegramMetrics;
         this.buttons = buttons;
         this.inputs = inputs;
         this.screens = screens;
-        this.controlOf = controlOf;
     }
 
     async handle(
         ctx: TelegramContext<Update>,
-        instance: TelegramSceneInstance | undefined,
+        run: TelegramSceneRun,
         press: TelegramButtonPress,
     ): Promise<void> {
+        const instance = await run.storage.load(press.sceneId);
         const button = instance && this.buttons.find(instance, press);
 
         if (!instance || !button) {
@@ -56,17 +49,19 @@ export class TelegramScenePresses {
             case "input":
                 return this.pressInput(
                     ctx,
+                    run,
                     instance,
                     button.step,
                     button.value,
                 );
             case "screen":
-                return this.pressScreen(ctx, instance, button.screen);
+                return this.pressScreen(ctx, run, instance, button.screen);
             case "back":
-                return this.pressBack(ctx, instance);
+                return this.pressBack(ctx, run, instance);
             case "scene":
                 return this.pressScene(
                     ctx,
+                    run,
                     instance,
                     button.name,
                     button.value,
@@ -76,6 +71,7 @@ export class TelegramScenePresses {
 
     private async pressInput(
         ctx: TelegramContext<Update>,
+        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
         step: string,
         value: unknown,
@@ -86,11 +82,12 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
+        run.touch(instance);
         this.buttons.cancelConfirmation(instance);
 
         const isHandled = await this.inputs.handleButton(
             ctx,
-            this.controlOf(ctx, instance),
+            run.control(instance),
             instance,
             step,
             value,
@@ -105,6 +102,7 @@ export class TelegramScenePresses {
 
     private async pressScreen(
         ctx: TelegramContext<Update>,
+        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
         screen: TelegramScreenState,
     ): Promise<void> {
@@ -121,24 +119,28 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
-        await this.controlOf(ctx, instance).push(screen.name, screen.params);
+        run.touch(instance);
+        await run.control(instance).push(screen.name, screen.params);
         this.record(ctx, instance, `screen:${screen.name}`);
     }
 
     private async pressBack(
         ctx: TelegramContext<Update>,
+        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
     ): Promise<void> {
         if (!(await isAllowed(instance.scene.guard, ctx.user))) {
             return this.rejectForbidden(ctx, `${instance.scene.name}:back`);
         }
 
-        await this.controlOf(ctx, instance).back();
+        run.touch(instance);
+        await run.control(instance).back();
         this.record(ctx, instance, "back");
     }
 
     private async pressScene(
         ctx: TelegramContext<Update>,
+        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
         name: string,
         value: unknown,
@@ -157,7 +159,7 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
-        const control = this.controlOf(ctx, instance);
+        run.touch(instance);
 
         if (!definition.confirm) {
             this.buttons.cancelConfirmation(instance);
@@ -166,7 +168,7 @@ export class TelegramScenePresses {
             return;
         }
 
-        await definition.handle(ctx, control, value);
+        await definition.handle(ctx, run.control(instance), value);
         this.record(ctx, instance, name);
     }
 

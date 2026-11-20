@@ -43,6 +43,26 @@ void describe("PokerRoomsService create and join", () => {
         );
     });
 
+    void it("trims the title of a room and refuses one over the limit", async (t) => {
+        const bot = await buildBot(t);
+        const creator = await createUser(bot, [pokerCreateGrant]);
+
+        const room = await bot.pokerRoomsService.create(creator, {
+            title: "  Sprint 43  ",
+            deck: "fibonacci",
+            autoReveal: false,
+        });
+
+        assert.equal(room.title, "Sprint 43");
+        await assert.rejects(
+            bot.pokerRoomsService.create(creator, {
+                title: "x".repeat(65),
+                deck: "fibonacci",
+                autoReveal: false,
+            }),
+        );
+    });
+
     void it("refuses to create a room for a user who can only join", async (t) => {
         const bot = await buildBot(t);
         const member = await createUser(bot, [pokerJoinGrant]);

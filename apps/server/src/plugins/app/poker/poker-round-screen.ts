@@ -24,8 +24,8 @@ import {
     readPokerAutoRevealTarget,
     stepPokerAutoReveal,
 } from "./poker-room-entity.js";
+import { PokerRoomView } from "./poker-room-scene.js";
 import { summarizePokerRound } from "./poker-round-summary.js";
-import { PokerRoomView } from "./poker-schemas.js";
 
 const maxCardsPerRow = 6;
 

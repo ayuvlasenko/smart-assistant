@@ -62,7 +62,7 @@ void describe("TelegramBotService", () => {
                 t,
             });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
         assert.deepEqual(
@@ -98,7 +98,7 @@ void describe("TelegramBotService", () => {
             ttlMilliseconds: 3_600_000,
         });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
     });
@@ -121,7 +121,7 @@ void describe("TelegramBotService", () => {
                 logger: logs.logger,
             });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(
             await cache.get(webhookClaimKey, webhookClaimSchema),
@@ -151,7 +151,7 @@ void describe("TelegramBotService", () => {
                 telegramApiService,
             });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(
             await cache.get(webhookClaimKey, webhookClaimSchema),
@@ -174,7 +174,7 @@ void describe("TelegramBotService", () => {
             telegramApiService: failing,
         });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(failing.setWebhook.mock.callCount(), 1);
         assert.equal(child.setWebhook.mock.callCount(), 1);
@@ -239,7 +239,7 @@ void describe("TelegramBotService", () => {
                 environment: "preview",
             });
 
-        await telegramBotService.setWebhooksOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
         assert.equal(

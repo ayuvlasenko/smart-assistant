@@ -5,7 +5,10 @@ import {
 import { Update } from "@grammyjs/types";
 import { FastifyRequest } from "fastify";
 import { Env } from "../../../env.js";
-import { TelegramBotService } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import {
+    TelegramBotService,
+    telegramBotWebhookSchema,
+} from "../../../plugins/app/telegram/telegram-bot-service.js";
 import { TelegramBots } from "../../../plugins/app/telegram/telegram-bots.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { isTelegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
@@ -25,20 +28,6 @@ const telegramWebhookHeadersSchema = Type.Object({
 const telegramWebhookParamsSchema = Type.Object({
     telegramId: Type.String(),
 });
-
-const telegramBotWebhookSchema = Type.Union([
-    Type.Object({
-        botId: Type.String(),
-        status: Type.Literal("refreshed"),
-        webhookUrl: Type.String(),
-        botUrl: Type.String(),
-    }),
-    Type.Object({
-        botId: Type.String(),
-        status: Type.Literal("failed"),
-        error: Type.String(),
-    }),
-]);
 
 const telegramBotWebhooksSchema = Type.Object({
     bots: Type.Array(telegramBotWebhookSchema),

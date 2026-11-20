@@ -175,12 +175,17 @@ export default fp(
         events.on("poker.roomChanged", ({ data }) => {
             roomChanges.inc({ change: data.change });
 
-            if (data.change !== "voted") {
+            if (data.autoRevealed) {
+                roomChanges.inc({ change: "revealed" });
+            }
+
+            if (data.change !== "voted" || data.autoRevealed) {
                 log.info(
                     {
                         botId: data.botId,
                         roomId: data.roomId,
                         change: data.change,
+                        autoRevealed: data.autoRevealed,
                         participants: data.userIds.length,
                     },
                     "Poker room changed",

@@ -49,15 +49,15 @@ void describe("RateLimiter", () => {
     void it("asks Valkey about once per token while many calls wait for one bucket", async (t) => {
         const { client, rateLimiter } = await buildCacheServiceTestApp({ t });
         const bucket = { key: "rate:waiters", ratePerSecond: 50, burst: 1 };
-        const evalsha = t.mock.method(client, "evalsha");
+        const sendCommand = t.mock.method(client, "sendCommand");
 
         await Promise.all(
             Array.from({ length: 10 }, () => acquire(rateLimiter, bucket)),
         );
 
         assert.ok(
-            evalsha.mock.callCount() <= 30,
-            `asked Valkey ${evalsha.mock.callCount()} times`,
+            sendCommand.mock.callCount() <= 30,
+            `asked Valkey ${sendCommand.mock.callCount()} times`,
         );
     });
 

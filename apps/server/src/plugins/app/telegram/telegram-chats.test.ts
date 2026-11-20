@@ -9,7 +9,6 @@ import {
     LoggerEntry,
 } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
-import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramPrivateChat,
     testBotId,
@@ -31,18 +30,6 @@ interface RoomEvents {
 const testMongo = useTestMongo();
 
 void describe("TelegramChats", () => {
-    void it("refuses to start with an invalid time zone", async (t) => {
-        await assert.rejects(
-            () =>
-                buildTelegramBotServiceTestApp({
-                    testMongo,
-                    t,
-                    env: { TIME_ZONE: "Mars/Base" },
-                }),
-            { message: 'TIME_ZONE "Mars/Base" is not a valid time zone' },
-        );
-    });
-
     void it("redraws the scene of every participant when an event arrives", async (t) => {
         const room = buildRoom([987654450, 987654451]);
         const bot = await buildRoomBot(t, room);

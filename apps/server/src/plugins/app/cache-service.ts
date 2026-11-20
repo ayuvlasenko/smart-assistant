@@ -3,6 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
+import { defineValkeyScript, ValkeyScript } from "../external/kv-valkey.js";
 import { AppLogger } from "./app-logger.js";
 
 const conditionCheck = `
@@ -11,7 +12,7 @@ if ARGV[1] ~= "" and redis.call("get", KEYS[2]) ~= ARGV[1] then
 end
 `;
 
-const setScript = `${conditionCheck}
+const setLua = `${conditionCheck}
 local command = { "set", KEYS[1], ARGV[2], "PX", ARGV[3] }
 if ARGV[4] == "1" then
     command[#command + 1] = "NX"
@@ -22,15 +23,15 @@ end
 return 0
 `;
 
-const expireScript = `${conditionCheck}
+const expireLua = `${conditionCheck}
 return redis.call("pexpire", KEYS[1], ARGV[2])
 `;
 
-const deleteScript = `${conditionCheck}
+const deleteLua = `${conditionCheck}
 return redis.call("del", KEYS[1])
 `;
 
-const updateHashScript = `${conditionCheck}
+const updateHashLua = `${conditionCheck}
 local now = ARGV[2]
 local index = 3
 local function nextArg()
@@ -103,10 +104,30 @@ export interface CacheExpiringSetMember {
 export class CacheService {
     private readonly client: Redis;
     private readonly log: FastifyBaseLogger;
+    private readonly setScript: ValkeyScript;
+    private readonly expireScript: ValkeyScript;
+    private readonly deleteScript: ValkeyScript;
+    private readonly updateHashScript: ValkeyScript;
 
     constructor(client: Redis, log: FastifyBaseLogger) {
         this.client = client;
         this.log = log;
+        this.setScript = defineValkeyScript(client, "cacheSet", setLua);
+        this.expireScript = defineValkeyScript(
+            client,
+            "cacheExpire",
+            expireLua,
+        );
+        this.deleteScript = defineValkeyScript(
+            client,
+            "cacheDelete",
+            deleteLua,
+        );
+        this.updateHashScript = defineValkeyScript(
+            client,
+            "cacheUpdateHash",
+            updateHashLua,
+        );
     }
 
     async get<Schema extends TSchema>(
@@ -152,7 +173,7 @@ export class CacheService {
     ): Promise<boolean> {
         this.assertValidTtl(ttlMilliseconds);
 
-        return this.runConditional(setScript, [key], ifEquals, [
+        return this.runConditional(this.setScript, [key], ifEquals, [
             JSON.stringify(value),
             ttlMilliseconds,
             ifMissing ? "1" : "0",
@@ -166,7 +187,7 @@ export class CacheService {
     ): Promise<boolean> {
         this.assertValidTtl(ttlMilliseconds);
 
-        return this.runConditional(expireScript, [key], ifEquals, [
+        return this.runConditional(this.expireScript, [key], ifEquals, [
             ttlMilliseconds,
         ]);
     }
@@ -175,7 +196,7 @@ export class CacheService {
         key: string,
         { ifEquals }: CacheConditionOptions = {},
     ): Promise<boolean> {
-        return this.runConditional(deleteScript, [key], ifEquals, []);
+        return this.runConditional(this.deleteScript, [key], ifEquals, []);
     }
 
     async updateHash(
@@ -190,7 +211,7 @@ export class CacheService {
         const expiringSets = update.expiringSets ?? [];
 
         return this.runConditional(
-            updateHashScript,
+            this.updateHashScript,
             [key, ...expiringSets.map((set) => set.key)],
             ifEquals,
             [
@@ -240,18 +261,14 @@ export class CacheService {
     }
 
     private async runConditional(
-        script: string,
+        script: ValkeyScript,
         [key, ...otherKeys]: [string, ...string[]],
         condition: CacheCondition | undefined,
         args: (string | number)[],
     ): Promise<boolean> {
-        const keys = [key, condition?.key ?? key, ...otherKeys];
-        const result = await this.client.eval(
-            script,
-            keys.length,
-            ...keys,
-            condition ? JSON.stringify(condition.value) : "",
-            ...args,
+        const result = await script(
+            [key, condition?.key ?? key, ...otherKeys],
+            [condition ? JSON.stringify(condition.value) : "", ...args],
         );
 
         return Number(result) > 0;

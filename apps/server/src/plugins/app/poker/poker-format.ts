@@ -7,6 +7,7 @@ import {
 import { UserEntity } from "../users/user-entity.js";
 import { PokerDeckName } from "./poker-decks.js";
 import {
+    isPokerTitleTooLong,
     listKnownPokerParticipants,
     PokerRoomEntity,
 } from "./poker-room-entity.js";
@@ -180,7 +181,7 @@ export function validatePokerTitle(
     t: Translate,
     max: number,
 ): string | undefined {
-    return [...graphemes.segment(text.trim())].length > max
+    return isPokerTitleTooLong(text, max)
         ? t("poker:titleTooLong", { max })
         : undefined;
 }

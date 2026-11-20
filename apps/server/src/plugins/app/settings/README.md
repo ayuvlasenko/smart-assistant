@@ -133,7 +133,7 @@ const language = readUserChoice(languageSetting, user);
 **Edge cases.**
 
 - `readUserChoice` reads the default for a stored value that is no longer an option, so a deploy that removes an option needs no migration.
-- `register` refuses a name that is not `<domain>.<name>`, because the name is a path in the document.
+- `register` refuses a name that is not `<domain>.<name>`, because the name is a path in the document. `SettingsRegistry` applies the same check to the settings of a bot.
 - A section with the name of an access module shows only in the bots that have the module, like a section of bot settings.
 - One person has a separate user in every bot, so a setting belongs to one bot.
 - `languageOf(user)` in `user-language.ts` is the language of the texts: the picked language, or `languageCode` of the Telegram client when the setting is `auto`. Read the language through it and never from `languageCode`.
@@ -148,11 +148,12 @@ The only setting of a user in the code now is `users.language`.
 
 ## Files
 
-| File                                                               | Owns                                                                     | Section                                                     |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `settings-service.ts`                                              | The kinds of settings, their registration, `read` and `write`            | [Reading and writing a value](#reading-and-writing-a-value) |
-| `user-settings-service.ts`                                         | The settings of a user: their registration, `readUserChoice` and `write` | [A setting of a user](#a-setting-of-a-user)                 |
-| `settings-repository.ts`                                           | The `settings` collection                                                | [Reading and writing a value](#reading-and-writing-a-value) |
-| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                   |                                                             |
-| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its four screens                              | [The menu](#the-menu)                                       |
-| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, the two events, texts        |                                                             |
+| File                                                              | Owns                                                                       | Section                                                     |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `settings-service.ts`                                             | The kinds of settings, their registration, `read` and `write`              | [Reading and writing a value](#reading-and-writing-a-value) |
+| `user-settings-service.ts`                                        | The settings of a user: their registration, `readUserChoice` and `write`   | [A setting of a user](#a-setting-of-a-user)                 |
+| `settings-repository.ts`                                          | The `settings` collection                                                  | [Reading and writing a value](#reading-and-writing-a-value) |
+| `settings-registry.ts`                                            | The sections and the names of both kinds of settings                       |                                                             |
+| `setting-entity.ts`                                               | `SettingEntity` and `SettingsSubjects`                                     |                                                             |
+| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts` | `/settings`, the scene with its state and button schemas, its four screens | [The menu](#the-menu)                                       |
+| `settings-events.ts`, `settings-locales.ts`                       | The two events, texts                                                      |                                                             |

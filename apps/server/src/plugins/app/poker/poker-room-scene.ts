@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { ObjectId } from "mongodb";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
@@ -7,9 +7,14 @@ import {
     escapeTelegramHtml,
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
-import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
+import {
+    defineScene,
+    TelegramScene,
+    TelegramSceneControl,
+    TelegramSceneInputSchemas,
+} from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
-import { readPokerDeck } from "./poker-decks.js";
+import { PokerDeck, readPokerDeck } from "./poker-decks.js";
 import {
     describePokerParticipants,
     validatePokerTitle,
@@ -22,22 +27,78 @@ import {
 import {
     PokerRoomEntity,
     pokerRoomIdleMilliseconds,
+    pokerRoundTitleLength,
     PokerSubjects,
     readPokerRoomStatus,
 } from "./poker-room-entity.js";
 import { PokerRoomsService } from "./poker-rooms-service.js";
 import { renderPokerRound } from "./poker-round-screen.js";
-import {
-    pokerRoomButtonValues,
-    PokerRoomSceneControl,
-    pokerRoomScreens,
-    PokerRoomState,
-    pokerRoomStateSchema,
-    PokerRoomUrlResolver,
-    PokerRoomView,
-} from "./poker-schemas.js";
 
-const roundTitleLength = 100;
+const objectIdSchema = Type.String({ pattern: "^[0-9a-f]{24}$" });
+
+const pageSchema = Type.Integer({ minimum: 0 });
+
+const roundNumberSchema = Type.Integer({ minimum: 1 });
+
+export const pokerRoomStateSchema = Type.Object({
+    roomId: objectIdSchema,
+    titleRound: Type.Union([roundNumberSchema, Type.Null()]),
+});
+
+export const pokerRoomScreens = {
+    round: Type.Object({}),
+    menu: Type.Object({}),
+    autoReveal: Type.Object({}),
+    participants: Type.Object({ page: pageSchema }),
+    participant: Type.Object({ userId: objectIdSchema }),
+    history: Type.Object({ page: pageSchema }),
+};
+
+export const pokerRoomButtonValues = {
+    vote: Type.Object({ round: roundNumberSchema, card: Type.String() }),
+    reveal: roundNumberSchema,
+    startRound: Type.Object({
+        round: roundNumberSchema,
+        repeat: Type.Boolean(),
+    }),
+    askTitle: roundNumberSchema,
+    autoReveal: Type.Union([
+        Type.Null(),
+        Type.Object({ missingVotes: Type.Integer({ minimum: 0 }) }),
+    ]),
+    role: Type.Object({
+        userId: objectIdSchema,
+        role: Type.Union([Type.Literal("voter"), Type.Literal("observer")]),
+    }),
+    participantsPage: pageSchema,
+    remove: objectIdSchema,
+    close: Type.Null(),
+    hide: Type.Null(),
+    page: pageSchema,
+};
+
+export type PokerRoomState = Static<typeof pokerRoomStateSchema>;
+
+export type PokerRoomSceneControl = TelegramSceneControl<
+    PokerRoomState,
+    typeof pokerRoomButtonValues,
+    TelegramSceneInputSchemas,
+    typeof pokerRoomScreens
+>;
+
+export type PokerRoomUrlResolver = (
+    botId: string,
+    token: string,
+) => Promise<string>;
+
+export interface PokerRoomView {
+    ctx: TelegramContext;
+    scene: PokerRoomSceneControl;
+    room: PokerRoomEntity;
+    deck: PokerDeck;
+    labels: Map<string, string>;
+    roomUrl: string;
+}
 
 export function pokerRoomTopic(roomId: string): string {
     return `poker.room:${roomId}`;
@@ -282,11 +343,11 @@ export function createPokerRoomScene(
                         property: "title",
                         prompt: (t) =>
                             t("poker:roundTitlePrompt", {
-                                max: roundTitleLength,
+                                max: pokerRoundTitleLength,
                             }),
                         optional: true,
                         validate: (text, t) =>
-                            validatePokerTitle(text, t, roundTitleLength),
+                            validatePokerTitle(text, t, pokerRoundTitleLength),
                     }),
                 ],
                 complete: async (ctx, scene, { title }) => {
@@ -296,7 +357,7 @@ export function createPokerRoomScene(
                         await pokerRoomsService.renameRound(
                             ctx.user,
                             roomIdOf(scene),
-                            { round, title: title?.trim() },
+                            { round, title },
                         );
                     }
 

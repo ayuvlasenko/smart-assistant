@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
 import { randomUUID } from "node:crypto";
+import { defineValkeyScript, ValkeyScript } from "../external/kv-valkey.js";
 import {
     RateLimitGrant,
     RateLimitQueue,
@@ -42,7 +43,7 @@ local function store(key, tokens, rate, burst, now)
 end
 `;
 
-const takeScript = `${tokenBucketFunctions}
+const takeLua = `${tokenBucketFunctions}
 local now = currentTime()
 local rate = tonumber(ARGV[1]) / 1000
 local burst = tonumber(ARGV[2])
@@ -54,7 +55,7 @@ end
 return tostring((1 - tokens) / rate)
 `;
 
-const takeSharedScript = `${tokenBucketFunctions}
+const takeSharedLua = `${tokenBucketFunctions}
 local now = currentTime()
 local rate = tonumber(ARGV[1]) / 1000
 local burst = tonumber(ARGV[2])
@@ -95,7 +96,7 @@ end
 return { 0, tostring(wait or 0) }
 `;
 
-const pauseScript = `${tokenBucketFunctions}
+const pauseLua = `${tokenBucketFunctions}
 local now = currentTime()
 local rate = tonumber(ARGV[1]) / 1000
 local burst = tonumber(ARGV[2])
@@ -105,13 +106,24 @@ return 1
 `;
 
 export class RateLimiter {
-    private readonly client: Redis;
     private readonly podId = randomUUID();
     private readonly queues = new Map<string, RateLimitQueue>();
-    private readonly scriptHashes = new Map<string, string>();
+    private readonly takeScript: ValkeyScript;
+    private readonly takeSharedScript: ValkeyScript;
+    private readonly pauseScript: ValkeyScript;
 
     constructor(client: Redis) {
-        this.client = client;
+        this.takeScript = defineValkeyScript(client, "rateLimitTake", takeLua);
+        this.takeSharedScript = defineValkeyScript(
+            client,
+            "rateLimitTakeShared",
+            takeSharedLua,
+        );
+        this.pauseScript = defineValkeyScript(
+            client,
+            "rateLimitPause",
+            pauseLua,
+        );
     }
 
     acquire(
@@ -128,8 +140,7 @@ export class RateLimiter {
         bucket: RateLimitBucket,
         delayMilliseconds: number,
     ): Promise<void> {
-        await this.run(
-            pauseScript,
+        await this.pauseScript(
             [bucket.key],
             [bucket.ratePerSecond, bucket.burst, delayMilliseconds],
         );
@@ -167,8 +178,7 @@ export class RateLimiter {
         }
 
         const waitMilliseconds = Number(
-            await this.run(
-                takeScript,
+            await this.takeScript(
                 [bucket.key],
                 [bucket.ratePerSecond, bucket.burst],
             ),
@@ -184,8 +194,7 @@ export class RateLimiter {
         shares: [string, number][],
         waitingClasses: Set<string>,
     ): Promise<RateLimitGrant> {
-        const result = (await this.run(
-            takeSharedScript,
+        const result = (await this.takeSharedScript(
             [
                 bucket.key,
                 ...shares.map(
@@ -217,46 +226,6 @@ export class RateLimiter {
             ),
         };
     }
-
-    private async run(
-        script: string,
-        keys: string[],
-        args: (number | string)[],
-    ): Promise<unknown> {
-        const hash = this.scriptHashes.get(script) ?? (await this.load(script));
-
-        try {
-            return await this.client.evalsha(
-                hash,
-                keys.length,
-                ...keys,
-                ...args,
-            );
-        } catch (err) {
-            if (!isMissingScript(err)) {
-                throw err;
-            }
-
-            return this.client.evalsha(
-                await this.load(script),
-                keys.length,
-                ...keys,
-                ...args,
-            );
-        }
-    }
-
-    private async load(script: string): Promise<string> {
-        const hash = (await this.client.script("LOAD", script)) as string;
-
-        this.scriptHashes.set(script, hash);
-
-        return hash;
-    }
-}
-
-function isMissingScript(err: unknown): boolean {
-    return err instanceof Error && err.message.startsWith("NOSCRIPT");
 }
 
 export default fp(

@@ -5,7 +5,6 @@ import { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { Env } from "../../../env.js";
 import { AppLogger } from "../app-logger.js";
 import { CacheService } from "../cache-service.js";
 import {
@@ -42,7 +41,6 @@ export class TelegramCommandMenus {
     private readonly cache: CacheService;
     private readonly i18nService: I18nService;
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly config: Pick<Env, "ENVIRONMENT">;
 
     constructor(
         log: FastifyBaseLogger,
@@ -53,7 +51,6 @@ export class TelegramCommandMenus {
         cache: CacheService,
         i18nService: I18nService,
         telegramMetrics: TelegramMetrics,
-        config: Pick<Env, "ENVIRONMENT">,
     ) {
         this.log = log;
         this.telegramBots = telegramBots;
@@ -63,24 +60,6 @@ export class TelegramCommandMenus {
         this.cache = cache;
         this.i18nService = i18nService;
         this.telegramMetrics = telegramMetrics;
-        this.config = config;
-    }
-
-    async setOnStart(): Promise<void> {
-        if (this.config.ENVIRONMENT === "preview") {
-            return;
-        }
-
-        for (const bot of await this.listBotsOnStart()) {
-            try {
-                await this.syncBot(bot);
-            } catch (err) {
-                this.log.error(
-                    { err, botId: bot.id },
-                    "Failed to set the commands of a bot on start",
-                );
-            }
-        }
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
@@ -136,10 +115,14 @@ export class TelegramCommandMenus {
     }
 
     async syncUser(user: UserEntity): Promise<void> {
-        const bot = await this.telegramBots.find(user.botId);
+        try {
+            const bot = await this.telegramBots.find(user.botId);
 
-        if (bot) {
-            await this.sync(bot, user);
+            if (bot) {
+                await this.sync(bot, user);
+            }
+        } catch (err) {
+            this.recordChatMenuFailure(err, user);
         }
     }
 
@@ -148,6 +131,17 @@ export class TelegramCommandMenus {
             return;
         }
 
+        try {
+            await this.syncChatMenu(bot, user);
+        } catch (err) {
+            this.recordChatMenuFailure(err, user);
+        }
+    }
+
+    private async syncChatMenu(
+        bot: TelegramBot,
+        user: UserEntity,
+    ): Promise<void> {
         const [commands, defaultCommands] = await Promise.all([
             this.describeCommandsOf(
                 bot,
@@ -169,44 +163,35 @@ export class TelegramCommandMenus {
             return;
         }
 
-        try {
-            await this.setChatMenu(
-                bot,
-                Number(user.telegramId),
-                commandMenu ? commands : undefined,
-            );
-            await this.usersRepository.setCommandMenu(user._id, commandMenu);
-            this.telegramMetrics.recordCommandMenuSync(
-                commandMenu ? "set" : "removed",
-            );
-            this.log.info(
-                {
-                    botId: bot.id,
-                    userId: user._id,
-                    commands: commandMenu
-                        ? commands.map(({ command }) => command)
-                        : undefined,
-                },
-                commandMenu
-                    ? "Telegram chat commands set successfully"
-                    : "Telegram chat commands removed",
-            );
-        } catch (err) {
-            this.telegramMetrics.recordCommandMenuSync("failed");
-            this.log.error(
-                { err, botId: bot.id, userId: user._id },
-                "Failed to set telegram chat commands",
-            );
-        }
+        await this.setChatMenu(
+            bot,
+            Number(user.telegramId),
+            commandMenu ? commands : undefined,
+        );
+        await this.usersRepository.setCommandMenu(user._id, commandMenu);
+        this.telegramMetrics.recordCommandMenuSync(
+            commandMenu ? "set" : "removed",
+        );
+        this.log.info(
+            {
+                botId: bot.id,
+                userId: user._id,
+                commands: commandMenu
+                    ? commands.map(({ command }) => command)
+                    : undefined,
+            },
+            commandMenu
+                ? "Telegram chat commands set successfully"
+                : "Telegram chat commands removed",
+        );
     }
 
-    private async listBotsOnStart(): Promise<TelegramBot[]> {
-        try {
-            return await this.telegramBots.list();
-        } catch (err) {
-            this.log.error({ err }, "Failed to read the bots on start");
-            return [];
-        }
+    private recordChatMenuFailure(err: unknown, user: UserEntity): void {
+        this.telegramMetrics.recordCommandMenuSync("failed");
+        this.log.error(
+            { err, botId: user.botId, userId: user._id },
+            "Failed to set telegram chat commands",
+        );
     }
 
     private buildBotMenus(bot: TelegramBot): Promise<TelegramBotMenu[]> {
@@ -291,7 +276,6 @@ export default fp(
             fastify.getDecorator<CacheService>("cache"),
             fastify.getDecorator<I18nService>("i18nService"),
             fastify.getDecorator<TelegramMetrics>("telegramMetrics"),
-            fastify.getDecorator<Env>("config"),
         );
 
         fastify.decorate("telegramCommandMenus", telegramCommandMenus);
@@ -301,15 +285,10 @@ export default fp(
             .on("users.accessChanged", ({ data }) =>
                 telegramCommandMenus.syncUser(data.user),
             );
-
-        fastify.addHook("onListen", async () => {
-            await telegramCommandMenus.setOnStart();
-        });
     },
     {
         name: "telegram-command-menus",
         dependencies: [
-            "@fastify/env",
             "app-logger",
             "cache",
             "emittery",

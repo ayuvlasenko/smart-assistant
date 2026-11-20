@@ -1,6 +1,6 @@
 import { InlineKeyboardButton, WebhookInfo } from "@grammyjs/types";
 import { Translate } from "../i18n-service.js";
-import { inviteDeepLinkName } from "../invites/invites-handlers.js";
+import { inviteDeepLinkOf } from "../invites/invite-entity.js";
 import { buildTelegramDeepLinkUrl } from "../telegram/telegram-deep-links.js";
 import {
     buildTelegramHtmlMessage,
@@ -10,7 +10,7 @@ import {
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
-import { BotsSceneControl, BotsView } from "./bots-schemas.js";
+import { BotsSceneControl, BotsView } from "./bots-scene.js";
 import { BotsService } from "./bots-service.js";
 
 export async function renderBotsList({
@@ -218,10 +218,7 @@ export async function renderBotOwnerInvite(
         );
     }
 
-    const url = buildTelegramDeepLinkUrl(bot.username, {
-        name: inviteDeepLinkName,
-        value: token,
-    });
+    const url = buildTelegramDeepLinkUrl(bot.username, inviteDeepLinkOf(token));
 
     return buildTelegramHtmlMessage(
         [

@@ -1,12 +1,15 @@
 import { AccessService } from "../plugins/app/access/access-service.js";
+import { InviteEntity } from "../plugins/app/invites/invite-entity.js";
 import invitesHandlersPlugin from "../plugins/app/invites/invites-handlers.js";
 import invitesRepositoryPlugin, {
     InvitesRepository,
 } from "../plugins/app/invites/invites-repository.js";
 import invitesServicePlugin, {
     InvitesService,
+    NewInvite,
 } from "../plugins/app/invites/invites-service.js";
 import pingHandlersPlugin from "../plugins/app/ping/ping-handlers.js";
+import { UserEntity } from "../plugins/app/users/user-entity.js";
 import { BuildTelegramBotServiceTestAppOptions } from "./telegram-bot-service-helper.js";
 import {
     buildTelegramSceneBot,
@@ -40,4 +43,18 @@ export async function buildInvitesBot(
             bot.app.getDecorator<InvitesRepository>("invitesRepository"),
         invitesService: bot.app.getDecorator<InvitesService>("invitesService"),
     };
+}
+
+export async function createInviteAs(
+    bot: InvitesBot,
+    actor: UserEntity,
+    draft: NewInvite,
+): Promise<InviteEntity> {
+    const result = await bot.invitesService.create(actor, draft);
+
+    if (result.status !== "created") {
+        throw new Error(`The invite was not created: ${result.status}`);
+    }
+
+    return result.invite;
 }

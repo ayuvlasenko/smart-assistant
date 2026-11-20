@@ -90,10 +90,6 @@ export class BotsRepository {
         return result.upsertedCount ? { ...fields, telegramId } : null;
     }
 
-    updateModules(_id: string, modules: string[]): Promise<BotEntity | null> {
-        return this.update({ _id }, { $set: { modules } });
-    }
-
     toggleModule(_id: string, module: string): Promise<BotEntity | null> {
         return this.bots.findOneAndUpdate(
             { _id },

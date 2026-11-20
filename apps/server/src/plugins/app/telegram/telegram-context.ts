@@ -3,6 +3,7 @@ import Emittery from "emittery";
 import { FastifyBaseLogger } from "fastify";
 import { Translate } from "../i18n-service.js";
 import { UserEntity } from "../users/user-entity.js";
+import { TelegramBot } from "./telegram-bots.js";
 import {
     TelegramMessageContent,
     TelegramReplyOptions,
@@ -13,6 +14,7 @@ import { TelegramMessageMarkup } from "./telegram-scene-buttons.js";
 import { TelegramSession } from "./telegram-session.js";
 
 export interface TelegramContextOptions<TUpdate extends Update | undefined> {
+    bot: TelegramBot;
     update: TUpdate;
     user: UserEntity;
     session: TelegramSession;
@@ -36,6 +38,7 @@ export interface TelegramContextEvents {
 export class TelegramContext<
     TUpdate extends Update | undefined = Update | undefined,
 > {
+    readonly bot: TelegramBot;
     readonly update: TUpdate;
     readonly log: FastifyBaseLogger;
     readonly timeZone: string;
@@ -47,6 +50,7 @@ export class TelegramContext<
     private translate: Translate;
 
     constructor(options: TelegramContextOptions<TUpdate>) {
+        this.bot = options.bot;
         this.update = options.update;
         this.log = options.log;
         this.timeZone = options.timeZone;

@@ -21,23 +21,37 @@ interface SerializedError {
 
 const normalizer = new LoggerNormalizer(["req", "res"]);
 
-export function buildLoggerOptions(level: string): LoggerOptions {
+export function buildLoggerOptions(
+    level: string,
+    { pretty = false }: { pretty?: boolean } = {},
+): LoggerOptions {
+    const options: LoggerOptions = {
+        level,
+        formatters: { log: normalizeRecord },
+        serializers: { ...loggerRequestSerializers, err: keepNormalizedError },
+        hooks: { logMethod: logWithNormalizedMessage },
+    };
+
+    if (pretty) {
+        return {
+            ...options,
+            transport: {
+                target: "pino-pretty",
+                options: {
+                    translateTime: "HH:MM:ss Z",
+                    ignore: "pid,hostname",
+                },
+            },
+        };
+    }
+
     return {
-        ...buildPrettyLoggerOptions(level),
+        ...options,
         base: { hostname: hostname() },
         formatters: {
             level: (label) => ({ level: label }),
             log: normalizeRecord,
         },
-    };
-}
-
-export function buildPrettyLoggerOptions(level: string): LoggerOptions {
-    return {
-        level,
-        formatters: { log: normalizeRecord },
-        serializers: { ...loggerRequestSerializers, err: keepNormalizedError },
-        hooks: { logMethod: logWithNormalizedMessage },
     };
 }
 

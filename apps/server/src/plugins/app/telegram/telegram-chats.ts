@@ -14,7 +14,6 @@ import { TelegramContext } from "./telegram-context.js";
 import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
-import { isTimeZone } from "./telegram-parsers.js";
 import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
 import { TelegramResponder } from "./telegram-responder.js";
 import { TelegramSceneEngine } from "./telegram-scene-engine.js";
@@ -74,12 +73,6 @@ export class TelegramChats {
         log: FastifyBaseLogger,
         config: Pick<Env, "TIME_ZONE">,
     ) {
-        const timeZone = config.TIME_ZONE;
-
-        if (!isTimeZone(timeZone)) {
-            throw new Error(`TIME_ZONE "${timeZone}" is not a valid time zone`);
-        }
-
         this.sessionStore = sessionStore;
         this.sceneEngine = sceneEngine;
         this.usersRepository = usersRepository;
@@ -401,6 +394,7 @@ export class TelegramChats {
             telegramUserId,
             (session, signal) => {
                 const ctx = new TelegramContext({
+                    bot,
                     update,
                     user,
                     session,

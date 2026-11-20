@@ -38,6 +38,7 @@ const en = {
     validForPrompt:
         "Send the number of days from 1 to 365, or /cancel to stop.",
     noAccessSelected: "Choose at least one access first.",
+    accessNotAllowed: "One of the chosen accesses can't be given any more.",
     inviteTitle: "Invite",
     inviteMissing: "This invite no longer exists.",
     copyLinkButton: "📋 Copy link",
@@ -88,6 +89,7 @@ export const invitesLocales: Locales<typeof en> = {
         validForPrompt:
             "Надішліть кількість днів від 1 до 365 або /cancel, щоб зупинитися.",
         noAccessSelected: "Спершу оберіть хоча б один доступ.",
+        accessNotAllowed: "Один з обраних доступів більше не можна видати.",
         inviteTitle: "Запрошення",
         inviteMissing: "Цього запрошення більше немає.",
         copyLinkButton: "📋 Скопіювати посилання",
@@ -135,6 +137,7 @@ export const invitesLocales: Locales<typeof en> = {
         validForPrompt:
             "Отправьте число дней от 1 до 365 или /cancel, чтобы остановиться.",
         noAccessSelected: "Сначала выберите хотя бы один доступ.",
+        accessNotAllowed: "Один из выбранных доступов больше нельзя выдать.",
         inviteTitle: "Приглашение",
         inviteMissing: "Этого приглашения больше нет.",
         copyLinkButton: "📋 Скопировать ссылку",

@@ -21,7 +21,7 @@ const testMongo = useTestMongo();
 
 void describe("TelegramCommandMenus on start", () => {
     void it("sets localized commands for every language on production", async (t) => {
-        const { telegramApiService, telegramCommandMenus } =
+        const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
@@ -33,7 +33,7 @@ void describe("TelegramCommandMenus on start", () => {
                 },
             });
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.deepEqual(
             telegramApiService.setMyCommands.mock.calls.map(
@@ -61,7 +61,7 @@ void describe("TelegramCommandMenus on start", () => {
             description: "Unauthorized",
         }));
 
-        const { botsRegistry, child, telegramCommandMenus } =
+        const { botsRegistry, child, telegramBotService } =
             await buildTwoBotsTestApp({
                 testMongo,
                 t,
@@ -69,7 +69,7 @@ void describe("TelegramCommandMenus on start", () => {
                 logger: logs.logger,
             });
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(failing.setMyCommands.mock.callCount(), 1);
         assert.equal(child.setMyCommands.mock.callCount(), 4);
@@ -86,14 +86,14 @@ void describe("TelegramCommandMenus on start", () => {
     });
 
     void it("doesn't touch commands on preview", async (t) => {
-        const { telegramApiService, telegramCommandMenus } =
+        const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
                 environment: "preview",
             });
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
     });
@@ -101,10 +101,10 @@ void describe("TelegramCommandMenus on start", () => {
 
 void describe("TelegramCommandMenus chat menus", () => {
     void it("keeps guarded commands out of the menu on start", async (t) => {
-        const { telegramApiService, telegramCommandMenus } =
+        const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.deepEqual(
             telegramApiService.setMyCommands.mock.calls[0]?.arguments[0]
@@ -114,20 +114,24 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 
     void it("sets the menu of the bot on start only when it changed", async (t) => {
-        const { telegramApiService, telegramCommandMenus } =
+        const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await telegramCommandMenus.setOnStart();
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
     });
 
     void it("sets every menu of the bot again after a refresh that failed in the middle", async (t) => {
-        const { telegramApiService, telegramBots, telegramCommandMenus } =
-            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+        const {
+            telegramApiService,
+            telegramBotService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
         telegramApiService.setMyCommands.mock.mockImplementationOnce(
             async () => ({
                 ok: false,
@@ -140,7 +144,7 @@ void describe("TelegramCommandMenus chat menus", () => {
         await assert.rejects(
             telegramCommandMenus.refresh(await telegramBots.root()),
         );
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 10);
     });
@@ -282,7 +286,7 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 
     void it("puts /start first in the menus of a bot once it has a start module", async (t) => {
-        const { botsRegistry, botsRepository, telegramCommandMenus, ...app } =
+        const { botsRegistry, botsRepository, telegramBotService, ...app } =
             await buildTelegramBotServiceTestApp({
                 ...buildMenuAppOptions(t),
                 plugins: [registerStartEntry("ping")],
@@ -293,9 +297,9 @@ void describe("TelegramCommandMenus chat menus", () => {
                 call.arguments[0].commands[0],
             ]);
 
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
         await botsRepository.setStartModule(botsRegistry.rootId, "ping");
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
 
         assert.deepEqual(readFirstCommands().slice(4), [
             [
@@ -313,15 +317,20 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 
     void it("keeps /start out of the menu when the guard of the start entry refuses the user", async (t) => {
-        const { botsRegistry, botsRepository, telegramCommandMenus, ...app } =
-            await buildTelegramBotServiceTestApp({
-                ...buildMenuAppOptions(t),
-                plugins: [
-                    registerStartEntry("ping", (user) =>
-                        user.grants.includes("vip"),
-                    ),
-                ],
-            });
+        const {
+            botsRegistry,
+            botsRepository,
+            telegramBotService,
+            telegramCommandMenus,
+            ...app
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            plugins: [
+                registerStartEntry("ping", (user) =>
+                    user.grants.includes("vip"),
+                ),
+            ],
+        });
         const user = await insertUser({
             telegramId: "987654611",
             grants: ["vip"],
@@ -332,7 +341,7 @@ void describe("TelegramCommandMenus chat menus", () => {
             );
 
         await botsRepository.setStartModule(botsRegistry.rootId, "ping");
-        await telegramCommandMenus.setOnStart();
+        await telegramBotService.setUpOnStart();
         await telegramCommandMenus.syncUser(user);
 
         assert.deepEqual(readCommands(), [
@@ -414,6 +423,33 @@ void describe("TelegramCommandMenus chat menus", () => {
                     (entry) =>
                         entry.msg === "Failed to set telegram chat commands",
                 ),
+        );
+    });
+    void it("counts a failed sync of an update and resolves when a guard of a command fails", async (t) => {
+        const {
+            metrics,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            registerRoutes: (router) => {
+                router.command("broken", async () => undefined, {
+                    description: (translate) => translate("telegram:error"),
+                    guard: () => Promise.reject(new Error("guard failed")),
+                });
+            },
+        });
+
+        await telegramCommandMenus.sync(
+            await telegramBots.root(),
+            await insertUser({ telegramId: "987654611" }),
+        );
+
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_command_menu_syncs_total\{result="failed"\} 1$/m,
         );
     });
 });

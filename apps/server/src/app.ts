@@ -5,20 +5,26 @@ import {
     FastifyInstance,
     FastifyPluginOptions,
     FastifyServerOptions,
+    LogController,
 } from "fastify";
 import { ObjectId } from "mongodb";
 import { STATUS_CODES } from "node:http";
 import path from "node:path";
 import { requestIdOptions } from "./logger-request.js";
-import { TelegramApiClient } from "./plugins/app/telegram/telegram-api-service.js";
 import { TelegramApiFactory } from "./plugins/app/telegram/telegram-bots.js";
 
 const testFilePattern = /\.(?:test|spec)\.(?:js|ts)$/;
 const internalServerErrorMessage = "Internal Server Error";
 
+export interface AppOptions extends FastifyPluginOptions {
+    database?: string;
+    telegramApiFactory?: TelegramApiFactory;
+}
+
 export const options = {
     ...requestIdOptions,
-    disableRequestLogging: true,
+    trustProxy: true,
+    logController: new LogController({ disableRequestLogging: true }),
     ajv: {
         customOptions: {
             coerceTypes: "array",
@@ -32,30 +38,18 @@ export const options = {
 
 export default async function serviceApp(
     fastify: FastifyInstance,
-    opts: FastifyPluginOptions & {
-        telegramApiService?: TelegramApiClient;
-        telegramApiFactory?: TelegramApiFactory;
-    },
+    { database, telegramApiFactory }: AppOptions,
 ) {
-    const { telegramApiService, telegramApiFactory } = opts;
-    const autoloadOptions = { ...opts };
-    delete autoloadOptions.skipOverride;
-    delete autoloadOptions.ajv;
-    delete autoloadOptions.telegramApiService;
-    delete autoloadOptions.telegramApiFactory;
-    delete autoloadOptions.genReqId;
-    delete autoloadOptions.requestIdHeader;
-
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/external"),
         ignorePattern: testFilePattern,
-        options: { ...autoloadOptions },
+        options: { database },
     });
 
     await fastify.register(fastifyAutoload, {
         dir: path.join(import.meta.dirname, "plugins/app"),
         ignorePattern: testFilePattern,
-        options: { telegramApiService, telegramApiFactory, ...autoloadOptions },
+        options: { telegramApiFactory },
     });
 
     fastify.setErrorHandler((err: FastifyError, request, reply) => {
@@ -87,7 +81,6 @@ export default async function serviceApp(
         autoHooks: true,
         cascadeHooks: true,
         routeParams: true,
-        options: { opts: autoloadOptions },
     });
 
     fastify.addHook("onReady", () => {

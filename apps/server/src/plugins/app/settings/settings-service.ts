@@ -9,6 +9,10 @@ import { UserEntity } from "../users/user-entity.js";
 import { SettingsSubjects } from "./setting-entity.js";
 import { SettingsEvents } from "./settings-events.js";
 import { settingsLocales } from "./settings-locales.js";
+import {
+    SettingsRegistry,
+    SettingsRegistrySection,
+} from "./settings-registry.js";
 import { SettingsRepository } from "./settings-repository.js";
 
 export interface SettingOption {
@@ -49,15 +53,10 @@ export type SettingValue<TSetting extends Setting> =
           ? number
           : string[];
 
-export interface SettingsSection {
-    name: string;
-    title: (t: Translate) => string;
-    settings: Setting[];
-}
+export type SettingsSection = SettingsRegistrySection<Setting>;
 
 export class SettingsService {
-    private readonly sections: SettingsSection[] = [];
-    private readonly settings = new Map<string, Setting>();
+    private readonly registry = new SettingsRegistry<Setting>("Setting");
     private readonly settingsRepository: SettingsRepository;
     private readonly access: AccessControl<SettingsSubjects>;
     private readonly eventEmitter: Emittery<SettingsEvents>;
@@ -76,33 +75,15 @@ export class SettingsService {
     }
 
     register(section: SettingsSection): void {
-        if (this.sections.some(({ name }) => name === section.name)) {
-            throw new Error(
-                `Settings section "${section.name}" is already registered`,
-            );
-        }
-
-        for (const setting of section.settings) {
-            if (this.settings.has(setting.name)) {
-                throw new Error(
-                    `Setting "${setting.name}" is already registered`,
-                );
-            }
-        }
-
-        this.sections.push(section);
-
-        for (const setting of section.settings) {
-            this.settings.set(setting.name, setting);
-        }
+        this.registry.register(section);
     }
 
     listSections(botId: string): Promise<SettingsSection[]> {
-        return this.access.listEnabled(botId, this.sections);
+        return this.access.listEnabled(botId, this.registry.sections);
     }
 
     find(name: string): Setting | undefined {
-        return this.settings.get(name);
+        return this.registry.find(name);
     }
 
     async read<TSetting extends Setting>(

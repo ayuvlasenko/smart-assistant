@@ -19,5 +19,6 @@ export interface PokerEvents {
         roomId: ObjectId;
         userIds: ObjectId[];
         change: PokerRoomChange;
+        autoRevealed: boolean;
     };
 }
