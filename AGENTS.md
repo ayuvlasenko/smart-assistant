@@ -5,7 +5,7 @@
 Run all commands from the project root:
 
 ```bash
-pnpm --filter server dev        # Build TypeScript and start server with hot reload
+pnpm --filter server dev        # Build TypeScript and restart src/server.ts on every change
 pnpm --filter server build      # Compile TypeScript only
 pnpm --filter server typecheck  # Run full TypeScript checks, including tests and fixtures
 pnpm test                       # Run all tests: root scripts and every workspace

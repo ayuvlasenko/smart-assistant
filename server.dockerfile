@@ -35,4 +35,4 @@ WORKDIR /app
 
 COPY --chown=node:node --from=build /base/deploy ./
 
-CMD ["node", "/app/dist/server.js"]
+CMD ["node", "--enable-source-maps", "/app/dist/server.js"]
