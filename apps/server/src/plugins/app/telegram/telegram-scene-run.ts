@@ -4,6 +4,7 @@ import { extractTelegramCommand } from "./telegram-extractors.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
+    parseTelegramButtonPress,
     TelegramButton,
     TelegramSceneButtons,
 } from "./telegram-scene-buttons.js";
@@ -12,6 +13,7 @@ import {
     TelegramSceneMessages,
     TelegramSceneMessagesRelease,
 } from "./telegram-scene-messages.js";
+import { TelegramScenePresses } from "./telegram-scene-presses.js";
 import {
     TelegramSceneScreens,
     TelegramScreenState,
@@ -28,8 +30,8 @@ type SceneControl = TelegramSceneControl<SceneState>;
 export type TelegramSceneLookup = (name: string) => TelegramScene | undefined;
 
 export class TelegramSceneRun {
-    readonly ctx: TelegramContext;
-    readonly storage: TelegramSceneStorage;
+    private readonly ctx: TelegramContext;
+    private readonly storage: TelegramSceneStorage;
     private readonly touched = new Map<
         TelegramSceneInstance,
         { reshow: boolean }
@@ -39,6 +41,7 @@ export class TelegramSceneRun {
     private readonly telegramMetrics: TelegramMetrics;
     private readonly buttons: TelegramSceneButtons;
     private readonly inputs: TelegramSceneInputs;
+    private readonly presses: TelegramScenePresses;
     private readonly screens: TelegramSceneScreens;
     private readonly messages: TelegramSceneMessages;
 
@@ -48,6 +51,7 @@ export class TelegramSceneRun {
         telegramMetrics: TelegramMetrics,
         buttons: TelegramSceneButtons,
         inputs: TelegramSceneInputs,
+        presses: TelegramScenePresses,
         screens: TelegramSceneScreens,
         messages: TelegramSceneMessages,
     ) {
@@ -56,6 +60,7 @@ export class TelegramSceneRun {
         this.telegramMetrics = telegramMetrics;
         this.buttons = buttons;
         this.inputs = inputs;
+        this.presses = presses;
         this.screens = screens;
         this.messages = messages;
         this.storage = new TelegramSceneStorage(
@@ -64,15 +69,6 @@ export class TelegramSceneRun {
             screens,
             ctx.log,
         );
-    }
-
-    touch(
-        instance: TelegramSceneInstance,
-        { reshow = false }: { reshow?: boolean } = {},
-    ): void {
-        this.touched.set(instance, {
-            reshow: reshow || !!this.touched.get(instance)?.reshow,
-        });
     }
 
     async start(scene: TelegramScene, state: SceneState): Promise<boolean> {
@@ -113,36 +109,25 @@ export class TelegramSceneRun {
             return false;
         }
 
-        this.touch(instance);
-
         return this.inputs.cancel(this.ctx, this.control(instance), instance);
     }
 
-    async handleMessage(
+    async handle(
         ctx: TelegramContext<Update>,
         next: () => Promise<void>,
     ): Promise<void> {
-        const instance = await this.focusedInput();
+        const press = parseTelegramButtonPress(ctx.update);
 
-        if (!instance || !(await this.inputs.canUse(instance, ctx.user))) {
-            return next();
+        if (!press) {
+            return this.handleMessage(ctx, next);
         }
 
-        if (this.inputs.accepts(instance, ctx.update)) {
-            this.touch(instance);
-            return this.inputs.handleMessage(
-                ctx,
-                this.control(instance),
-                instance,
-            );
-        }
-
-        if (isUnexpectedInput(ctx.update)) {
-            this.touch(instance);
-            return this.inputs.replyUnexpected(ctx, instance);
-        }
-
-        return next();
+        await this.presses.press(
+            ctx,
+            await this.storage.load(press.sceneId),
+            press,
+            (instance) => this.control(instance),
+        );
     }
 
     async deliver(
@@ -162,7 +147,6 @@ export class TelegramSceneRun {
         }
 
         this.telegramMetrics.recordSceneEvent(scene.name, "delivered");
-        this.touch(instance);
         await handle(this.control(instance));
 
         return true;
@@ -208,7 +192,44 @@ export class TelegramSceneRun {
         }
     }
 
-    control(instance: TelegramSceneInstance): SceneControl {
+    private touch(
+        instance: TelegramSceneInstance,
+        { reshow = false }: { reshow?: boolean } = {},
+    ): void {
+        this.touched.set(instance, {
+            reshow: reshow || !!this.touched.get(instance)?.reshow,
+        });
+    }
+
+    private async handleMessage(
+        ctx: TelegramContext<Update>,
+        next: () => Promise<void>,
+    ): Promise<void> {
+        const instance = await this.focusedInput();
+
+        if (!instance || !(await this.inputs.canUse(instance, ctx.user))) {
+            return next();
+        }
+
+        if (this.inputs.accepts(instance, ctx.update)) {
+            return this.inputs.handleMessage(
+                ctx,
+                this.control(instance),
+                instance,
+            );
+        }
+
+        if (isUnexpectedInput(ctx.update)) {
+            this.touch(instance);
+            return this.inputs.replyUnexpected(ctx, instance);
+        }
+
+        return next();
+    }
+
+    private control(instance: TelegramSceneInstance): SceneControl {
+        this.touch(instance);
+
         const button = (text: string, data: TelegramButton) =>
             this.buttons.create(instance, text, data);
         const screenOf = (
@@ -319,7 +340,6 @@ export class TelegramSceneRun {
     ): Promise<TelegramSceneInstance> {
         const instance = this.storage.create(id, scene, state);
 
-        this.touch(instance);
         this.telegramMetrics.recordSceneEvent(scene.name, "start");
         this.ctx.log.info(
             { scene: scene.name, sceneId: id },
@@ -450,8 +470,6 @@ export class TelegramSceneRun {
     }
 
     private async cancelScene(instance: TelegramSceneInstance): Promise<void> {
-        this.touch(instance);
-
         const isInputCancelled = await this.inputs.cancel(
             this.ctx,
             this.control(instance),

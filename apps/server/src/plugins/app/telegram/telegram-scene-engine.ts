@@ -3,10 +3,7 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
-import {
-    parseTelegramButtonPress,
-    TelegramSceneButtons,
-} from "./telegram-scene-buttons.js";
+import { TelegramSceneButtons } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import { TelegramSceneMessages } from "./telegram-scene-messages.js";
 import { TelegramScenePresses } from "./telegram-scene-presses.js";
@@ -82,12 +79,7 @@ export class TelegramSceneEngine {
         ctx: TelegramContext<Update>,
         next: () => Promise<void>,
     ): Promise<void> {
-        const run = this.runOf(ctx);
-        const press = parseTelegramButtonPress(ctx.update);
-
-        return press
-            ? this.presses.handle(ctx, run, press)
-            : run.handleMessage(ctx, next);
+        return this.runOf(ctx).handle(ctx, next);
     }
 
     deliver(
@@ -117,6 +109,7 @@ export class TelegramSceneEngine {
             this.telegramMetrics,
             this.buttons,
             this.inputs,
+            this.presses,
             this.screens,
             this.messages,
         );
