@@ -412,7 +412,7 @@ export class TelegramSceneInputs {
         active: ActiveInput,
         action: () => Promise<T>,
     ): Promise<T> {
-        const stopTracking = ctx.events.on("messageSent", ({ data }) => {
+        const stopTracking = ctx.messageEvents.on("messageSent", ({ data }) => {
             this.track(active, data.messageId);
         });
 

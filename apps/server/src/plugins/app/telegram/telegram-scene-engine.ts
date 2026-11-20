@@ -14,7 +14,7 @@ type SceneControl = TelegramSceneControl<SceneState>;
 
 export class TelegramSceneEngine {
     private readonly scenes = new Map<string, TelegramScene>();
-    private readonly runs = new WeakMap<TelegramSession, TelegramSceneRun>();
+    private readonly runs = new WeakMap<TelegramContext, TelegramSceneRun>();
     private readonly inputs: TelegramSceneInputs;
     private readonly presses: TelegramScenePresses;
     private readonly telegramMetrics: TelegramMetrics;
@@ -90,23 +90,25 @@ export class TelegramSceneEngine {
 
     async withScenes<T>(
         ctx: TelegramContext,
+        session: TelegramSession,
         action: () => Promise<T>,
     ): Promise<T> {
         const run = new TelegramSceneRun(
             ctx,
+            session,
             (name) => this.scenes.get(name),
             this.telegramMetrics,
             this.inputs,
             this.presses,
         );
-        const stopRecording = ctx.events.on(
+        const stopRecording = ctx.messageEvents.on(
             ["messageSent", "messageEdited", "messageRemoved"],
             ({ data }) => {
                 run.rememberButtons(data);
             },
         );
 
-        this.runs.set(ctx.session, run);
+        this.runs.set(ctx, run);
 
         try {
             const result = await action();
@@ -117,12 +119,12 @@ export class TelegramSceneEngine {
         } finally {
             stopRecording();
             run.save();
-            this.runs.delete(ctx.session);
+            this.runs.delete(ctx);
         }
     }
 
     private runOf(ctx: TelegramContext): TelegramSceneRun {
-        const run = this.runs.get(ctx.session);
+        const run = this.runs.get(ctx);
 
         if (!run) {
             throw new Error("Telegram scenes are used outside withScenes");

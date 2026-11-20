@@ -319,7 +319,7 @@ sequenceDiagram
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
-    C->>E: withScenes(ctx)
+    C->>E: withScenes(ctx, session)
     E->>Rt: dispatch(ctx)
     alt banned user
         Rt->>Rt: deep link with allowBanned, or BannedTelegramUserError

@@ -35,6 +35,7 @@ import {
     TelegramSceneStorage,
 } from "./telegram-scene-storage.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
+import { TelegramSession } from "./telegram-session.js";
 
 type SceneState = Record<string, unknown>;
 type SceneControl = TelegramSceneControl<SceneState>;
@@ -54,6 +55,7 @@ export class TelegramSceneRun {
 
     constructor(
         ctx: TelegramContext,
+        session: TelegramSession,
         findScene: TelegramSceneLookup,
         telegramMetrics: TelegramMetrics,
         inputs: TelegramSceneInputs,
@@ -64,11 +66,7 @@ export class TelegramSceneRun {
         this.telegramMetrics = telegramMetrics;
         this.inputs = inputs;
         this.presses = presses;
-        this.storage = new TelegramSceneStorage(
-            ctx.session,
-            findScene,
-            ctx.log,
-        );
+        this.storage = new TelegramSceneStorage(session, findScene, ctx.log);
     }
 
     async start(scene: TelegramScene, state: SceneState): Promise<boolean> {

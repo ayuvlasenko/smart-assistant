@@ -415,7 +415,6 @@ export class TelegramChats {
             bot,
             update,
             user,
-            session,
             log,
             translatorOf: (current) =>
                 this.i18nService.getT(languageOf(current)),
@@ -429,7 +428,7 @@ export class TelegramChats {
                 priority: update === undefined ? "background" : "interactive",
                 log,
             },
-            () => this.sceneEngine.withScenes(ctx, () => handle(ctx)),
+            () => this.sceneEngine.withScenes(ctx, session, () => handle(ctx)),
         );
     }
 }
