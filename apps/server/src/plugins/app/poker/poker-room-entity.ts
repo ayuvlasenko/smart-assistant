@@ -160,9 +160,13 @@ export function readPokerTitle(
 ): string | undefined {
     const title = text?.trim();
 
-    if (title && isPokerTitleTooLong(title, max)) {
+    if (!title) {
+        return undefined;
+    }
+
+    if (isPokerTitleTooLong(title, max)) {
         throw new Error(`Poker title is longer than ${max} characters`);
     }
 
-    return title || undefined;
+    return title;
 }
