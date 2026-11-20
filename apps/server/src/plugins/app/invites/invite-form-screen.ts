@@ -9,7 +9,7 @@ import {
 import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { formatGrants, pageButtonOf } from "./invite-format.js";
-import { InvitesView } from "./invites-schemas.js";
+import { InvitesView } from "./invites-scene.js";
 
 const sectionsPageSize = 6;
 const grantsPageSize = 6;

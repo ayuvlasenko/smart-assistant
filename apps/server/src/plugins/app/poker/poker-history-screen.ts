@@ -13,8 +13,8 @@ import {
     formatPokerHeader,
 } from "./poker-format.js";
 import { listRevealedPokerRounds, PokerRound } from "./poker-room-entity.js";
+import { PokerRoomView } from "./poker-room-scene.js";
 import { summarizePokerRound } from "./poker-round-summary.js";
-import { PokerRoomView } from "./poker-schemas.js";
 
 const roundsPageSize = 5;
 

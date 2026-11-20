@@ -8,7 +8,7 @@ import { pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { formatPokerRoomTitle } from "./poker-format.js";
 import { PokerRoomStatus } from "./poker-room-entity.js";
-import { PokerView } from "./poker-schemas.js";
+import { PokerView } from "./poker-scene.js";
 
 const roomsPageSize = 5;
 

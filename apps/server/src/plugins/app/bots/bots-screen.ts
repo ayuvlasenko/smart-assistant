@@ -10,7 +10,7 @@ import {
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
-import { BotsSceneControl, BotsView } from "./bots-schemas.js";
+import { BotsSceneControl, BotsView } from "./bots-scene.js";
 import { BotsService } from "./bots-service.js";
 
 export async function renderBotsList({

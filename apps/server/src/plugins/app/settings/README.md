@@ -148,12 +148,12 @@ The only setting of a user in the code now is `users.language`.
 
 ## Files
 
-| File                                                               | Owns                                                                     | Section                                                     |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `settings-service.ts`                                              | The kinds of settings, their registration, `read` and `write`            | [Reading and writing a value](#reading-and-writing-a-value) |
-| `user-settings-service.ts`                                         | The settings of a user: their registration, `readUserChoice` and `write` | [A setting of a user](#a-setting-of-a-user)                 |
-| `settings-repository.ts`                                           | The `settings` collection                                                | [Reading and writing a value](#reading-and-writing-a-value) |
-| `settings-registry.ts`                                             | The sections and the names of both kinds of settings                     |                                                             |
-| `setting-entity.ts`                                                | `SettingEntity` and `SettingsSubjects`                                   |                                                             |
-| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts`  | `/settings`, the scene and its four screens                              | [The menu](#the-menu)                                       |
-| `settings-schemas.ts`, `settings-events.ts`, `settings-locales.ts` | The scene state, screens and button values, the two events, texts        |                                                             |
+| File                                                              | Owns                                                                       | Section                                                     |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `settings-service.ts`                                             | The kinds of settings, their registration, `read` and `write`              | [Reading and writing a value](#reading-and-writing-a-value) |
+| `user-settings-service.ts`                                        | The settings of a user: their registration, `readUserChoice` and `write`   | [A setting of a user](#a-setting-of-a-user)                 |
+| `settings-repository.ts`                                          | The `settings` collection                                                  | [Reading and writing a value](#reading-and-writing-a-value) |
+| `settings-registry.ts`                                            | The sections and the names of both kinds of settings                       |                                                             |
+| `setting-entity.ts`                                               | `SettingEntity` and `SettingsSubjects`                                     |                                                             |
+| `settings-handlers.ts`, `settings-scene.ts`, `settings-screen.ts` | `/settings`, the scene with its state and button schemas, its four screens | [The menu](#the-menu)                                       |
+| `settings-events.ts`, `settings-locales.ts`                       | The two events, texts                                                      |                                                             |

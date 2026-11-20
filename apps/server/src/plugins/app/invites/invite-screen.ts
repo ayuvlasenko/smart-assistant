@@ -20,7 +20,7 @@ import {
     formatLabeledTime,
     pageButtonOf,
 } from "./invite-format.js";
-import { InvitesSceneControl, InvitesView } from "./invites-schemas.js";
+import { InvitesSceneControl, InvitesView } from "./invites-scene.js";
 import { InviteUser } from "./invites-service.js";
 
 const usersPageSize = 10;

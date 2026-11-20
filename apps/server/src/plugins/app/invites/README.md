@@ -115,14 +115,13 @@ The scene redraws by itself when an invite changes. The `list` screen watches `i
 
 ## Files
 
-| File                                                                  | Owns                                                                                          |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `invite-entity.ts`                                                    | The invite document, its status and its deep link                                             |
-| `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page      |
-| `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap            |
-| `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event             |
-| `invites-scene.ts`                                                    | The scene: its screens with their topics, its buttons and inputs                              |
-| `invites-schemas.ts`                                                  | The state, screen and button schemas of the scene and the view that every screen renders from |
-| `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry         |
-| `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, labeled times, the page button      |
-| `invites-events.ts`, `invites-locales.ts`                             | Events, texts                                                                                 |
+| File                                                                  | Owns                                                                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `invite-entity.ts`                                                    | The invite document, its status and its deep link                                                                                          |
+| `invites-repository.ts`                                               | MongoDB access: the atomic activation, revocation, bootstrap revocation, the sorted page                                                   |
+| `invites-service.ts`                                                  | The rules: who can create, read and revoke, activation and its refusals, bootstrap                                                         |
+| `invites-handlers.ts`                                                 | The Telegram side: the deep link, `/invites`, the scene, the publish of the event                                                          |
+| `invites-scene.ts`                                                    | The scene: its state, screen and button schemas, the view every screen renders from, its screens with their topics, its buttons and inputs |
+| `invites-list-screen.ts`, `invite-screen.ts`, `invite-form-screen.ts` | The screens: the list; an invite and its users; the form with its sections and expiry                                                      |
+| `invite-format.ts`                                                    | View helpers of the screens: status labels, uses, grants, labeled times, the page button                                                   |
+| `invites-events.ts`, `invites-locales.ts`                             | Events, texts                                                                                                                              |

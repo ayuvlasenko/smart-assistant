@@ -119,14 +119,14 @@ A bot runs the core and the modules in its `modules`. A module is a feature doma
 
 ## Files
 
-| File                                                 | Owns                                                                       | Section                             |
-| ---------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
-| `bot-entity.ts`                                      | The bot document, the subject `Bot`, the Telegram id of a token            | [The id of a bot](#the-id-of-a-bot) |
-| `bot-token-cipher.ts`                                | The encryption of a stored token                                           | [The registry](#the-registry)       |
-| `bots-repository.ts`                                 | The `bots` collection                                                      | [The registry](#the-registry)       |
-| `bots-registry.ts`                                   | Reading the active bots, their tokens and their modules                    | [The registry](#the-registry)       |
-| `bots-service.ts`                                    | Adding, moving, stopping and starting a bot, its modules and its token     | [Adding a bot](#adding-a-bot)       |
-| `bots-connector.ts`                                  | The calls of a bot to Telegram: `getMe`, the webhook and the menus         | [Adding a bot](#adding-a-bot)       |
-| `bots-scene.ts`, `bots-screen.ts`, `bots-schemas.ts` | The `/bots` scene and its screens                                          | [Managing bots](#managing-bots)     |
-| `bots-handlers.ts`                                   | The `bots` module, the `/bots` command and the redraw on `bots.botChanged` | [Managing bots](#managing-bots)     |
-| `bots-events.ts`, `bots-locales.ts`                  | The events and the texts of the domain                                     |                                     |
+| File                                | Owns                                                                       | Section                             |
+| ----------------------------------- | -------------------------------------------------------------------------- | ----------------------------------- |
+| `bot-entity.ts`                     | The bot document, the subject `Bot`, the Telegram id of a token            | [The id of a bot](#the-id-of-a-bot) |
+| `bot-token-cipher.ts`               | The encryption of a stored token                                           | [The registry](#the-registry)       |
+| `bots-repository.ts`                | The `bots` collection                                                      | [The registry](#the-registry)       |
+| `bots-registry.ts`                  | Reading the active bots, their tokens and their modules                    | [The registry](#the-registry)       |
+| `bots-service.ts`                   | Adding, moving, stopping and starting a bot, its modules and its token     | [Adding a bot](#adding-a-bot)       |
+| `bots-connector.ts`                 | The calls of a bot to Telegram: `getMe`, the webhook and the menus         | [Adding a bot](#adding-a-bot)       |
+| `bots-scene.ts`, `bots-screen.ts`   | The `/bots` scene with its state and button schemas, and its screens       | [Managing bots](#managing-bots)     |
+| `bots-handlers.ts`                  | The `bots` module, the `/bots` command and the redraw on `bots.botChanged` | [Managing bots](#managing-bots)     |
+| `bots-events.ts`, `bots-locales.ts` | The events and the texts of the domain                                     |                                     |

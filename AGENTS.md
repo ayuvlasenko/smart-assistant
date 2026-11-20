@@ -52,13 +52,13 @@ Call something a constraint only when an external system or a measurement sets i
 - Each domain lives in `plugins/app/<domain>/` with its services, repositories, entities, schemas, scenes, steps and tests. Keep exactly one level: no subdirectories inside a domain and no `index.ts`.
 - A service or repository file exports its class and registers it as a plugin with `export default fp(...)`. Only plugin files use `export default`; every other file uses named exports, because autoload loads any default-exported plugin.
 - Code that several domains share and that is not a domain itself stays at the top level of `plugins/app/`. `routes/` holds HTTP routes only.
-- The env schema and its `Env` type stay in `src/env.ts`. Any other schema stays in the single file that uses it, or in `<domain>-schemas.ts` when several files of a domain use it.
+- The env schema and its `Env` type stay in `src/env.ts`. Every other schema, and the types built from it, lives in the file of the abstraction whose data it describes: the state, screens and button values of a scene in its scene file, the result of a service method in the service file. Other files import it from there.
 
 ### Files
 
 - Name a file and a directory in kebab case, after the main export of the file, with the domain prefix, so every file name is unique: `users-repository.ts` (`UsersRepository`), `user-entity.ts`, `create-account-scene.ts` (`createAccountScene`), `choose-account-step.ts`. A test is `<file>.test.ts` next to the file.
 - A file holds one abstraction: its main export, the types of its own public API, and private helpers. A type, schema, constant or function that describes another abstraction's data lives in that abstraction's file.
-- Split a file by abstraction, never by kind of code, and add no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload), `<domain>-schemas.ts` and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input. `local/file-layout` flags a file named after a kind of code, such as `*-types.ts`, and the order of the code inside a file; `telegram-router.ts` is the reference.
+- Split a file by abstraction, never by kind of code, and add no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload) and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input. `local/file-layout` flags a file named after a kind of code, such as `*-types.ts`, and the order of the code inside a file; `telegram-router.ts` is the reference.
 - `local/file-layout` in `apps/server/eslint-rules/` checks the layout rules: fix its warnings in the code you touch.
 - Throw a class from `<domain>-errors.ts` when code catches the error by type or reads its fields, such as `TelegramApiError`. Throw a plain `Error` for a bug or a wrong configuration that only stops the start or the update.
 

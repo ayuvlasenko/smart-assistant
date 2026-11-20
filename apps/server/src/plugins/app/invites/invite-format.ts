@@ -10,7 +10,7 @@ import {
     InviteStatus,
     InvitesSubjects,
 } from "./invite-entity.js";
-import { InvitesSceneControl } from "./invites-schemas.js";
+import { InvitesSceneControl } from "./invites-scene.js";
 
 const statusIcons: Record<InviteStatus, string> = {
     active: "🟢",

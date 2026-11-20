@@ -1,25 +1,76 @@
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { AccessControl } from "../access/access-service.js";
 import { TelegramContext } from "../telegram/telegram-context.js";
 import { TelegramSceneEngine } from "../telegram/telegram-scene-engine.js";
-import { defineScene, TelegramScene } from "../telegram/telegram-scene.js";
+import {
+    defineScene,
+    TelegramScene,
+    TelegramSceneControl,
+    TelegramSceneInputSchemas,
+} from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
-import { defaultPokerDeckName } from "./poker-decks.js";
+import { defaultPokerDeckName, pokerDeckNames } from "./poker-decks.js";
 import { renderPokerDeckChoice, renderPokerForm } from "./poker-form-screen.js";
 import { validatePokerTitle } from "./poker-format.js";
 import { renderPokerClosedList, renderPokerList } from "./poker-list-screen.js";
 import { pokerRoomTitleLength, PokerSubjects } from "./poker-room-entity.js";
-import { buildPokerRoomState } from "./poker-room-scene.js";
-import { PokerRoomsService } from "./poker-rooms-service.js";
 import {
-    pokerButtonValues,
-    PokerDraft,
+    buildPokerRoomState,
     pokerRoomStateSchema,
-    PokerSceneControl,
-    pokerScreens,
+} from "./poker-room-scene.js";
+import { PokerRoomsService } from "./poker-rooms-service.js";
+
+const objectIdSchema = Type.String({ pattern: "^[0-9a-f]{24}$" });
+
+const pokerDeckNameSchema = Type.Union(
+    pokerDeckNames.map((name) => Type.Literal(name)),
+);
+
+const pageSchema = Type.Integer({ minimum: 0 });
+
+export const pokerStateSchema = Type.Object({
+    userId: objectIdSchema,
+    draft: Type.Object({
+        title: Type.Union([Type.String(), Type.Null()]),
+        deck: pokerDeckNameSchema,
+        autoReveal: Type.Boolean(),
+    }),
+});
+
+export const pokerScreens = {
+    list: Type.Object({ page: pageSchema }),
+    closed: Type.Object({ page: pageSchema }),
+    form: Type.Object({}),
+    deck: Type.Object({}),
+};
+
+export const pokerButtonValues = {
+    page: pageSchema,
+    open: objectIdSchema,
+    create: Type.Null(),
+    deck: pokerDeckNameSchema,
+    askTitle: Type.Null(),
+    autoReveal: Type.Null(),
+    save: Type.Null(),
+};
+
+export type PokerState = Static<typeof pokerStateSchema>;
+
+export type PokerDraft = PokerState["draft"];
+
+export type PokerSceneControl = TelegramSceneControl<
     PokerState,
-    pokerStateSchema,
-} from "./poker-schemas.js";
+    typeof pokerButtonValues,
+    TelegramSceneInputSchemas,
+    typeof pokerScreens
+>;
+
+export interface PokerView {
+    ctx: TelegramContext;
+    scene: PokerSceneControl;
+    pokerRoomsService: PokerRoomsService;
+    access: AccessControl<PokerSubjects>;
+}
 
 const pokerSceneTtlMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
