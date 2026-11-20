@@ -48,7 +48,10 @@ export const telegramButtonsStateSchema = Type.Object({
 
 export type TelegramButton = Static<typeof telegramButtonSchema>;
 
-export type TelegramSceneButton = Extract<TelegramButton, { kind: "scene" }>;
+export type TelegramStoredSceneButton = Extract<
+    TelegramButton,
+    { kind: "scene" }
+>;
 
 export type TelegramMessageMarkup =
     | InlineKeyboardMarkup
@@ -141,7 +144,7 @@ export function isConfirming(
 
 export function confirmSceneButton(
     instance: TelegramSceneInstance,
-    { name, value, armed }: TelegramSceneButton,
+    { name, value, armed }: TelegramStoredSceneButton,
 ): boolean {
     if (armed && isConfirming(instance, name, value)) {
         cancelConfirmation(instance);

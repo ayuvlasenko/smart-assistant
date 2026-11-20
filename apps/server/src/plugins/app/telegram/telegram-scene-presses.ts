@@ -8,7 +8,7 @@ import {
     confirmSceneButton,
     findPressedButton,
     TelegramButtonPress,
-    TelegramSceneButton,
+    TelegramStoredSceneButton,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import {
@@ -133,7 +133,7 @@ export class TelegramScenePresses {
     private async pressScene(
         ctx: TelegramContext<Update>,
         instance: TelegramSceneInstance,
-        button: TelegramSceneButton,
+        button: TelegramStoredSceneButton,
         control: TelegramSceneControlOf,
     ): Promise<void> {
         const { name, value } = button;
