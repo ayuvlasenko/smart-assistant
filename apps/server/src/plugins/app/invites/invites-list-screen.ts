@@ -6,7 +6,7 @@ import {
     formatTelegramHtmlBold,
 } from "../telegram/telegram-html.js";
 import { inRowsOf } from "../telegram/telegram-keyboard.js";
-import { pageButtons } from "../telegram/telegram-pagination.js";
+import { loadPage, pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
     InviteEntity,
@@ -29,11 +29,10 @@ export async function renderInvitesList(
     page: number,
 ): Promise<TelegramMessageContent> {
     const { t } = ctx;
-    const offset = page * invitesPageSize;
-    const invites = await invitesService.list(ctx.user, {
-        skip: offset,
-        limit: invitesPageSize,
-    });
+    const invites = await loadPage(page, invitesPageSize, (request) =>
+        invitesService.list(ctx.user, request),
+    );
+    const offset = invites.index * invitesPageSize;
     const now = new Date();
     const lines = invites.items.length
         ? invites.items.map((invite, index) =>
@@ -61,12 +60,7 @@ export async function renderInvitesList(
                     ),
                 ),
             ),
-            pageButtons(
-                page,
-                invites.total,
-                invitesPageSize,
-                pageButtonOf(scene),
-            ),
+            pageButtons(invites, pageButtonOf(scene)),
             (await access.can(ctx.user, "create", "Invite"))
                 ? [scene.button(t("invites:newInviteButton"), "create", null)]
                 : [],

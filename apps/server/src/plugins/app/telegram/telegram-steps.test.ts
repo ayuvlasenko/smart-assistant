@@ -302,8 +302,8 @@ function registerOrderScenes(
                         property: "color",
                         prompt: () => "Color?",
                         pageSize: 2,
-                        load: async (_ctx, _input, { offset, limit }) => ({
-                            items: colors.slice(offset, offset + limit),
+                        load: async (_ctx, _input, { skip, limit }) => ({
+                            items: colors.slice(skip, skip + limit),
                             total: colors.length,
                         }),
                     }),

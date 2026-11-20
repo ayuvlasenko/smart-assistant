@@ -5,7 +5,10 @@ import { describe, it, TestContext } from "node:test";
 import { Env } from "../../../env.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testBotId,
+} from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import {
@@ -170,6 +173,41 @@ void describe("Poker rooms", () => {
                 label.startsWith("#6 "),
             ),
         );
+    });
+
+    void it("moves the room list to its last page when its own page empties", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655186 });
+
+        await createRoomThroughForm(bot, creator);
+
+        const room = await readRoom();
+
+        await testMongo.mongo
+            .collection<PokerRoomEntity>("pokerRooms")
+            .insertMany(
+                Array.from({ length: 5 }, (_, index) => ({
+                    ...room,
+                    _id: new ObjectId(),
+                    token: `${room.token}${index}`,
+                })),
+            );
+        await bot.sendText(creator, "/poker");
+        await bot.pressButton(creator, "›");
+
+        const user = await bot.usersRepository.findOneByTelegramId(
+            testBotId,
+            String(creator.id),
+        );
+
+        assert.ok(user);
+        await bot.pokerRoomsService.close(user, room._id);
+        await bot.telegramChats.idle();
+
+        const labels = await bot.readButtonLabels(creator.id);
+
+        assert.ok(labels.some((label) => label.startsWith("#5 ")));
+        assert.ok(!labels.includes("‹"));
     });
 
     void it("shows the votes of other participants without their cards", async (t) => {

@@ -5,7 +5,7 @@ import {
     measureTelegramHtml,
     telegramMessageTextLimit,
 } from "../telegram/telegram-html.js";
-import { pageButtons } from "../telegram/telegram-pagination.js";
+import { pageButtons, pageOf } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import {
     formatPokerAgreementIcon,
@@ -37,7 +37,8 @@ export function renderPokerHistory(
         rounds,
         telegramMessageTextLimit - measureTelegramHtml(header.join("\n")),
     );
-    const pageRounds = pages[page] ?? [];
+    const shown = pageOf(pages, page, 1);
+    const pageRounds = shown.items[0] ?? [];
 
     return buildTelegramHtmlMessage(
         [
@@ -50,7 +51,7 @@ export function renderPokerHistory(
                 : [escapeTelegramHtml(t("poker:historyEmpty"))]),
         ],
         [
-            pageButtons(page, pages.length, 1, (text, target) =>
+            pageButtons(shown, (text, target) =>
                 scene.button(text, "page", target),
             ),
             isClosed

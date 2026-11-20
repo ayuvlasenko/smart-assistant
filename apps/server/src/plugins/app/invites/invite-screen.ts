@@ -10,7 +10,7 @@ import {
     formatTelegramHtmlMention,
     formatTelegramHtmlTime,
 } from "../telegram/telegram-html.js";
-import { pageButtons } from "../telegram/telegram-pagination.js";
+import { loadPage, pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { InviteEntity, readInviteStatus } from "./invite-entity.js";
 import {
@@ -121,10 +121,9 @@ export async function renderInviteUsers(
         return renderMissingInvite(view);
     }
 
-    const users = await invitesService.listUsers(ctx.user, invite, {
-        skip: page * usersPageSize,
-        limit: usersPageSize,
-    });
+    const users = await loadPage(page, usersPageSize, (request) =>
+        invitesService.listUsers(ctx.user, invite, request),
+    );
 
     return buildTelegramHtmlMessage(
         [
@@ -132,7 +131,7 @@ export async function renderInviteUsers(
             ...users.items.map((item) => describeUser(t, ctx.timeZone, item)),
         ],
         [
-            pageButtons(page, users.total, usersPageSize, pageButtonOf(scene)),
+            pageButtons(users, pageButtonOf(scene)),
             [scene.backButton(t("invites:backButton"))],
         ],
     );

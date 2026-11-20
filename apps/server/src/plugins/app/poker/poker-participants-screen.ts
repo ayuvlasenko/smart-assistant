@@ -39,12 +39,8 @@ export function renderPokerParticipants(
             ...participants.items.map((participant) => [
                 readParticipantButton(view, participant),
             ]),
-            pageButtons(
-                page,
-                participants.total,
-                participantsPageSize,
-                (text, target) =>
-                    scene.button(text, "participantsPage", target),
+            pageButtons(participants, (text, target) =>
+                scene.button(text, "participantsPage", target),
             ),
             [scene.backButton(t("poker:backButton"))],
         ],
