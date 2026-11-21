@@ -605,9 +605,11 @@ void describe("TelegramUpdateHandler", () => {
 
     void it("ignores updates from groups and channels", async (t) => {
         const calls: string[] = [];
+        const logs = createLoggerCollector();
         const bot = await buildTelegramSceneBot({
             testMongo,
             t,
+            logger: logs.logger,
             registerRoutes: (router) => {
                 router.command("help", async () => {
                     calls.push("help");
@@ -632,6 +634,13 @@ void describe("TelegramUpdateHandler", () => {
             buildTelegramChannelPostUpdate({ text: "/help" }),
         );
 
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Update handled")
+                .map(({ result }) => result),
+            ["ignored", "ignored"],
+        );
         assert.deepEqual(calls, []);
         assert.deepEqual(bot.readSentTexts(), []);
         assert.equal(

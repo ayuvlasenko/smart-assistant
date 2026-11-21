@@ -39,6 +39,8 @@ export function extractTelegramChat(update: Update): Chat | undefined {
         update.edited_message?.chat ??
         update.business_message?.chat ??
         update.edited_business_message?.chat ??
+        update.channel_post?.chat ??
+        update.edited_channel_post?.chat ??
         update.callback_query?.message?.chat ??
         update.message_reaction?.chat ??
         update.message_reaction_count?.chat ??
