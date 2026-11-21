@@ -437,6 +437,37 @@ void describe("/bots", () => {
         assert.equal(bot.childApis.get("42")?.setWebhook.mock.callCount(), 2);
     });
 
+    void it("shows the last error of a webhook with its time", async (t) => {
+        const bot = await buildBot(t);
+        const admin = buildTelegramPrivateChat({ id: 987657024 });
+        const actor = await allowAdmin(bot, admin);
+        const errorDate = new Date("2026-11-20T10:15:00.000Z");
+
+        await addChild(bot, actor);
+        bot.childApis
+            .get("42")
+            ?.getWebhookInfo.mock.mockImplementation(async () => ({
+                ok: true,
+                result: {
+                    url: "https://example.org/hook",
+                    has_custom_certificate: false,
+                    pending_update_count: 0,
+                    last_error_date: errorDate.getTime() / 1000,
+                    last_error_message: "Connection <refused>",
+                },
+            }));
+        await bot.sendText(admin, "/bots");
+        await bot.pressButton(admin, childLabel);
+
+        assert.ok(
+            (await bot.readMessageTexts(admin.id))
+                .at(-1)
+                ?.includes(
+                    "Webhook: last error 2026-11-20: Connection &lt;refused&gt;",
+                ),
+        );
+    });
+
     void it("offers no owner link for a stopped bot and redraws an open one as unavailable", async (t) => {
         const bot = await buildBot(t);
         const admin = buildTelegramPrivateChat({ id: 987657007 });

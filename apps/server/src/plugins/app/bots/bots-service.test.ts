@@ -186,6 +186,35 @@ void describe("BotsService", () => {
         );
     });
 
+    void it("stops and starts a bot once when the press repeats", async (t) => {
+        const logs = createLoggerCollector();
+        const bot = await buildBot(t, { logger: logs.logger });
+        const actor = await allowAdmin(
+            bot,
+            buildTelegramPrivateChat({ id: 987657033 }),
+        );
+        const childId = await addChild(bot, actor);
+        const childApi = bot.childApis.get("42");
+
+        assert.ok(childApi);
+        assert.ok(await bot.botsService.stop(actor, childId));
+        assert.equal(await bot.botsService.stop(actor, childId), null);
+        assert.equal(childApi.deleteWebhook.mock.callCount(), 1);
+
+        assert.ok(await bot.botsService.start(actor, childId));
+        assert.equal(await bot.botsService.start(actor, childId), null);
+        assert.equal(childApi.setWebhook.mock.callCount(), 2);
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(
+                    ({ msg }) => msg === "Bot stopped" || msg === "Bot started",
+                )
+                .map(({ msg }) => msg),
+            ["Bot stopped", "Bot started"],
+        );
+    });
+
     void it("refuses to stop, take a token for or move the root bot, and gives it no owner link", async (t) => {
         const bot = await buildBot(t);
         const actor = await allowAdmin(

@@ -353,14 +353,19 @@ export class BotsService {
         await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
-        await this.botsConnector.disconnect(botId);
-
+        const telegramBot = await this.botsConnector.find(botId);
         const bot = await this.botsRepository.disable(botId, new Date());
 
-        if (bot) {
-            this.log.info({ botId, userId: actor._id }, "Bot stopped");
-            await this.emitChanged(botId);
+        if (!bot) {
+            return null;
         }
+
+        if (telegramBot) {
+            await this.botsConnector.deleteWebhook(telegramBot);
+        }
+
+        this.log.info({ botId, userId: actor._id }, "Bot stopped");
+        await this.emitChanged(botId);
 
         return bot;
     }

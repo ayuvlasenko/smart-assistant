@@ -7,6 +7,7 @@ import {
     escapeTelegramHtml,
     formatTelegramHtmlBold,
     formatTelegramHtmlLabeled,
+    formatTelegramHtmlTime,
 } from "../telegram/telegram-html.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { BotEntity } from "./bot-entity.js";
@@ -78,10 +79,7 @@ export async function renderBot(
             ...(bot.disabledAt
                 ? []
                 : [
-                      formatTelegramHtmlLabeled(
-                          t("bots:webhookLabel"),
-                          describeWebhook(t, webhook),
-                      ),
+                      `${escapeTelegramHtml(t("bots:webhookLabel"))}: ${describeWebhook(t, webhook, ctx.timeZone)}`,
                   ]),
         ],
         [
@@ -296,15 +294,25 @@ function formatChoice(title: string, isChosen: boolean): string {
 function describeWebhook(
     t: Translate,
     webhook: WebhookInfo | undefined,
+    timeZone: string,
 ): string {
     if (!webhook?.url) {
-        return t("bots:webhookMissing");
+        return escapeTelegramHtml(t("bots:webhookMissing"));
     }
 
-    const state = webhook.last_error_message ?? t("bots:webhookOk");
+    const state =
+        webhook.last_error_message && webhook.last_error_date
+            ? t("bots:webhookError", {
+                  time: formatTelegramHtmlTime(
+                      new Date(webhook.last_error_date * 1000),
+                      timeZone,
+                  ),
+                  message: escapeTelegramHtml(webhook.last_error_message),
+              })
+            : escapeTelegramHtml(t("bots:webhookOk"));
 
     return webhook.pending_update_count
-        ? `${state}, ${t("bots:webhookPending", { count: webhook.pending_update_count })}`
+        ? `${state}, ${escapeTelegramHtml(t("bots:webhookPending", { count: webhook.pending_update_count }))}`
         : state;
 }
 

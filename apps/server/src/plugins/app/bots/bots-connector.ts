@@ -76,25 +76,25 @@ export class BotsConnector {
 
         try {
             await this.telegramBotService.setWebhook(bot);
-            await this.telegramCommandMenus.refresh(bot);
         } catch (err) {
             this.log.error(
                 { err, botId },
                 "Failed to connect the webhook of a bot",
             );
         }
+
+        try {
+            await this.telegramCommandMenus.refresh(bot);
+        } catch (err) {
+            this.log.error(
+                { err, botId },
+                "Failed to set the commands of a bot",
+            );
+        }
     }
 
     find(botId: string): Promise<TelegramBot | undefined> {
         return this.telegramBots.find(botId);
-    }
-
-    async disconnect(botId: string): Promise<void> {
-        const bot = await this.telegramBots.find(botId);
-
-        if (bot) {
-            await this.deleteWebhook(bot);
-        }
     }
 
     async deleteWebhook(bot: TelegramBot): Promise<void> {

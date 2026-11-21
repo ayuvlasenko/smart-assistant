@@ -168,11 +168,17 @@ export class BotsRepository {
     }
 
     disable(_id: string, now: Date): Promise<BotEntity | null> {
-        return this.update({ _id }, { $set: { disabledAt: now } });
+        return this.update(
+            { _id, disabledAt: { $exists: false } },
+            { $set: { disabledAt: now } },
+        );
     }
 
     enable(_id: string): Promise<BotEntity | null> {
-        return this.update({ _id }, { $unset: { disabledAt: "" } });
+        return this.update(
+            { _id, disabledAt: { $exists: true } },
+            { $unset: { disabledAt: "" } },
+        );
     }
 
     private update(
