@@ -169,7 +169,8 @@ The new grant shows up in the invite form at once. `define` gets the user, so a 
 
 ## Files
 
-| File                | Owns                                                                                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `access-service.ts` | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, `listEnabled`, the `admin` grant |
-| `access-locales.ts` | The titles of the access section and of the `admin` grant                                                                                                         |
+| File                       | Owns                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access-service.ts`        | The grant catalog, the ability of a user, the typed view `subjects<M>()` with `can`, `assert`, `accessibleBy`, `guard`, `holds`, `listEnabled`, the `admin` grant |
+| `access-locales.ts`        | The titles of the access section and of the `admin` grant                                                                                                         |
+| `access-default-grants.ts` | The setting `access.defaultGrants`, see [Default grants](#default-grants)                                                                                         |
