@@ -46,7 +46,7 @@ void describe("BotsRegistry", () => {
         const child = await createBot(botsRepository, {
             telegramId: "42",
             username: "child_bot",
-            token: cipher.encrypt("42:child-token"),
+            token: cipher.encrypt("42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA"),
         });
         const stopped = await createBot(botsRepository, {
             telegramId: "43",
@@ -72,7 +72,7 @@ void describe("BotsRegistry", () => {
         assert.deepEqual(await botsRegistry.find(child._id), {
             id: child._id,
             telegramId: "42",
-            token: "42:child-token",
+            token: "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
             modules: [],
             startModule: undefined,
         });
@@ -95,7 +95,7 @@ void describe("BotsRegistry", () => {
             username: "child_bot",
             token: new BotTokenCipher(
                 randomBytes(32).toString("base64"),
-            ).encrypt("42:child-token"),
+            ).encrypt("42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA"),
         });
 
         assert.equal(await botsRegistry.find(child._id), undefined);
@@ -154,16 +154,18 @@ void describe("BotsRegistry", () => {
         const child = await createBot(botsRepository, {
             telegramId: "42",
             username: "child_bot",
-            token: new BotTokenCipher(key).encrypt("42:child-token"),
+            token: new BotTokenCipher(key).encrypt(
+                "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
+            ),
         });
 
         assert.equal(
             (await botsRegistry.findByTelegramId("42"))?.token,
-            "42:child-token",
+            "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
         );
         assert.equal(
             (await botsRegistry.find(child._id))?.token,
-            "42:child-token",
+            "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
         );
     });
 
@@ -178,7 +180,10 @@ void describe("BotsRegistry", () => {
             testMongo,
             t,
             logger: logs.logger,
-            env: { TELEGRAM_BOT_TOKEN: "777000111:other-root-token" },
+            env: {
+                TELEGRAM_BOT_TOKEN:
+                    "777000111:other-root-token-AAAAAAAAAAAAAAAAAAAA",
+            },
         });
 
         assert.equal(second.botsRegistry.rootId, rootId);
@@ -212,7 +217,9 @@ void describe("BotsRegistry root token of a stored bot", () => {
         const child = await first.botsRepository.createIfMissing({
             telegramId: "42",
             username: "child_bot",
-            token: new BotTokenCipher(key).encrypt("42:child-token"),
+            token: new BotTokenCipher(key).encrypt(
+                "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
+            ),
         });
 
         assert.ok(child);
@@ -222,7 +229,7 @@ void describe("BotsRegistry root token of a stored bot", () => {
             t,
             env: {
                 BOTS_ENCRYPTION_KEY: key,
-                TELEGRAM_BOT_TOKEN: "42:child-token",
+                TELEGRAM_BOT_TOKEN: "42:child-token-AAAAAAAAAAAAAAAAAAAAAAAAA",
             },
         });
 

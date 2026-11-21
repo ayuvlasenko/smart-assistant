@@ -1,4 +1,5 @@
 import { Static, Type } from "@sinclair/typebox";
+import { botTokenPattern } from "./plugins/app/bots/bot-entity.js";
 
 export const envSchema = Type.Object({
     DATABASE_URL: Type.String(),
@@ -17,7 +18,7 @@ export const envSchema = Type.Object({
     S3_REGION: Type.String(),
     S3_BUCKET: Type.String(),
     S3_ENDPOINT: Type.String(),
-    TELEGRAM_BOT_TOKEN: Type.String(),
+    TELEGRAM_BOT_TOKEN: Type.String({ pattern: botTokenPattern }),
     BOTS_ENCRYPTION_KEY: Type.Optional(
         Type.String({ pattern: "^[A-Za-z0-9+/]{43}=$" }),
     ),
