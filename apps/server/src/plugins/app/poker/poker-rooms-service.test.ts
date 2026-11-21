@@ -156,6 +156,9 @@ void describe("PokerRoomsService create and join", () => {
         assert.deepEqual(await bot.pokerRoomsService.join(admin, room.token), {
             status: "notFound",
         });
+
+        await seatWithoutJoining(room, [admin]);
+
         assert.equal(await bot.pokerRoomsService.find(admin, room._id), null);
     });
 
@@ -675,25 +678,7 @@ void describe("PokerRoomsService list", () => {
         const stranger = await createUser(bot, [pokerJoinGrant], "42");
         const admin = await createUser(bot, [adminGrant], "42");
 
-        await testMongo.mongo
-            .collection<PokerRoomEntity>("pokerRooms")
-            .updateOne(
-                { _id: room._id },
-                {
-                    $push: {
-                        participants: {
-                            $each: [neighbour, stranger, admin].map(
-                                ({ _id }) => ({
-                                    userId: _id,
-                                    emoji: "🐼",
-                                    role: "voter" as const,
-                                    joinedAt: new Date(),
-                                }),
-                            ),
-                        },
-                    },
-                },
-            );
+        await seatWithoutJoining(room, [neighbour, stranger, admin]);
 
         const page = { status: "open" as const, skip: 0, limit: 10 };
         const neighbourPage = await bot.pokerRoomsService.list(neighbour, page);
@@ -787,6 +772,27 @@ async function joinMember(
     assert.equal(result.status, "joined");
 
     return user;
+}
+
+async function seatWithoutJoining(
+    room: PokerRoomEntity,
+    users: UserEntity[],
+): Promise<void> {
+    await testMongo.mongo.collection<PokerRoomEntity>("pokerRooms").updateOne(
+        { _id: room._id },
+        {
+            $push: {
+                participants: {
+                    $each: users.map(({ _id }) => ({
+                        userId: _id,
+                        emoji: "🐼",
+                        role: "voter" as const,
+                        joinedAt: new Date(),
+                    })),
+                },
+            },
+        },
+    );
 }
 
 async function findRoom(room: PokerRoomEntity): Promise<PokerRoomEntity> {
