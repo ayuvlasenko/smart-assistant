@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: s3-external
+  name: s3-external-{{ .Values.resourceName }}
 spec:
   type: ClusterIP
   ports:
@@ -13,7 +13,7 @@ spec:
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: s3-external
+  name: s3-external-{{ .Values.resourceName }}
 subsets:
   - addresses:
       - ip: {{ .Values.s3.ip }}
@@ -24,7 +24,7 @@ subsets:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: files-path-rewrite
+  name: files-path-rewrite-{{ .Values.resourceName }}
 spec:
   replacePathRegex:
     regex: "^/files/(.*)"
@@ -64,9 +64,9 @@ spec:
       match: Host(`{{ .Values.resourceName }}.{{ .Values.ingress.domain }}`) && Method(`GET`) && PathRegexp(`^/files/[a-f0-9-]+(\.[a-zA-Z0-9]+)?$`)
       {{- end }}
       middlewares:
-        - name: files-path-rewrite
+        - name: files-path-rewrite-{{ .Values.resourceName }}
       services:
-        - name: s3-external
+        - name: s3-external-{{ .Values.resourceName }}
           port: {{ .Values.s3.port }}
           nativeLB: true
     # API routes to server
