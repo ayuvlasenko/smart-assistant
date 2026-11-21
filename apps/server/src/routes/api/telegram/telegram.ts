@@ -96,11 +96,7 @@ const plugin: FastifyPluginAsyncTypebox = async (fastify) => {
                 return;
             }
 
-            try {
-                await telegramUpdateHandler.handle(bot, request.body);
-            } catch (err) {
-                request.log.error({ err }, "Failed to handle Telegram update");
-            }
+            await telegramUpdateHandler.handle(bot, request.body);
         },
     );
 

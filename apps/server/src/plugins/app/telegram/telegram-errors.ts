@@ -21,7 +21,6 @@ export class TelegramApiError extends Error {
     readonly method: string;
     readonly errorCode: number;
     readonly description: string;
-    readonly retryAfter: number | undefined;
 
     constructor(method: string, response: ApiError) {
         super(`Telegram ${method} failed: ${response.description}`);
@@ -29,7 +28,6 @@ export class TelegramApiError extends Error {
         this.method = method;
         this.errorCode = response.error_code;
         this.description = response.description;
-        this.retryAfter = response.parameters?.retry_after;
     }
 }
 
