@@ -19,7 +19,6 @@ import { I18nService } from "../i18n-service.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramChat } from "./telegram-extractors.js";
 import { TelegramResponder } from "./telegram-responder.js";
-import { TelegramSession } from "./telegram-session.js";
 
 function buildContext<TUpdate extends Update>(
     t: TestContext,
@@ -38,10 +37,6 @@ function buildContext<TUpdate extends Update>(
         },
         update,
         user: buildUserEntity(),
-        session: new TelegramSession(
-            { getHashField: async () => undefined },
-            "telegram:session:test",
-        ),
         log,
         translatorOf: ({ languageCode }) =>
             new I18nService(i18next.createInstance()).getT(languageCode),
@@ -56,13 +51,6 @@ function buildContext<TUpdate extends Update>(
 }
 
 void describe("TelegramContext", () => {
-    void it("stores the update", (t) => {
-        const update = buildTelegramTextMessageUpdate();
-        const context = buildContext(t, update);
-
-        assert.equal(context.update, update);
-    });
-
     void it("takes a newer document of its user, and refuses another user", (t) => {
         const context = buildContext(t, buildTelegramTextMessageUpdate());
         const refreshed = { ...context.user, grants: ["admin"] };

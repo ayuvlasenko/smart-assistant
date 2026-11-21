@@ -3,11 +3,14 @@ import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { REQUEST_ID_HEADER } from "../../../logger-request.js";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { text } from "../../../plugins/app/telegram/telegram-filters.js";
 import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { telegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
+import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
+import { buildTwoBotsTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
@@ -17,7 +20,7 @@ import {
     testTelegramBotId,
     testTelegramWebhookPath,
 } from "../../../test/telegram-fixtures.js";
-import { TELEGRAM_SECRET_HEADER } from "./telegram.js";
+import telegramRoutes, { TELEGRAM_SECRET_HEADER } from "./telegram.js";
 
 interface ErrorResponse {
     code?: string;
@@ -25,6 +28,8 @@ interface ErrorResponse {
     message?: string;
     statusCode?: number;
 }
+
+const testMongo = useTestMongo();
 
 void describe("POST /api/telegram/webhook", () => {
     void it("returns 200 on valid secret", async (t) => {
@@ -123,6 +128,51 @@ void describe("POST /api/telegram/webhook", () => {
                         "Telegram update for an unknown bot, skipping",
                 ),
         );
+    });
+
+    void it("hands an update with the secret of a stored second bot to the client of that bot", async (t) => {
+        const { app, child, telegramApiService } = await buildTwoBotsTestApp({
+            testMongo,
+            t,
+            autoBan: false,
+            plugins: [
+                async (fastify) => {
+                    await fastify.register(telegramRoutes, {
+                        prefix: "/api/telegram",
+                    });
+                },
+            ],
+            registerRoutes: (router) => {
+                router.on(text("ping"), async (ctx) => {
+                    await ctx.reply("pong");
+                });
+            },
+        });
+
+        const response = await app.inject({
+            method: "POST",
+            url: "/api/telegram/webhook/42",
+            headers: buildTelegramWebhookHeaders(
+                telegramWebhookSecret(
+                    app.getDecorator<Env>("config")
+                        .TELEGRAM_WEBHOOK_SECRET_TOKEN,
+                    "42",
+                ),
+            ),
+            body: buildTelegramTextMessageUpdate({
+                message: {
+                    chat: buildTelegramPrivateChat({ id: 987654395 }),
+                    text: "ping",
+                },
+            }),
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(
+            child.sendMessage.mock.calls.map((call) => call.arguments),
+            [[{ chat_id: 987654395, text: "pong" }]],
+        );
+        assert.equal(telegramApiService.sendMessage.mock.callCount(), 0);
     });
 
     void it("returns 400 when secret header is missing", async (t) => {
@@ -282,7 +332,7 @@ void describe("POST /api/telegram/webhook/refresh", () => {
             ],
         );
         assert.deepEqual(
-            telegramApiService.setMyCommands.mock.calls.map(
+            telegramApiService.deleteMyCommands.mock.calls.map(
                 (call) => call.arguments[0].language_code ?? "default",
             ),
             ["default", "en", "uk", "ru"],

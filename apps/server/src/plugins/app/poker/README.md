@@ -37,7 +37,7 @@ This directory is planning poker in the bot. A user with the right grant creates
 | `read PokerRoom`   | `participants: { $elemMatch: { userId } }` | both           |
 | `create PokerRoom` | `createdBy: user._id`                      | `poker.create` |
 
-Inside a room every participant has the same rights, the creator included: `createdBy` only records who created the room. So a user reads a room only while a participant of it, and a creator who left loses the room like anybody else.
+Inside a room every participant has the same rights, the creator included: `createdBy` only records who created the room. So a user reads a room only while a participant of it, and a creator who left loses the room like anybody else. An admin of the bot passes `read PokerRoom` for every room through `manage all`, so `PokerRoomsService.find` and `list` also match `participants.userId` of the actor: an admin sees only the rooms they take part in.
 
 The flow of a user:
 
@@ -149,7 +149,7 @@ Before the write, the service runs `revealPokerRoundIfDue` on the changed room a
 
 **Walk-through.**
 
-1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets the `/start` answer.
+1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets no answer.
 2. The service loads the room by the bot of the user and the token, so a link of another bot gives `notFound` too. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
 3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
 4. It writes `participants` with the new participant through `PokerRoomsRepository.save`. A match gives `joined` and emits `poker.roomChanged`.
@@ -208,7 +208,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 2. `🚫 Remove` is a button with `confirm: true`, so the second press on `🚫 Sure?` calls `PokerRoomsService.removeParticipant`.
 3. `removePokerParticipant` moves the participant to `removedParticipants` and drops the vote of a `voting` round. The write is a change like any other, see [A room document](#a-room-document), so a removal of the last voter without a vote reveals the round.
 4. The service emits `poker.roomChanged` with the removed user among `userIds`, so the `/poker` list of that user redraws without the room.
-5. The room scene of the removed user redraws too. `PokerRoomsService.find` gives nothing, because the user has no `read PokerRoom` any more, and `PokerRoomsService.isRemoved` tells the removal from a missing room. The message turns into `You were removed from this room. Open its link to join again.` with `✖️ Hide`.
+5. The room scene of the removed user redraws too. `PokerRoomsService.find` gives nothing, because the user is no longer in `participants`, and `PokerRoomsService.isRemoved` tells the removal from a missing room. The message turns into `You were removed from this room. Open its link to join again.` with `✖️ Hide`.
 
 **Edge cases.**
 
@@ -242,7 +242,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Problem.** A vote of one participant must redraw the room message of every other participant, and a closed or new room must redraw their room lists. A handler may not write to the sessions of other users.
 
-**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the participants before and after the change, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). A redraw whose content did not change costs no API call, so a vote reads the list from MongoDB but does not edit it.
+**Idea.** The room scene watches the topic `poker.room:<roomId>`, and the list scene watches `poker.rooms:<userId>` of its own user. Every change emits `poker.roomChanged` with the room id, the ids of the participants before and after the change, and the kind of the change, and `poker-handlers.ts` publishes the room topic and the list topic of each of them. The engine redraws the screen of every scene that watches one of them, see [Updates for other users](../telegram/README.md#updates-for-other-users). The lists sort the rooms by `lastActivityAt`, which every change moves, so every change redraws them: a vote moves its room to the top of the list. A redraw whose content did not change costs no API call.
 
 **Data.** The scene keeps only the user's view; the votes and the participants stay in MongoDB. The state holds the room and the round that waits for its title, and the record holds the screen: `round`, `menu` or `autoReveal`, `participants` or `history` with its page, or `participant` with the user id.
 
@@ -285,7 +285,7 @@ The screen shows no mean. One outlier moves the mean far, and planning poker aim
 
 ## Participant labels
 
-`describePokerParticipants` in `poker-format.ts` builds the label of every participant for the viewer:
+`describePokerParticipants` in `poker-participant-labels.ts` builds the label of every participant for the viewer:
 
 1. The name is `firstName`, else `@username`, else `Participant`, cut to 20 graphemes with `…`. `Intl.Segmenter` cuts by graphemes, so an emoji or a letter with a diacritic stays whole.
 2. When two participants have the same name, the label adds `(@username)` of each one who has it.
@@ -303,7 +303,7 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | `poker-room-entity.ts`                                                    | `PokerRoomEntity`, `PokerSubjects`, the room status, roles, idle participants, auto reveal                   | [A room document](#a-room-document)                           |
 | `poker-room-transitions.ts`                                               | A new room and the changes of a room as pure functions                                                       | [A room document](#a-room-document)                           |
-| `poker-decks.ts`                                                          | The decks                                                                                                    | [Using the bot](#using-the-bot)                               |
+| `poker-decks.ts`                                                          | The decks and their names                                                                                    | [Using the bot](#using-the-bot)                               |
 | `poker-rooms-repository.ts`                                               | The `pokerRooms` collection and the save by `version`                                                        | [A room document](#a-room-document)                           |
 | `poker-rooms-service.ts`                                                  | Create, join, vote, reveal, rounds, round titles, auto reveal, roles, removals, lists; the participant limit | [Joining a room](#joining-a-room)                             |
 | `poker-participant-emojis.ts`                                             | The emoji pool                                                                                               | [Joining a room](#joining-a-room)                             |
@@ -312,5 +312,6 @@ The emoji is unique in a room of up to 40 participants, so it tells them apart a
 | `poker-scene.ts`, `poker-list-screen.ts`, `poker-form-screen.ts`          | The `poker` scene with its state and button schemas: the room lists and the form                             | [Using the bot](#using-the-bot)                               |
 | `poker-room-scene.ts`, `poker-round-screen.ts`, `poker-history-screen.ts` | The `pokerRoom` scene with its state and button schemas: voting, the revealed round, the history             | [Updates for the participants](#updates-for-the-participants) |
 | `poker-participants-screen.ts`                                            | The list of the participants and the card of one                                                             | [Leaving a room](#leaving-a-room)                             |
-| `poker-format.ts`                                                         | HTML message parts, participant labels, the texts of a summary                                               | [Participant labels](#participant-labels)                     |
+| `poker-participant-labels.ts`                                             | The label of every participant for the viewer                                                                | [Participant labels](#participant-labels)                     |
+| `poker-format.ts`                                                         | HTML message parts, room titles, the texts of a summary, the title check of a step                           | [The round summary](#the-round-summary)                       |
 | `poker-events.ts`, `poker-locales.ts`                                     | `poker.roomChanged`, texts                                                                                   |                                                               |

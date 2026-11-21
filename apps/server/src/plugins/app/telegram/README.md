@@ -191,7 +191,7 @@ A screen without params takes no second argument: `scene.push("form")`. Each mov
 
 **Text.** Build an HTML text message with `buildTelegramHtmlMessage(lines, keyboard)` from `telegram-html.ts`. It drops the empty rows of the keyboard and cuts a text over 4096 characters at a line, with `…` at the end. `formatTelegramHtmlBold` and `formatTelegramHtmlLabeled` escape what they format; split a long row of buttons with `inRowsOf` from `telegram-keyboard.ts`.
 
-**Pagination.** Keep the page in the params of the screen and draw it with `pageOf` and `pageButtons` from `telegram-pagination.ts`. Pagination edits the same message, never sends a new one, and back returns to the page the user left.
+**Pagination.** Keep the page in the params of the screen. Cut it from a list in memory with `pageOf`, load it from a repository with `loadPage`, and draw its `‹ 1/3 ›` row with `pageButtons` from `telegram-pagination.ts`. Both return the last page when the list shrank below the page in the params, such as after another user closed a room, so a redraw never strands the user on an empty page without `‹`. Pagination edits the same message, never sends a new one, and back returns to the page the user left.
 
 **Inputs.** Collect typed answers through a named input: `payload`, `steps` and `complete`, started by `scene.ask(name)`. Reuse `textStep`, `numberStep`, `dateStep` and `choiceStep` from `telegram-steps.ts` before you write a custom step. Only one input of a user waits for text at a time; another `ask` gets a notice that the user must finish or `/cancel` first. `/cancel` cancels the input, not the scene, and runs its optional `cancel` hook; without a hook it replies `telegram:sceneCancelled`. `cleanup: true` deletes the questions and the answers of each step once the step accepts an answer. With `cleanup: true`, `/cancel` also deletes its own message and sends no reply, so the chat looks as it did before the question. See [Inputs](#inputs).
 
@@ -253,13 +253,12 @@ flowchart TD
     router -->|"command / on / when"| domain["Domain handlers"]
 
     engine -->|"one per update"| run[TelegramSceneRun]
-    engine --> presses[TelegramScenePresses]
-    presses -->|"touch, control"| run
-    presses --> buttons[TelegramSceneButtons]
+    run --> presses[TelegramScenePresses]
+    presses --> buttons["telegram-scene-buttons.ts"]
     run --> storage[TelegramSceneStorage]
     run --> inputs[TelegramSceneInputs]
-    run --> screens[TelegramSceneScreens]
-    run --> messages[TelegramSceneMessages]
+    run --> screens["telegram-scene-screens.ts"]
+    run --> messages["telegram-scene-messages.ts"]
     inputs --> steps["telegram-steps.ts"]
 
     ctx --> responder[TelegramResponder]
@@ -294,7 +293,7 @@ X-Telegram-Bot-Api-Secret-Token                                 base64url of HMA
 1. The route reads `telegramId` from the path and compares the header with the token of this id in constant time, with `isTelegramWebhookSecret`. A wrong token gets `401` before the bot lookup, so a request with a random id costs one HMAC and nothing else.
 2. The route reads the bot from MongoDB with `TelegramBots.findByTelegramId`. A valid token of an unknown bot gets `200` and the log `Telegram update for an unknown bot, skipping`, so Telegram does not send the update again.
 3. `TelegramUpdateHandler.handle(bot, update)` claims the update id of this bot, finds the user by the bot id and the Telegram id, and answers through the client of the bot.
-4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id. It skips a bot that the registry does not serve, such as a stopped one.
+4. Code that runs without an update, such as `publish` and `deliver`, gets the bot id from the domain event and loads the user by the bot id and the Telegram id once it holds the permit and the session lock of the user, so a ban, a grant or a language that the running update of the user changed already counts. It skips a bot that the registry does not serve, such as a stopped one, and a missing or banned user.
 
 **Metrics.** `telegram_updates_total` and `telegram_api_requests_total` carry the Telegram id of the bot, the number in its token, in the label `bot`.
 
@@ -320,7 +319,7 @@ sequenceDiagram
     Note over S: waits for the session lock
     S->>C: TelegramSession
     C->>C: new TelegramContext
-    C->>E: withScenes(ctx)
+    C->>E: withScenes(ctx, session)
     E->>Rt: dispatch(ctx)
     alt banned user
         Rt->>Rt: deep link with allowBanned, or BannedTelegramUserError
@@ -341,9 +340,9 @@ sequenceDiagram
 
 **Duplicates.** Before anything else, the handler sets `telegram:<telegramId>:update:<update_id>` with `SET NX` for one hour. Every Telegram bot counts its own `update_id`, so the key carries its Telegram id. A second delivery of the same update finds the key and ends as `duplicate`. The claim stays after a failure too, so a failed update never runs twice. Telegram keeps an undelivered update for up to 24 hours, so a repeat that comes more than an hour later runs again. Such a repeat needs a webhook that failed to answer for over an hour after the bot handled the update; a claim per update for 24 hours costs more memory than that rare case is worth.
 
-**Errors.** `TelegramUpdateHandler` turns every expected failure into a typed error from `telegram-errors.ts` and a result label of `telegram_updates_total`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). A request that ended with a network error reaches the handler only after two repeats, see [Network errors](#network-errors). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
+**Errors.** `TelegramUpdateHandler` ends every update with a result label of `telegram_updates_total`. A duplicate, an update from a group or a channel (`ignored`) and an update without a user end before the user lookup. The router throws `BannedTelegramUserError` and `UnhandledTelegramUpdateError` from `telegram-errors.ts`, and the handler labels them `banned` and `unhandled`. A failed Bot API call throws `TelegramApiError` with the method, `error_code`, description and `retry_after`. The handler labels a 403, a user who blocked the bot, as `blocked` and sends no error reply, because that reply would fail the same way. A 429 does not reach the handler: `TelegramApiService` waits and repeats the request, see [Rate limits](#rate-limits). A request that ended with a network error reaches the handler only after two repeats, see [Network errors](#network-errors). An unexpected error is logged and gets the `telegram:error` reply. An update that lost its session lock or held it too long gets the same reply and the label `lock_lost` or `lock_hold_timeout`. For a request with a valid secret token the route always answers `200`, so Telegram does not send an update again after it failed in the bot.
 
-**Logs.** Every update ends with one line, `Update handled`, with the result label of `telegram_updates_total`, the time in `durationMs` and `route`: `command:<name>`, `deepLink:<name>`, `scene` for a button press or an input text, or `route` for an `on` or `when` route. When the bot stays silent because a guard refused the user, `refusedRoute` names the command or the deep link. Every line of the update carries `botId`, `updateId` and `telegramUserId`, and `userId` once the user is loaded, also the lines that a handler writes through `ctx.log`. The request ends with one `request completed` line with the status and `responseTime`, and both lines share `reqId`.
+**Logs.** Every update ends with one line, `Update handled`, with the result label of `telegram_updates_total`, the time in `durationMs` and `route`: `command:<name>`, `deepLink:<name>`, `scene` for a button press or an input text, or `route` for an `on` or `when` route. When the bot stays silent because a guard refused the user, `refusedRoute` names the command or the deep link. Every line of the update carries `botId`, `updateId` and `telegramUserId`, and `userId` once the user is loaded, also the lines that a handler writes through `ctx.log` and the Bot API lines of `TelegramApiService`, which logs through the logger of `telegramApiScope`. `TelegramUpdateHandler.handle` opens that scope around the whole update, so the menu sync before the session lock, the answer of the callback and the error reply carry the fields too; inside the lock, `TelegramChats` adds the signal of the lock to it. A delivery binds `botId`, `telegramUserId` and the scene or the topics the same way. A Bot API call outside both, such as `setWebhook` on start, logs `botTelegramId`, the number in the token. The request ends with one `request completed` line with the status and `responseTime`, and both lines share `reqId`.
 
 **New users.** The user lookup is one upsert by the bot id and the Telegram id through `UsersService.findOrCreateByTelegramId`. One person gets a separate user in every bot, with its own ban, grants and language. `languageCode` follows the language of the Telegram client on every update; the texts use `languageOf(user)`, which prefers the language the user picked in `/settings`, see [A setting of a user](../settings/README.md#a-setting-of-a-user). A new user starts banned while the setting `users.autoBan` is on, its default; with the setting off, a new user gets the [default grants](../access/README.md#default-grants) at once. When the upsert creates the user, the handler counts `telegram_users_created_total`.
 
@@ -413,7 +412,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 
 **Walk-through.** A user presses a button, the handler changes the screen, and the engine edits its message.
 
-1. `TelegramChats.withContext` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call outside a session, such as `setMyCommands` before the lock, gets the class `interactive` and its own 60 s timeout signal.
+1. `TelegramChats.runScenes` runs the handler inside `telegramApiScope` with the signal of the session lock and the class `interactive`. A delivery gets the class `background`. A call of an update outside its session, such as `setMyCommands` before the lock, runs in the scope that `TelegramUpdateHandler` opens, with the class `interactive` and its own 60 s timeout signal per call.
 2. `TelegramApiService.call` reads the scope and asks `telegramRateLimitBuckets` for the buckets of `editMessageText`: the chat bucket, then the global one.
 3. `RateLimiter.acquire` puts the call into the queue of the chat bucket. Every bucket has one `RateLimitQueue` in the pod, and only the loop of the queue asks Valkey, so the calls that wait for one bucket cost about one request per token and not one request per waiting call. The script takes a token or returns the time to the next one, and the loop sleeps until then. Calls of one chat seldom compete here: the session lock already runs the updates of a user one by one. A queue leaves the memory of the pod when it has served its last call.
 4. The queue of the global bucket has one line per class, and its loop serves both. On every call the script adds the id of the pod to `waiting:<class>` for each class with a waiter in this pod, with an expiry 2 s ahead, and removes it from every other class. A class waits while its set holds an unexpired pod. The rate of a class bucket is `rate × share / sum of the shares of the waiting classes`. The script grants a token to the first class of the pod whose own bucket and the global bucket both have one. The loop releases the first call of that class, or sleeps until the next token, at most 1 s, so its marks stay fresh. When the queues of the pod are empty, the loop makes one last call that removes the pod from every class, and stops.
@@ -455,7 +454,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 - A repeated `send*` whose first request did run leaves two messages in the chat. The scene records only the second one, so a button of the first answers `telegram:buttonExpired`.
 - A repeated edit whose first request did run gets `message is not modified`. `TelegramResponder.edit` and `editKeyboard` take that answer as a success, and `removeKeyboard` logs it and goes on.
 - A repeated delete whose first request did run gets an error answer, and `TelegramResponder.deleteMessage` returns `false` as for any message that is already gone.
-- We have not measured what Telegram answers to a second `answerCallbackQuery` for one press. `TelegramResponder` throws on an answer that is not `ok`, so such a repeat may end the update with `telegram:error`.
+- `TelegramResponder.answerCallback` logs an answer that is not `ok`, `Failed to answer callback query`, and goes on: the notice over the chat is the only thing the answer carries. So a repeated `answerCallbackQuery`, and an answer that comes after the press waited for the session lock or the rate limiter longer than Telegram keeps the query open (`query is too old`), never turn a refused or expired press into `telegram:error`.
 - `telegram_api_requests_total{result="network_error"}` and `{result="bad_answer"}` count every attempt, so one call that fails three times adds 3.
 
 ## Scene instances
@@ -485,7 +484,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 1. `sceneEngine.start(ctx, scene, state)` checks the guard of the scene and builds the id. With a `key`, the id is the first 12 characters of `sha256("<scene name>:<key>")` in base64url, so the same key always gives the same id. Without a `key`, the id is 8 random bytes.
 2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its messages move to the bottom of the chat, and the state and the screen stay as they are.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
-4. `withScenes` creates one `TelegramSceneRun` for the update, and each entry point marks the instance it works on as touched there with `touch`: a start, a press, an answer to an input, `/cancel`, a delivery and a redraw. Building the scene object for a handler marks nothing, so a new entry point calls `touch` before it changes the record, or the change is neither saved nor drawn.
+4. `withScenes` creates one `TelegramSceneRun` for the update. The run marks an instance as touched when it builds the scene object of the instance for a handler, a step or a render, so every start, press, answer to an input, `/cancel` and delivery is saved and drawn. A redraw, a reshow and a dropped input change the record without a scene object, and mark the instance with `touch` themselves.
 5. After the update, the engine draws the current screen of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
@@ -532,7 +531,7 @@ A `scene` button runs a handler from `buttons` of the scene. A `screen` button, 
 - A message that the scene edited without a button, or deleted, no longer holds that button. A press on it, or on a message of an ended scene, gets `telegram:buttonExpired`.
 - A value that no longer matches the schema of its button after a deploy also gets `buttonExpired`. A failed guard gets an empty callback answer, so the press says nothing about the access of the user.
 - A press does not need the input focus, so the buttons of every running scene work at the same time.
-- A button with `confirm: true` keeps `confirming` in the record after the first press and runs `handle` only on the second press with the same value. While `confirming` names it, `scene.button` draws it with `style: "danger"`. Every other press of the scene, a `screen` or `back` button, an `input` button, a button with another value, and every move clear `confirming` first. `publish` and `deliver` redraw the screen and keep it, because the user pressed nothing.
+- A button with `confirm: true` keeps `confirming` in the record after the first press and runs `handle` only on the second press with the same value. While `confirming` names it, `scene.button` draws it as another button, `{ "kind": "scene", "name", "value", "armed": true }`, with its own id and `style: "danger"`, and only a press of the armed button runs `handle`. A double tap sends the first button twice, and the second callback waits for the session lock; by then the redraw has replaced the first button in the message, so the second callback answers `telegram:buttonExpired` instead of running the action that the user never saw as `⛔ Sure?`. Every other press of the scene, a `screen` or `back` button, an `input` button, a button with another value, and every move clear `confirming` first. `publish` and `deliver` redraw the screen and keep it, because the user pressed nothing.
 
 ## Screens and messages
 
@@ -697,8 +696,8 @@ sequenceDiagram
     C->>S: findIndexed for every topic
     S->>C: user ids and scene ids
     loop every user
-        C->>C: load user by bot and Telegram id, skip banned
-        C->>C: withChat: session lock + context without update
+        C->>C: delivery permit, then the session lock of the user
+        C->>C: load user by bot and Telegram id, skip banned, context without update
         C->>E: redraw(ctx, sceneId, topics) for every scene of the user
         E->>E: skip a scene that stopped watching or fails its guard
         E->>E: render the screen, save
@@ -731,8 +730,8 @@ sequenceDiagram
     P->>C: deliver(scene, targets, handle?)
     Note over C: returns at once, runs in the background
     loop every target user
-        C->>C: load user, skip banned
-        C->>C: withChat: session lock + context without update
+        C->>C: delivery permit, then the session lock of the user
+        C->>C: load user, skip banned, context without update
         C->>E: deliver(ctx, scene, key)
         E->>E: find the scene instance by key, run handle
         E->>E: render the screen, save
@@ -800,24 +799,24 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 
 **Problem.** Telegram lets a bot call `setMyCommands` about 20 times and then makes it wait, see [Rate limits](#rate-limits). A menu of its own for every chat costs one call per new user, so in a wave of new users the bot would answer each of them only after the menu.
 
-**Idea.** The bot has one menu for everybody: the commands of a user who holds no grants of their own, only the [default grants](../access/README.md#default-grants). A chat gets a menu of its own only when the commands of its user differ from the menu of the bot, such as the chat of an admin.
+**Idea.** The bot has one menu for everybody: the commands of a newcomer, the user that `UsersService.buildNewcomer` describes. A newcomer holds no grants of their own, only the [default grants](../access/README.md#default-grants), and is banned while the setting `users.autoBan` is on, its default. A banned user can run no command, so a bot that bans its newcomers shows no menu, and a visitor who came without an invite sees no command that would answer nothing. A chat gets a menu of its own only when the commands of its user differ from the menu of the bot: the chat of an admin, and in a bot that bans its newcomers the chat of every user with access. An empty menu is never set: `deleteMyCommands` removes it, so the chat or the bot shows the menu of the next wider scope.
 
-**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<telegramId>:commands:menu` keeps the hash of the menus of the bot for 30 days. The hash of a chat menu includes the `telegramId` of the bot, and the key of the bot menus carries it, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync. `refresh` removes the stored hash before its first call, so a refresh that fails in the middle leaves no hash and the next sync sets every menu again.
+**Data.** `commandMenu` of the user document keeps the hash of the menu of the chat; a user whose chat shows the menu of the bot has no such field. `telegram:<telegramId>:commands:menu` keeps the hash of the menus of the bot for 30 days. The hash of a chat menu includes the `telegramId` of the bot, and the key of the bot menus carries it, so a bot that [moved to another Telegram bot](../bots/README.md#moving-a-bot-to-another-telegram-bot) sets its menus there on the next sync. `refresh` removes the stored hash before its first call, so a refresh that fails in the middle leaves no hash and the next sync sets every menu again. `refresh` holds the lock `telegram:<telegramId>:commands:lock` from `LockService`, and only once it holds it reads the bot again and builds the menus, so of two refreshes of one bot that overlap, on one pod or on two, such as two changes of the modules in a row, the later one sets its menus and stores its hash after the earlier one.
 
 **Walk-through.**
 
-1. `TelegramCommandMenus.sync` runs on every update of a user with access, with the bot of the update. `syncUser` finds the bot of a user and runs the same sync on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
-2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. `/start` comes first when the bot has a start module and `TelegramStartEntries.find` returns its entry for the user. It lists the commands of `buildUserWithoutGrants` in the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language.
+1. `TelegramCommandMenus.sync` runs on every update, with the bot of the update. `syncUser` finds the bot of a user and runs the same sync on `users.accessChanged`, which `UsersService` emits after it changes the grants of a user, and on `settings.userSettingChanged`.
+2. It lists the commands whose guard allows the user, in the language of the user from `languageOf`. `/start` comes first when the bot has a start module and `TelegramStartEntries.find` returns its entry for the user. It lists the commands of the newcomer of the same bot in `languageCode`, the language of the Telegram client, because Telegram picks the menu of the bot by that language. A banned user has no commands.
    So a user who picked another language in `/settings` gets a menu of the chat in that language.
-3. When the lists are equal, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
+3. When the lists are equal, or the user is banned, the chat needs no menu. A user with `commandMenu` loses the menu of the chat through `deleteMyCommands` with the chat scope, and the field is removed.
 4. When the lists differ and the hash of the user's list is not `commandMenu`, the call `setMyCommands` with the chat scope sets the menu, and the hash is stored.
 5. `syncBot` sets the menus of the bot, one without a language and one per language, when their hash differs from the stored one. It runs on a production start, after a change of the modules or the start module of the bot and after a change of a setting, because the default grants are a setting. `refresh` sets the menus without the comparison: for a new bot, a new token and the webhook refresh.
 
-**Edge cases.** A new user with the commands of the bot costs no API call. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
+**Edge cases.** A new user with the commands of the bot costs no API call; in a bot that bans its newcomers a new user is banned and costs none either, and the invite that gives access sets the menu of the chat through `users.accessChanged`. A user banned by hand in MongoDB loses the menu of the chat on the next update and sees the menu of the bot, which is empty only while the bot bans its newcomers. When `users.autoBan` changes, the setting change sets the menu of the bot again; a chat that showed the menu of the bot gets its own menu on the next update or grant of its user, so until then it shows the new menu of the bot. The migration `20261117120000-mark-users-with-a-chat-command-menu.js` wrote `unknown` into `commandMenu` of every user of that time, because each of them had a menu of the chat; the first sync of such a user sets the menu again or removes it. A failed sync logs an error and does not fail the update; the field stays as it was, so the next update tries again. Every sync reads the modules and the default grants of the bot from MongoDB, so it compares with the menu that the bot has now. `telegram_command_menu_syncs_total{result}` counts the syncs as `unchanged`, `set`, `removed` or `failed`.
 
 **Shutdown.** A rolling update stops a pod while it handles updates, and an update that stops in the middle is lost: its claim `telegram:<telegramId>:update:<updateId>` lives for an hour, so the retry of Telegram is a duplicate. The chart gives the pod time to finish, in `server.shutdown` of `deploy/values.yaml`. The `preStop` hook waits 5 s, so the cluster takes the pod out of the service before it stops. Then `SIGTERM` starts the close of the server, which waits up to `FASTIFY_CLOSE_GRACE_DELAY`, 65 s, for the running requests and for `TelegramChats.idle`, the deliveries that are still running. That is longer than the 60 s for which an update may hold its session lock, so an update that holds the lock at the start of the close ends by itself, also when it waits for the rate limiter. The 65 s do not cover an update that has not taken the lock yet. The sync of the command menu runs before the lock, and its call has its own 60 s for the rate limiter; an update in the queue of its chat waits for the update before it. Such an update takes the lock late and can still be cut; its claim then makes the retry of Telegram a duplicate. A pod with no running update closes at once. The cluster kills the pod 75 s after the start of the shutdown.
 
-**Production and preview.** On start, production sets the webhook of every bot once per hour across pods, under the claim `telegram:<telegramId>:webhook:set`, and sets the menus of every bot when they changed. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
+**Production and preview.** On start, production sets the webhook of every bot unless a start of the last hour already set the same one, and sets the menus of every bot when they changed. Every successful `setWebhook` stores a hash of the URL and the secret token under `telegram:<telegramId>:webhook` for an hour, so the key always names the webhook that Telegram has; a start compares the hash of its own config with it. So a start with a new `TELEGRAM_WEBHOOK_SECRET_TOKEN`, `DOMAIN`, `RESOURCE_NAME` or `TELEGRAM_WEBHOOK_URL`, and a rollback to the config before it, sets the webhook at once. Pods that start together take the claim `telegram:<telegramId>:webhook:claim` for up to a minute, so only one of them calls Telegram. A failed `setWebhook` stores nothing, so the next start tries again. Preview pods share the bot tokens, so they do neither on start. `POST /api/telegram/webhook/refresh` points the webhooks of all bots at the preview, sets their menus and returns the result of every bot in `bots`: `refreshed` with the webhook and bot URLs, or `failed` with the error. A failure of one bot, such as a token revoked in BotFather, never stops the others: on start it logs `Failed to set the webhook of a bot on start` or `Failed to set the commands of a bot on start` with the bot id, and the refresh answers `502` instead of `200` when any bot failed. A chat keeps its menu: the previews share the users, so `commandMenu` tells every preview which menu the chat has.
 
 ## Files
 
@@ -837,7 +836,7 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-deep-links.ts`                                           | The deep link payload                                                        | [Deep links](#deep-links)                                   |
 | `telegram-guard.ts`                                                | The guard type                                                               | [Access and the command menu](#access-and-the-command-menu) |
 | `telegram-scene.ts`                                                | `defineScene` and the transitions of a step                                  | [Scene instances](#scene-instances)                         |
-| `telegram-scene-engine.ts`                                         | The registered scenes; one run per update; route presses and input text      | [Scene instances](#scene-instances)                         |
+| `telegram-scene-engine.ts`                                         | The registered scenes and one run per update                                 | [Scene instances](#scene-instances)                         |
 | `telegram-scene-storage.ts`                                        | Scene records, ids, `focus`, `blocking`, TTL, topics                         | [Scene instances](#scene-instances)                         |
 | `telegram-scene-run.ts`                                            | The scenes of one update: start, hand over, end; renders and saves them      | [Scene instances](#scene-instances)                         |
 | `telegram-scene-buttons.ts`                                        | Button values per message, the pending confirmation                          | [Buttons](#buttons)                                         |
@@ -846,7 +845,7 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 | `telegram-scene-messages.ts`                                       | The messages of a screen, matched by position, and their handover            | [Screens and messages](#screens-and-messages)               |
 | `telegram-scene-inputs.ts`                                         | Named inputs and their steps                                                 | [Inputs](#inputs)                                           |
 | `telegram-steps.ts`                                                | `textStep`, `numberStep`, `dateStep`, `choiceStep`                           | [Inputs](#inputs)                                           |
-| `telegram-pagination.ts`                                           | `pageOf` and the `‹ 1/3 ›` row of `pageButtons`                              |                                                             |
+| `telegram-pagination.ts`                                           | `pageOf`, `loadPage` and the `‹ 1/3 ›` row of `pageButtons`                  |                                                             |
 | `telegram-keyboard.ts`                                             | `inRowsOf`, the rows of a keyboard                                           | [Button layout](#button-layout)                             |
 | `telegram-system-handlers.ts`                                      | `/start` and `/cancel`                                                       | [Blocking scenes](#blocking-scenes)                         |
 | `telegram-start-entries.ts`                                        | What `/start` opens per module                                               | [The start module](#the-start-module)                       |
@@ -859,6 +858,6 @@ A guard is a `(user) => boolean | Promise<boolean>` from `telegram-guard.ts`, an
 To read the code in order:
 
 1. `telegram-update-handler.ts`, `handle()`: the whole path of an update.
-2. `telegram-chats.ts`, `withContext()`: how a context and the scenes get their session.
-3. `telegram-scene-engine.ts`, `handle()` and `withScenes()`: how scenes get updates and when they are saved and drawn.
-4. `telegram-chats.test.ts` and `telegram-scene-engine.test.ts`: small complete scenes that show the API in use.
+2. `telegram-chats.ts`, `withUpdate()` and `runScenes()`: how a context and the scenes get their session.
+3. `telegram-scene-engine.ts`, `withScenes()`, and `telegram-scene-run.ts`, `handle()`: how scenes get updates and when they are saved and drawn.
+4. `telegram-chats.test.ts` and `test/telegram-scene-fixtures.ts`: small complete scenes that show the API in use.

@@ -149,8 +149,26 @@ export class InvitesService {
         return isGrantIn(await this.listGrantableSections(actor), grant);
     }
 
-    createOwnerInvite(botId: string): Promise<InviteEntity> {
-        return this.insert({ botId, grants: [adminGrant], maxUses: 1 });
+    async replaceOwnerInvite(
+        actor: UserEntity,
+        botId: string,
+    ): Promise<InviteEntity> {
+        const revoked = await this.invitesRepository.revokeBootstrapInvites(
+            botId,
+            new Date(),
+        );
+        const invite = await this.insert({
+            botId,
+            grants: [adminGrant],
+            maxUses: 1,
+        });
+
+        this.log.info(
+            { botId, inviteId: invite._id, userId: actor._id, revoked },
+            "Owner invite created",
+        );
+
+        return invite;
     }
 
     async activate(

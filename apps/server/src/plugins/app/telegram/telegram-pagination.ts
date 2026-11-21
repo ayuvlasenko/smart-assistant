@@ -1,5 +1,10 @@
 import { InlineKeyboardButton } from "@grammyjs/types";
-import { Page } from "../page.js";
+import { Page, PageRequest } from "../page.js";
+
+export interface TelegramPage<TItem> extends Page<TItem> {
+    index: number;
+    size: number;
+}
 
 export type TelegramPageButton = (
     text: string,
@@ -9,29 +14,54 @@ export type TelegramPageButton = (
 export function pageOf<TItem>(
     items: readonly TItem[],
     page: number,
-    pageSize: number,
-): Page<TItem> {
+    size: number,
+): TelegramPage<TItem> {
+    const index = Math.min(page, lastPageIndex(items.length, size));
+
     return {
-        items: items.slice(page * pageSize, (page + 1) * pageSize),
+        items: items.slice(index * size, (index + 1) * size),
         total: items.length,
+        index,
+        size,
+    };
+}
+
+export async function loadPage<TItem>(
+    page: number,
+    size: number,
+    load: (request: PageRequest) => Promise<Page<TItem>>,
+): Promise<TelegramPage<TItem>> {
+    const loaded = await load({ skip: page * size, limit: size });
+    const last = lastPageIndex(loaded.total, size);
+
+    if (page <= last) {
+        return { ...loaded, index: page, size };
+    }
+
+    return {
+        ...(await load({ skip: last * size, limit: size })),
+        index: last,
+        size,
     };
 }
 
 export function pageButtons(
-    page: number,
-    total: number,
-    pageSize: number,
+    { index, total, size }: TelegramPage<unknown>,
     button: TelegramPageButton,
 ): InlineKeyboardButton[] {
-    const pages = Math.ceil(total / pageSize);
+    const pages = Math.ceil(total / size);
 
     if (pages <= 1) {
         return [];
     }
 
     return [
-        ...(page > 0 ? [button("‹", page - 1)] : []),
-        { text: `${page + 1}/${pages}`, disabled: {} },
-        ...(page + 1 < pages ? [button("›", page + 1)] : []),
+        ...(index > 0 ? [button("‹", index - 1)] : []),
+        { text: `${index + 1}/${pages}`, disabled: {} },
+        ...(index + 1 < pages ? [button("›", index + 1)] : []),
     ];
+}
+
+function lastPageIndex(total: number, size: number): number {
+    return Math.max(0, Math.ceil(total / size) - 1);
 }

@@ -3,15 +3,9 @@ import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
-import {
-    parseTelegramButtonPress,
-    TelegramSceneButtons,
-} from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
-import { TelegramSceneMessages } from "./telegram-scene-messages.js";
 import { TelegramScenePresses } from "./telegram-scene-presses.js";
 import { TelegramSceneRun } from "./telegram-scene-run.js";
-import { TelegramSceneScreens } from "./telegram-scene-screens.js";
 import { TelegramScene, TelegramSceneControl } from "./telegram-scene.js";
 import { TelegramSession } from "./telegram-session.js";
 
@@ -20,23 +14,15 @@ type SceneControl = TelegramSceneControl<SceneState>;
 
 export class TelegramSceneEngine {
     private readonly scenes = new Map<string, TelegramScene>();
-    private readonly runs = new WeakMap<TelegramSession, TelegramSceneRun>();
-    private readonly buttons = new TelegramSceneButtons();
+    private readonly runs = new WeakMap<TelegramContext, TelegramSceneRun>();
     private readonly inputs: TelegramSceneInputs;
     private readonly presses: TelegramScenePresses;
-    private readonly screens = new TelegramSceneScreens();
-    private readonly messages = new TelegramSceneMessages();
     private readonly telegramMetrics: TelegramMetrics;
 
     constructor(telegramMetrics: TelegramMetrics) {
         this.telegramMetrics = telegramMetrics;
-        this.inputs = new TelegramSceneInputs(telegramMetrics, this.buttons);
-        this.presses = new TelegramScenePresses(
-            telegramMetrics,
-            this.buttons,
-            this.inputs,
-            this.screens,
-        );
+        this.inputs = new TelegramSceneInputs(telegramMetrics);
+        this.presses = new TelegramScenePresses(telegramMetrics, this.inputs);
     }
 
     register(scene: TelegramScene): void {
@@ -82,12 +68,7 @@ export class TelegramSceneEngine {
         ctx: TelegramContext<Update>,
         next: () => Promise<void>,
     ): Promise<void> {
-        const run = this.runOf(ctx);
-        const press = parseTelegramButtonPress(ctx.update);
-
-        return press
-            ? this.presses.handle(ctx, run, press)
-            : run.handleMessage(ctx, next);
+        return this.runOf(ctx).handle(ctx, next);
     }
 
     deliver(
@@ -109,25 +90,25 @@ export class TelegramSceneEngine {
 
     async withScenes<T>(
         ctx: TelegramContext,
+        session: TelegramSession,
         action: () => Promise<T>,
     ): Promise<T> {
         const run = new TelegramSceneRun(
             ctx,
+            session,
             (name) => this.scenes.get(name),
             this.telegramMetrics,
-            this.buttons,
             this.inputs,
-            this.screens,
-            this.messages,
+            this.presses,
         );
-        const stopRecording = ctx.events.on(
+        const stopRecording = ctx.messageEvents.on(
             ["messageSent", "messageEdited", "messageRemoved"],
             ({ data }) => {
                 run.rememberButtons(data);
             },
         );
 
-        this.runs.set(ctx.session, run);
+        this.runs.set(ctx, run);
 
         try {
             const result = await action();
@@ -138,12 +119,12 @@ export class TelegramSceneEngine {
         } finally {
             stopRecording();
             run.save();
-            this.runs.delete(ctx.session);
+            this.runs.delete(ctx);
         }
     }
 
     private runOf(ctx: TelegramContext): TelegramSceneRun {
-        const run = this.runs.get(ctx.session);
+        const run = this.runs.get(ctx);
 
         if (!run) {
             throw new Error("Telegram scenes are used outside withScenes");

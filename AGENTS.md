@@ -5,12 +5,12 @@
 Run all commands from the project root:
 
 ```bash
-pnpm --filter server dev        # Build TypeScript and start server with hot reload
+pnpm --filter server dev        # Build TypeScript and restart src/server.ts on every change
 pnpm --filter server build      # Compile TypeScript only
 pnpm --filter server typecheck  # Run full TypeScript checks, including tests and fixtures
 pnpm test                       # Run all tests: root scripts and every workspace
 pnpm --filter server test       # Run server tests
-pnpm lint                       # Run every check of CI: Markdown, Prettier and ESLint
+pnpm lint                       # Run the lint checks of CI: Markdown, Prettier and ESLint
 pnpm --filter server lint       # Run ESLint for backend
 pnpm format                     # Format Markdown, root scripts and all workspaces
 pnpm --filter server format     # Run ESLint fix + Prettier for backend
@@ -59,7 +59,7 @@ Call something a constraint only when an external system or a measurement sets i
 - Name a file and a directory in kebab case, after the main export of the file, with the domain prefix, so every file name is unique: `users-repository.ts` (`UsersRepository`), `user-entity.ts`, `create-account-scene.ts` (`createAccountScene`), `choose-account-step.ts`. A test is `<file>.test.ts` next to the file.
 - A file holds one abstraction: its main export, the types of its own public API, and private helpers. A type, schema, constant or function that describes another abstraction's data lives in that abstraction's file.
 - Split a file by abstraction, never by kind of code, and add no `utils/` or `types/` folder. Only `<domain>-errors.ts`, `<domain>-events.ts` (one interface that maps every event name of the domain to its payload) and `<domain>-locales.ts` collect one kind of code for a domain. Keep small functions of one topic together in one file, such as the parsers of typed input. `local/file-layout` flags a file named after a kind of code, such as `*-types.ts`, and the order of the code inside a file; `telegram-router.ts` is the reference.
-- `local/file-layout` in `apps/server/eslint-rules/` checks the layout rules: fix its warnings in the code you touch.
+- `local/file-layout` in `apps/server/eslint-rules/` checks the layout rules. `pnpm lint` fails on any warning, `--max-warnings 0`.
 - Throw a class from `<domain>-errors.ts` when code catches the error by type or reads its fields, such as `TelegramApiError`. Throw a plain `Error` for a bug or a wrong configuration that only stops the start or the update.
 
 ### Bot code
@@ -80,7 +80,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Never provoke a `429` on a deployed bot to measure a limit of Telegram: the limiter then pauses every bucket of the method, and the bot stops for all its users. Measure from a local script with the token of the preview bot.
 - Send every user-facing text through `ctx.t`. Never log message text, callback data or tokens: `/start <token>` arrives as message text.
 - Take the language of a user from `languageOf(user)`, never from `user.languageCode`: a user picks a language in `/settings`. After a handler changes the user of the update, such as the grants or a setting, pass the stored document to `ctx.refreshUser`.
-- Log a change of business state once, at `info`, with a fixed message and the ids of what changed as fields. In a handler, log through `ctx.log`: its lines carry `botId`, `updateId` and `userId`. Put an error under `err`. The logger hides a value only under a key that ends with a secret word, such as `token` or `password`, and a bot token inside a string, see `logger-value-walk.ts`; it does not know any other secret.
+- Log a change of business state once, at `info`, with a fixed message and the ids of what changed as fields. In a handler, log through `ctx.log`: its lines carry `botId`, `updateId` and `userId`. Put an error under `err`. The logger hides a value only under a key that ends with a secret word, such as `token` or `password`, and a bot token inside a string, see `logger-value-walk.ts`; it does not know any other secret. It never sees the bindings of `log.child({ … })`: pino writes them as they are, so put only ids there.
 - Name a command in snake case, such as `new_invite`.
 - Register the access section of a feature domain as a module, `access.register(section, { subjects })`, so a bot can turn it off; a section without it is on in every bot. See [Modules](apps/server/src/plugins/app/access/README.md#modules).
 - Declare the access subjects of a domain next to its entity and take a typed view with `accessService.subjects<M>()`; do not augment a shared interface with `declare module`. Put a `guard` on every entry point, read lists through `access.accessibleBy` in the query, and check every write in the service with `access.assert` on the loaded document wrapped in `subject(name, document)`, never on the subject name. `plugins/app/access/README.md` explains why.
@@ -101,7 +101,7 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep test setup direct. When a test needs custom lifecycle choreography such as deferred hooks, manual cleanup ordering, or fake framework context, look for a simpler behavior boundary or a small explicit test helper.
 - Do not remove meaningful behavior coverage while you simplify tests; keep behavior assertions such as nested logger child bindings even when you drop implementation-specific assertions.
 - A shared test helper collects or exposes real observable output; it does not duplicate framework behavior with hidden one-off mocks.
-- A test never writes to the database that `DATABASE_URL` names: in CI it is the shared dev database of the previews. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
+- A test never writes to the database that `DATABASE_URL` names: locally it is your dev database, and CI takes it from the secret `TEST_DATABASE_URL`, which other runs share. Build the app through `buildTestApp` or `buildTelegramBotServiceTestApp`, which give it a database of its own.
 - Create a test database through `useTestMongo` in a test file, or through `buildTestApp`: both use `buildTestMongo`, which runs every migration, so the database has the indexes of production. A database made any other way has no index, and a test of a unique constraint passes there without the constraint. `useTestMongo` empties every collection before each test; do not add a `beforeEach` that empties a hand-picked list.
 - When a domain stores data of a bot, add a test where a user of a second bot does not find it, such as `doesn't find the invite of another bot` in `invites-service.test.ts`. A query that skips `access.accessibleBy` filters by `botId` itself, and the tests of one bot pass without that filter.
 
@@ -110,12 +110,12 @@ Read `plugins/app/telegram/README.md` before you write bot code. These rules bre
 - Keep the pnpm version in `mise.toml` and in `packageManager` in sync. Put pnpm settings in `pnpm-workspace.yaml`; `.npmrc` keeps only the registry.
 - `mise.toml` loads environment variables from the root `.env` file. `DATABASE_URL` and `VALKEY_URL` are there for local integration tests and feature work; use them when needed, but do not print secret values. The tests load `apps/server/.env.test` over them, so a variable in that file never comes from the root `.env`.
 - Valkey must be 9.0 or newer, locally and in `TEST_VALKEY_URL` for CI: the Telegram session uses `HPEXPIRE`.
-- Production runs 2 to 4 pods under the autoscaler of `deploy/templates/hpa.yaml`, set in `server.replicas` of `deploy/values.yaml`; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
+- Production runs 2 to 4 pods; a preview runs one pod. Keep state that several updates share in Valkey or MongoDB, never in the memory of a pod: a preview does not show that mistake.
 - Preview resources keep their Valkey data in memory; production persists it and never evicts keys.
 - The liveness probe reads `/live`, which calls nothing outside the process and skips `@fastify/under-pressure` through `pressureExemptConfig`. `/status` checks MongoDB and Valkey and serves the startup and readiness probes. Never point liveness at a check of an external system: an outage then restarts every pod at once and fixes nothing.
 - Every resource prefixes its Valkey keys with `smart-assistant:<RESOURCE_NAME>:` through the `keyPrefix` option in `kv-valkey.ts`, so preview resources share `valkey-dev` safely. Code passes keys without the prefix; only `SCAN` patterns and the keys it returns carry the full key.
 - `ENVIRONMENT` (`production` | `preview`) is required. The chart sets `production` for `resourceName: main` and `preview` for every other resource; use `preview` in the root `.env` for local development.
 - The `s3` client of `plugins/external/s3.ts` and the five `S3_*` variables of `src/env.ts` have no reader yet: they are kept for a planned feature. Do not remove them as dead code.
-- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with `BOTS_ENCRYPTION_KEY`, `INVITE_TOKEN` and `TIME_ZONE` when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
+- `scripts/create-server-secret.js` writes the `server-secrets-*` secret, with the optional variables of its list when they are set. It replaces the whole secret, so keep `BOTS_ENCRYPTION_KEY` the same: a new key makes every stored bot token unreadable.
 - The dashboard and the alert rules of the project live in the `infra` repository, under `monitoring/`. They read the metrics of the server by name and label, and their descriptions quote LogQL for its logs. When you rename a metric, a label, a log level or a quoted message, change them there too.
-- `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1. The root `node_modules/.bin` has the TypeScript 7 language server, `tsc --lsp`; a `tsserver`-based editor plugin falls back to its bundled TypeScript.
+- `tsc` is TypeScript 7 from the `@typescript/native` alias. `typescript` resolves to `@typescript/typescript6`, because typescript-eslint needs the TypeScript 6 API until TypeScript 7.1.

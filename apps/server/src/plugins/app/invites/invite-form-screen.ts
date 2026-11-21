@@ -62,12 +62,7 @@ export async function renderInviteFormSections(
                     { section: section.name, page: 0 },
                 ),
             ]),
-            pageButtons(
-                page,
-                sections.total,
-                sectionsPageSize,
-                pageButtonOf(scene),
-            ),
+            pageButtons(sections, pageButtonOf(scene)),
             [scene.backButton(t("invites:backButton"))],
         ],
     );
@@ -84,7 +79,14 @@ export async function renderInviteFormSection(
     const section = sections.find(({ name }) => name === sectionName);
 
     if (!section) {
-        return renderInviteFormSections(view, 0);
+        return buildTelegramHtmlMessage(
+            [
+                ...describeDraft(view),
+                "",
+                escapeTelegramHtml(t("invites:sectionMissing")),
+            ],
+            [[scene.backButton(t("invites:backButton"))]],
+        );
     }
 
     const { grants } = scene.state.draft;
@@ -100,12 +102,7 @@ export async function renderInviteFormSection(
                     grant.name,
                 ),
             ]),
-            pageButtons(
-                page,
-                sectionGrants.total,
-                grantsPageSize,
-                pageButtonOf(scene),
-            ),
+            pageButtons(sectionGrants, pageButtonOf(scene)),
             [scene.backButton(t("invites:backButton"))],
         ],
     );

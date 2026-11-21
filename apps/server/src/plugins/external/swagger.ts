@@ -17,16 +17,6 @@ export default fp(
                     description: "Bot with smart features",
                     version: "0.0.1",
                 },
-                components: {
-                    securitySchemes: {
-                        bearerAuth: {
-                            type: "http",
-                            scheme: "bearer",
-                            bearerFormat: "JWT",
-                            description: "JWT authentication",
-                        },
-                    },
-                },
             },
         });
 

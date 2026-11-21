@@ -4,42 +4,41 @@ import { TelegramContext } from "./telegram-context.js";
 import { isAllowed } from "./telegram-guard.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import {
+    cancelConfirmation,
+    confirmSceneButton,
+    findPressedButton,
     TelegramButtonPress,
-    TelegramSceneButtons,
+    TelegramStoredSceneButton,
 } from "./telegram-scene-buttons.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
-import { type TelegramSceneRun } from "./telegram-scene-run.js";
 import {
-    TelegramSceneScreens,
+    canShowScreen,
+    isKnownScreen,
     TelegramScreenState,
 } from "./telegram-scene-screens.js";
 import { TelegramSceneInstance } from "./telegram-scene-storage.js";
+import { TelegramSceneControl } from "./telegram-scene.js";
+
+type TelegramSceneControlOf = (
+    instance: TelegramSceneInstance,
+) => TelegramSceneControl<Record<string, unknown>>;
 
 export class TelegramScenePresses {
     private readonly telegramMetrics: TelegramMetrics;
-    private readonly buttons: TelegramSceneButtons;
     private readonly inputs: TelegramSceneInputs;
-    private readonly screens: TelegramSceneScreens;
 
-    constructor(
-        telegramMetrics: TelegramMetrics,
-        buttons: TelegramSceneButtons,
-        inputs: TelegramSceneInputs,
-        screens: TelegramSceneScreens,
-    ) {
+    constructor(telegramMetrics: TelegramMetrics, inputs: TelegramSceneInputs) {
         this.telegramMetrics = telegramMetrics;
-        this.buttons = buttons;
         this.inputs = inputs;
-        this.screens = screens;
     }
 
-    async handle(
+    async press(
         ctx: TelegramContext<Update>,
-        run: TelegramSceneRun,
+        instance: TelegramSceneInstance | undefined,
         press: TelegramButtonPress,
+        control: TelegramSceneControlOf,
     ): Promise<void> {
-        const instance = await run.storage.load(press.sceneId);
-        const button = instance && this.buttons.find(instance, press);
+        const button = instance && findPressedButton(instance, press);
 
         if (!instance || !button) {
             return this.rejectExpired(ctx, "unknown");
@@ -49,32 +48,26 @@ export class TelegramScenePresses {
             case "input":
                 return this.pressInput(
                     ctx,
-                    run,
                     instance,
                     button.step,
                     button.value,
+                    control,
                 );
             case "screen":
-                return this.pressScreen(ctx, run, instance, button.screen);
+                return this.pressScreen(ctx, instance, button.screen, control);
             case "back":
-                return this.pressBack(ctx, run, instance);
+                return this.pressBack(ctx, instance, control);
             case "scene":
-                return this.pressScene(
-                    ctx,
-                    run,
-                    instance,
-                    button.name,
-                    button.value,
-                );
+                return this.pressScene(ctx, instance, button, control);
         }
     }
 
     private async pressInput(
         ctx: TelegramContext<Update>,
-        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
         step: string,
         value: unknown,
+        control: TelegramSceneControlOf,
     ): Promise<void> {
         const action = `${instance.scene.name}:input`;
 
@@ -82,12 +75,13 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
-        run.touch(instance);
-        this.buttons.cancelConfirmation(instance);
+        const scene = control(instance);
+
+        cancelConfirmation(instance);
 
         const isHandled = await this.inputs.handleButton(
             ctx,
-            run.control(instance),
+            scene,
             instance,
             step,
             value,
@@ -102,49 +96,47 @@ export class TelegramScenePresses {
 
     private async pressScreen(
         ctx: TelegramContext<Update>,
-        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
         screen: TelegramScreenState,
+        control: TelegramSceneControlOf,
     ): Promise<void> {
         const action = `${instance.scene.name}:screen:${screen.name}`;
 
-        if (!this.screens.isKnown(instance.scene, screen)) {
+        if (!isKnownScreen(instance.scene, screen)) {
             return this.rejectExpired(ctx, action);
         }
 
         if (
             !(await isAllowed(instance.scene.guard, ctx.user)) ||
-            !(await this.screens.canShow(instance, ctx.user, screen))
+            !(await canShowScreen(instance, ctx.user, screen))
         ) {
             return this.rejectForbidden(ctx, action);
         }
 
-        run.touch(instance);
-        await run.control(instance).push(screen.name, screen.params);
+        await control(instance).push(screen.name, screen.params);
         this.record(ctx, instance, `screen:${screen.name}`);
     }
 
     private async pressBack(
         ctx: TelegramContext<Update>,
-        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
+        control: TelegramSceneControlOf,
     ): Promise<void> {
         if (!(await isAllowed(instance.scene.guard, ctx.user))) {
             return this.rejectForbidden(ctx, `${instance.scene.name}:back`);
         }
 
-        run.touch(instance);
-        await run.control(instance).back();
+        await control(instance).back();
         this.record(ctx, instance, "back");
     }
 
     private async pressScene(
         ctx: TelegramContext<Update>,
-        run: TelegramSceneRun,
         instance: TelegramSceneInstance,
-        name: string,
-        value: unknown,
+        button: TelegramStoredSceneButton,
+        control: TelegramSceneControlOf,
     ): Promise<void> {
+        const { name, value } = button;
         const definition = instance.scene.buttons[name];
         const action = `${instance.scene.name}:${name}`;
 
@@ -159,16 +151,16 @@ export class TelegramScenePresses {
             return this.rejectForbidden(ctx, action);
         }
 
-        run.touch(instance);
+        const scene = control(instance);
 
         if (!definition.confirm) {
-            this.buttons.cancelConfirmation(instance);
-        } else if (!this.buttons.confirm(instance, name, value)) {
+            cancelConfirmation(instance);
+        } else if (!confirmSceneButton(instance, button)) {
             this.record(ctx, instance, name);
             return;
         }
 
-        await definition.handle(ctx, run.control(instance), value);
+        await definition.handle(ctx, scene, value);
         this.record(ctx, instance, name);
     }
 

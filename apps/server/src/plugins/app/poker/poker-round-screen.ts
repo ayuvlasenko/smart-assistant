@@ -16,6 +16,7 @@ import {
 } from "./poker-format.js";
 import { pokerObserverIcon } from "./poker-participants-screen.js";
 import {
+    countPokerVotes,
     findPokerParticipant,
     isPokerParticipantIdle,
     listActivePokerParticipants,
@@ -107,7 +108,7 @@ function readVotingKeyboard(view: PokerRoomView): InlineKeyboardButton[][] {
     const isAutoReveal = room.autoReveal !== null;
     const active = listActivePokerParticipants(room).length;
     const total = readPokerAutoRevealTarget(room) ?? active;
-    const voted = Object.keys(room.round.votes).length;
+    const voted = countPokerVotes(room);
     const cardButton = (card: string): InlineKeyboardButton => {
         const button = scene.button(card, "vote", { round, card });
 

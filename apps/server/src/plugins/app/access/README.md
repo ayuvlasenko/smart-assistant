@@ -101,7 +101,7 @@ The modules of a bot come from the `modules` of its document in `bots`, see [Bot
 
 **Walk-through.**
 
-1. On start, `access-default-grants.ts` registers the setting with every registered grant except `admin` as an option, and hands `AccessService.useDefaultGrants` an asynchronous function that reads the setting of a bot. Every bot has its own default grants.
+1. On start, `access-default-grants.ts` registers the setting. Its options in a bot are the grants of the sections that are on in that bot, see [Modules](#modules), except `admin`. It hands `AccessService.useDefaultGrants` an asynchronous function that reads the setting of a bot. Every bot has its own default grants.
 2. An update loads the user and asks a guard. The service builds the ability from `user.grants` together with the default grants, so the new defaults apply from the next update of every user.
 3. `admin` never comes from the defaults: the menu does not offer it, and the service drops it when it reads the setting.
 

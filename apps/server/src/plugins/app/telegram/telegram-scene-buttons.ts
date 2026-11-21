@@ -15,6 +15,7 @@ const telegramButtonSchema = Type.Union([
         kind: Type.Literal("scene"),
         name: Type.String(),
         value: Type.Unknown(),
+        armed: Type.Optional(Type.Literal(true)),
     }),
     Type.Object({
         kind: Type.Literal("input"),
@@ -47,6 +48,11 @@ export const telegramButtonsStateSchema = Type.Object({
 
 export type TelegramButton = Static<typeof telegramButtonSchema>;
 
+export type TelegramStoredSceneButton = Extract<
+    TelegramButton,
+    { kind: "scene" }
+>;
+
 export type TelegramMessageMarkup =
     | InlineKeyboardMarkup
     | ReplyKeyboardMarkup
@@ -75,120 +81,98 @@ export function parseTelegramButtonPress(
     return { sceneId: match[1], buttonId: match[2], messageId };
 }
 
-export class TelegramSceneButtons {
-    private readonly unsent = new WeakMap<
-        TelegramSceneInstance,
-        Map<string, TelegramButton>
-    >();
+export function createSceneButton(
+    instance: TelegramSceneInstance,
+    text: string,
+    button: TelegramButton,
+): InlineKeyboardButton.CallbackButton {
+    const unsent = instance.unsentButtons;
+    const id =
+        findSameButton(unsent, button) ??
+        findSameButton(storedButtonsOf(instance), button) ??
+        String(instance.record.buttons.nextId++);
 
-    create(
-        instance: TelegramSceneInstance,
-        text: string,
-        button: TelegramButton,
-    ): InlineKeyboardButton.CallbackButton {
-        const unsent = this.unsentIn(instance);
-        const id =
-            findSameButton(unsent, button) ??
-            findSameButton(storedButtonsOf(instance), button) ??
-            String(instance.record.buttons.nextId++);
+    unsent.set(id, button);
 
-        unsent.set(id, button);
+    return { text, callback_data: `${instance.id}:${id}` };
+}
 
-        return { text, callback_data: `${instance.id}:${id}` };
+export function findPressedButton(
+    instance: TelegramSceneInstance,
+    press: TelegramButtonPress,
+): TelegramButton | undefined {
+    return instance.record.buttons.messages.find(
+        (message) => message.messageId === press.messageId,
+    )?.buttons[press.buttonId];
+}
+
+export function rememberSceneButtons(
+    instance: TelegramSceneInstance,
+    messageId: number,
+    markup?: TelegramMessageMarkup,
+): void {
+    const buttons = Object.fromEntries(
+        readOwnButtonIds(instance, markup).flatMap((id) => {
+            const button = instance.unsentButtons.get(id);
+
+            return button ? [[id, button]] : [];
+        }),
+    );
+    const state = instance.record.buttons;
+    const otherMessages = state.messages.filter(
+        (message) => message.messageId !== messageId,
+    );
+
+    state.messages = Object.keys(buttons).length
+        ? [...otherMessages, { messageId, buttons }]
+        : otherMessages;
+}
+
+export function isConfirming(
+    instance: TelegramSceneInstance,
+    name: string,
+    ...value: [] | [unknown]
+): boolean {
+    const { confirming } = instance.record;
+
+    return (
+        confirming?.name === name &&
+        (!value.length ||
+            JSON.stringify(confirming.value) === JSON.stringify(value[0]))
+    );
+}
+
+export function confirmSceneButton(
+    instance: TelegramSceneInstance,
+    { name, value, armed }: TelegramStoredSceneButton,
+): boolean {
+    if (armed && isConfirming(instance, name, value)) {
+        cancelConfirmation(instance);
+        return true;
     }
 
-    find(
-        instance: TelegramSceneInstance,
-        press: TelegramButtonPress,
-    ): TelegramButton | undefined {
-        return instance.record.buttons.messages.find(
-            (message) => message.messageId === press.messageId,
-        )?.buttons[press.buttonId];
-    }
+    instance.record.confirming = { name, value };
+    return false;
+}
 
-    remember(
-        instance: TelegramSceneInstance,
-        messageId: number,
-        markup?: TelegramMessageMarkup,
-    ): void {
-        const unsent = this.unsentIn(instance);
+export function cancelConfirmation(instance: TelegramSceneInstance): void {
+    instance.record.confirming = undefined;
+}
+
+export function forgetInputButtons(instance: TelegramSceneInstance): void {
+    const state = instance.record.buttons;
+
+    state.messages = state.messages.flatMap((message) => {
         const buttons = Object.fromEntries(
-            readOwnButtonIds(instance, markup).flatMap((id) => {
-                const button = unsent.get(id);
-
-                return button ? [[id, button]] : [];
-            }),
-        );
-        const state = instance.record.buttons;
-        const otherMessages = state.messages.filter(
-            (message) => message.messageId !== messageId,
+            Object.entries(message.buttons).filter(
+                ([, button]) => button.kind !== "input",
+            ),
         );
 
-        state.messages = Object.keys(buttons).length
-            ? [...otherMessages, { messageId, buttons }]
-            : otherMessages;
-    }
-
-    isConfirming(
-        instance: TelegramSceneInstance,
-        name: string,
-        ...value: [] | [unknown]
-    ): boolean {
-        const { confirming } = instance.record;
-
-        return (
-            confirming?.name === name &&
-            (!value.length ||
-                JSON.stringify(confirming.value) === JSON.stringify(value[0]))
-        );
-    }
-
-    confirm(
-        instance: TelegramSceneInstance,
-        name: string,
-        value: unknown,
-    ): boolean {
-        if (this.isConfirming(instance, name, value)) {
-            this.cancelConfirmation(instance);
-            return true;
-        }
-
-        instance.record.confirming = { name, value };
-        return false;
-    }
-
-    cancelConfirmation(instance: TelegramSceneInstance): void {
-        instance.record.confirming = undefined;
-    }
-
-    forgetInput(instance: TelegramSceneInstance): void {
-        const state = instance.record.buttons;
-
-        state.messages = state.messages.flatMap((message) => {
-            const buttons = Object.fromEntries(
-                Object.entries(message.buttons).filter(
-                    ([, button]) => button.kind !== "input",
-                ),
-            );
-
-            return Object.keys(buttons).length
-                ? [{ messageId: message.messageId, buttons }]
-                : [];
-        });
-    }
-
-    private unsentIn(
-        instance: TelegramSceneInstance,
-    ): Map<string, TelegramButton> {
-        let unsent = this.unsent.get(instance);
-
-        if (!unsent) {
-            unsent = new Map();
-            this.unsent.set(instance, unsent);
-        }
-
-        return unsent;
-    }
+        return Object.keys(buttons).length
+            ? [{ messageId: message.messageId, buttons }]
+            : [];
+    });
 }
 
 function storedButtonsOf(

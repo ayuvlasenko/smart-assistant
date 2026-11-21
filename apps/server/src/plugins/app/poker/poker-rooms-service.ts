@@ -186,7 +186,7 @@ export class PokerRoomsService {
     ): Promise<PokerRoomEntity | null> {
         return this.pokerRoomsRepository.findOne({
             $and: [
-                { _id: roomId },
+                { _id: roomId, "participants.userId": actor._id },
                 await this.access.accessibleBy(actor, "read", "PokerRoom"),
             ],
         });
@@ -331,10 +331,7 @@ export class PokerRoomsService {
 
             const now = new Date();
 
-            if (
-                readPokerRoomStatus(room, now) !== "open" ||
-                !findPokerParticipant(room, actor._id)
-            ) {
+            if (readPokerRoomStatus(room, now) !== "open") {
                 return null;
             }
 

@@ -70,6 +70,22 @@ export class UsersService {
         };
     }
 
+    async buildNewcomer(botId: string): Promise<UserEntity> {
+        const now = new Date();
+
+        return {
+            _id: new ObjectId(),
+            version: 0,
+            createdAt: now,
+            updatedAt: now,
+            botId,
+            telegramId: "0",
+            isBanned: await this.settingsService.read(autoBanSetting, botId),
+            grants: [],
+            languageCode: defaultLanguage,
+        };
+    }
+
     async grantAccess(userId: ObjectId, grants: string[]): Promise<UserEntity> {
         const user = await this.usersRepository.grantAccess(userId, grants);
 

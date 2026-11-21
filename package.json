@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/ayuvlasenko/smart-assistant#readme",
   "scripts": {
-    "lint": "pnpm lint:md && prettier --check \"scripts/**/*.js\" && eslint \"scripts/**/*.js\" && pnpm -r lint",
+    "lint": "pnpm lint:md && prettier --check \"scripts/**/*.js\" && eslint --max-warnings 0 \"scripts/**/*.js\" && pnpm -r lint",
     "format": "pnpm format:md && prettier --write \"scripts/**/*.js\" && eslint --fix \"scripts/**/*.js\" && pnpm -r format",
     "lint:md": "prettier --check \"**/*.md\"",
     "format:md": "prettier --write \"**/*.md\"",

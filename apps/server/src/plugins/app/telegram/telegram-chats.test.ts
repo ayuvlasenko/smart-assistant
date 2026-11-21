@@ -9,8 +9,11 @@ import {
     LoggerEntry,
 } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
+import { buildTwoBotsTestApp } from "../../../test/telegram-bot-service-helper.js";
 import {
+    buildTelegramCommandUpdate,
     buildTelegramPrivateChat,
+    buildTelegramTextMessageUpdate,
     testBotId,
     testTelegramBotId,
 } from "../../../test/telegram-fixtures.js";
@@ -272,6 +275,41 @@ void describe("TelegramChats", () => {
         assert.deepEqual(await readWatchers(bot, "board:b"), [ada.id]);
     });
 
+    void it("reads a waiting watcher after its running update, so a ban in that update counts", async (t) => {
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards);
+        const ada = buildTelegramPrivateChat({ id: 987654472 });
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+
+        await bot.sendText(ada, "/board");
+        boards.slowSwitch = { entered, gate: gate.promise, view: "a" };
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+
+        const press = bot.pressButton(ada, "Slow b");
+
+        await entered.promise;
+        bot.telegramChats.publish(testBotId, ["board:a"]);
+
+        try {
+            await setTimeout(200);
+            await testMongo.mongo
+                .collection("users")
+                .updateOne(
+                    { telegramId: String(ada.id) },
+                    { $set: { isBanned: true } },
+                );
+        } finally {
+            gate.resolve();
+            await press;
+        }
+
+        boards.a = 1;
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), []);
+    });
+
     void it("skips a watcher who fails the guard of the scene or is banned", async (t) => {
         const boards: TestBoards = { a: 0, b: 0 };
         const bot = await buildBoardBot(t, boards);
@@ -333,6 +371,82 @@ void describe("TelegramChats", () => {
             /^telegram_scene_events_total\{scene="board",event="delivery_failed"\} 1$/m,
         );
     });
+
+    void it("doesn't redraw a watcher of another bot with the same Telegram id", async (t) => {
+        const board = { count: 0 };
+        const boardScene = defineScene({
+            name: "board",
+            state: Type.Object({}),
+            key: () => "board",
+            ttl: 60_000,
+            watch: () => ["board:a"],
+            root: { name: "board", params: {} },
+            screens: {
+                board: {
+                    params: Type.Object({}),
+                    render: async () => [
+                        { kind: "text", text: `Board ${board.count}` },
+                    ],
+                },
+            },
+        });
+        const {
+            child,
+            childBotId,
+            metrics,
+            telegramApiService,
+            telegramBots,
+            telegramChats,
+            telegramUpdateHandler,
+        } = await buildTwoBotsTestApp({
+            testMongo,
+            t,
+            autoBan: false,
+            registerRoutes: (router, sceneEngine) => {
+                router.scene(boardScene);
+                router.command("board", (ctx) =>
+                    sceneEngine.start(ctx, boardScene, {}),
+                );
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654474 });
+
+        await telegramUpdateHandler.handle(
+            await telegramBots.get(childBotId),
+            buildTelegramCommandUpdate(chat, "/board"),
+        );
+        await telegramUpdateHandler.handle(
+            await telegramBots.root(),
+            buildTelegramTextMessageUpdate({
+                message: { chat, text: "hello" },
+            }),
+        );
+        board.count = 1;
+        telegramChats.publish(testBotId, ["board:a"]);
+        await telegramChats.idle();
+
+        assert.equal(telegramApiService.editMessageText.mock.callCount(), 0);
+        assert.equal(child.editMessageText.mock.callCount(), 0);
+
+        telegramChats.publish(childBotId, ["board:a"]);
+        await telegramChats.idle();
+
+        assert.deepEqual(
+            child.editMessageText.mock.calls.map(
+                (call) => call.arguments[0].text,
+            ),
+            ["Board 1"],
+        );
+        assert.equal(telegramApiService.editMessageText.mock.callCount(), 0);
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_delivery_recipients_sum\{kind="publish"\} 1$/m,
+        );
+        assert.match(
+            await metrics.metrics(),
+            /^telegram_delivery_recipients_count\{kind="publish"\} 2$/m,
+        );
+    });
 });
 
 interface TestBoards {
@@ -343,6 +457,7 @@ interface TestBoards {
     slowSwitch?: {
         entered: PromiseWithResolvers<void>;
         gate: Promise<void>;
+        view?: "a" | "b";
     };
 }
 
@@ -417,7 +532,7 @@ async function buildBoardBot(
                 handle: async (ctx, scene) => {
                     boards.slowSwitch?.entered.resolve();
                     await boards.slowSwitch?.gate;
-                    scene.state.view = "b";
+                    scene.state.view = boards.slowSwitch?.view ?? "b";
                 },
             },
         },

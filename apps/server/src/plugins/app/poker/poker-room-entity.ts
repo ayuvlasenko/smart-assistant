@@ -141,13 +141,20 @@ export function stepPokerAutoReveal(
     return { missingVotes: Math.max(active - votes, 0) };
 }
 
-export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
-    const target = readPokerAutoRevealTarget(room);
-    const voted = listActivePokerParticipants(room).filter(
+export function countPokerVotes(room: PokerRoomEntity): number {
+    return listActivePokerParticipants(room).filter(
         ({ userId }) => room.round.votes[userId.toHexString()],
     ).length;
+}
 
-    return room.round.status === "voting" && target !== null && voted >= target;
+export function isPokerAutoRevealDue(room: PokerRoomEntity): boolean {
+    const target = readPokerAutoRevealTarget(room);
+
+    return (
+        room.round.status === "voting" &&
+        target !== null &&
+        countPokerVotes(room) >= target
+    );
 }
 
 export function isPokerTitleTooLong(text: string, max: number): boolean {
@@ -160,9 +167,13 @@ export function readPokerTitle(
 ): string | undefined {
     const title = text?.trim();
 
-    if (title && isPokerTitleTooLong(title, max)) {
+    if (!title) {
+        return undefined;
+    }
+
+    if (isPokerTitleTooLong(title, max)) {
         throw new Error(`Poker title is longer than ${max} characters`);
     }
 
-    return title || undefined;
+    return title;
 }

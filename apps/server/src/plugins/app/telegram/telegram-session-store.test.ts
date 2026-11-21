@@ -1,8 +1,18 @@
 import { Type } from "@sinclair/typebox";
+import { Redis } from "ioredis";
 import assert from "node:assert/strict";
 import { describe, it, TestContext } from "node:test";
+import { setTimeout } from "node:timers/promises";
 import { buildCacheServiceTestApp } from "../../../test/cache-service-helper.js";
+import { useTestMongo } from "../../../test/mongo.js";
+import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildSessionKey,
+    buildTelegramSceneBot,
+} from "../../../test/telegram-scene-bot.js";
+import { buildProfileBot } from "../../../test/telegram-scene-fixtures.js";
 import { LockLostError } from "../lock-errors.js";
+import { text } from "./telegram-filters.js";
 import {
     TelegramSessionIndexMatch,
     TelegramSessionStore,
@@ -10,6 +20,8 @@ import {
 
 const noteSchema = Type.Object({ text: Type.String() });
 const botId = "42";
+
+const testMongo = useTestMongo();
 
 void describe("TelegramSessionStore", () => {
     void it("reads the fields written by an earlier session", async (t) => {
@@ -179,3 +191,50 @@ function sortMatches(
         left.entry.localeCompare(right.entry),
     );
 }
+
+void describe("TelegramSessionStore on updates", () => {
+    void it("keeps the session lock while a slow update runs", async (t) => {
+        const calls: string[] = [];
+        const slowStarted = Promise.withResolvers<void>();
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            sessionStoreOptions: { lockTtlMilliseconds: 150 },
+            registerRoutes: (router) => {
+                router.on(text("slow"), async () => {
+                    calls.push("slow:start");
+                    slowStarted.resolve();
+                    await setTimeout(500);
+                    calls.push("slow:end");
+                });
+                router.on(text("fast"), async () => {
+                    calls.push("fast");
+                });
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654390 });
+
+        await bot.allowUser(chat.id);
+        await Promise.all([
+            bot.sendText(chat, "slow"),
+            slowStarted.promise.then(() => bot.sendText(chat, "fast")),
+        ]);
+
+        assert.deepEqual(calls, ["slow:start", "slow:end", "fast"]);
+    });
+
+    void it("waits for a stale session lock until its TTL runs out", async (t) => {
+        const bot = await buildProfileBot(testMongo, t);
+        const chat = buildTelegramPrivateChat({ id: 987654368 });
+
+        await bot.allowUser(chat.id);
+        await bot.app
+            .getDecorator<Redis>("valkey")
+            .set(`${buildSessionKey(chat.id)}:lock`, "other", "PX", 300);
+        await bot.sendText(chat, "/profile");
+
+        assert.deepEqual(bot.readSentTexts(), [
+            "Your name? Send /cancel to stop.",
+        ]);
+    });
+});

@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { setTimeout } from "node:timers/promises";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -25,6 +26,7 @@ void describe("TelegramCommandMenus on start", () => {
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
+                autoBan: false,
                 registerRoutes: (router) => {
                     router.command("help", async () => undefined, {
                         description: (translate) =>
@@ -65,6 +67,7 @@ void describe("TelegramCommandMenus on start", () => {
             await buildTwoBotsTestApp({
                 testMongo,
                 t,
+                autoBan: false,
                 telegramApiService: failing,
                 logger: logs.logger,
             });
@@ -147,6 +150,82 @@ void describe("TelegramCommandMenus chat menus", () => {
         await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 10);
+    });
+
+    void it("sets the newer menus last when two refreshes of a bot overlap", async (t) => {
+        const {
+            botsRegistry,
+            botsRepository,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            plugins: [registerStartEntry("ping")],
+        });
+        const entered = Promise.withResolvers<void>();
+        const gate = Promise.withResolvers<void>();
+        const newerCalled = Promise.withResolvers<void>();
+
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => {
+                entered.resolve();
+                await gate.promise;
+
+                return { ok: true, result: true };
+            },
+            0,
+        );
+        telegramApiService.setMyCommands.mock.mockImplementationOnce(
+            async () => {
+                newerCalled.resolve();
+
+                return { ok: true, result: true };
+            },
+            1,
+        );
+
+        const older = telegramCommandMenus.refresh(await telegramBots.root());
+
+        await entered.promise;
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+
+        const newer = telegramCommandMenus.refresh(await telegramBots.root());
+
+        await Promise.race([newerCalled.promise, setTimeout(300)]);
+        gate.resolve();
+        await Promise.all([older, newer]);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls
+                .slice(-4)
+                .map((call) => call.arguments[0].commands[0]?.command),
+            ["start", "start", "start", "start"],
+        );
+    });
+
+    void it("builds the menus from the bot as it is once the refresh holds the lock", async (t) => {
+        const {
+            botsRegistry,
+            botsRepository,
+            telegramApiService,
+            telegramBots,
+            telegramCommandMenus,
+        } = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            plugins: [registerStartEntry("ping")],
+        });
+        const snapshot = await telegramBots.root();
+
+        await botsRepository.setStartModule(botsRegistry.rootId, "ping");
+        await telegramCommandMenus.refresh(snapshot);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments[0].commands[0]?.command,
+            ),
+            ["start", "start", "start", "start"],
+        );
     });
 
     void it("leaves a user whose commands are the menu of the bot without a chat menu", async (t) => {
@@ -350,6 +429,29 @@ void describe("TelegramCommandMenus chat menus", () => {
         ]);
     });
 
+    void it("removes the chat menu of a user who was banned", async (t) => {
+        const { telegramApiService, telegramCommandMenus } =
+            await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
+        const user = await insertUser({
+            telegramId: "987654612",
+            grants: ["vip"],
+        });
+
+        await telegramCommandMenus.syncUser(user);
+        await telegramCommandMenus.syncUser({
+            ...(await readUser(user)),
+            isBanned: true,
+        });
+
+        assert.deepEqual(
+            telegramApiService.deleteMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [[{ scope: { type: "chat", chat_id: 987654612 } }]],
+        );
+        assert.equal((await readUser(user)).commandMenu, undefined);
+    });
+
     void it("doesn't set chat commands for banned users", async (t) => {
         const { telegramApiService, telegramCommandMenus } =
             await buildTelegramBotServiceTestApp(buildMenuAppOptions(t));
@@ -454,6 +556,52 @@ void describe("TelegramCommandMenus chat menus", () => {
     });
 });
 
+void describe("TelegramCommandMenus of a bot that bans its newcomers", () => {
+    void it("shows newcomers no menu, because they can run no command", async (t) => {
+        const { telegramApiService, telegramBotService } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                autoBan: true,
+            });
+
+        await telegramBotService.setUpOnStart();
+
+        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 0);
+        assert.deepEqual(
+            telegramApiService.deleteMyCommands.mock.calls.map(
+                (call) => call.arguments[0].language_code,
+            ),
+            [undefined, "en", "uk", "ru"],
+        );
+    });
+
+    void it("gives a user with access a menu of the chat", async (t) => {
+        const { telegramApiService, telegramCommandMenus } =
+            await buildTelegramBotServiceTestApp({
+                ...buildMenuAppOptions(t),
+                autoBan: true,
+            });
+        const user = await insertUser({ telegramId: "987654613" });
+
+        await telegramCommandMenus.syncUser(user);
+
+        assert.deepEqual(
+            telegramApiService.setMyCommands.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [
+                [
+                    {
+                        commands: buildExpectedCommands("en"),
+                        scope: { type: "chat", chat_id: 987654613 },
+                    },
+                ],
+            ],
+        );
+        assert.notEqual((await readUser(user)).commandMenu, undefined);
+    });
+});
+
 async function insertUser(overrides: Partial<UserEntity>): Promise<UserEntity> {
     const user = buildUserEntity(overrides);
 
@@ -478,6 +626,7 @@ function buildMenuAppOptions(
     return {
         testMongo,
         t,
+        autoBan: false,
         registerRoutes: (router) => {
             router.command("help", async () => undefined, {
                 description: (translate) =>

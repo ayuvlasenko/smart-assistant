@@ -15,11 +15,9 @@ import {
 } from "../telegram/telegram-scene.js";
 import { textStep } from "../telegram/telegram-steps.js";
 import { PokerDeck, readPokerDeck } from "./poker-decks.js";
-import {
-    describePokerParticipants,
-    validatePokerTitle,
-} from "./poker-format.js";
+import { validatePokerTitle } from "./poker-format.js";
 import { renderPokerHistory } from "./poker-history-screen.js";
+import { describePokerParticipants } from "./poker-participant-labels.js";
 import {
     renderPokerParticipant,
     renderPokerParticipants,

@@ -4,15 +4,14 @@ import { describe, it } from "node:test";
 import { loggerRequestSerializers } from "../../../logger-request.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
+import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
 import {
-    buildTelegramApiServiceMock,
-    TelegramApiServiceMock,
-} from "../../../test/telegram-api-service-mock.js";
-import { buildTelegramBotServiceTestApp } from "../../../test/telegram-bot-service-helper.js";
+    buildTelegramBotServiceTestApp,
+    buildTwoBotsTestApp,
+} from "../../../test/telegram-bot-service-helper.js";
 import {
     buildTelegramCallbackQueryUpdate,
     buildTelegramChannelPostUpdate,
-    buildTelegramCommandUpdate,
     buildTelegramEditedMessageUpdate,
     buildTelegramPollUpdate,
     buildTelegramPrivateChat,
@@ -30,8 +29,6 @@ import {
 } from "../../../test/telegram-scene-bot.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
-import { Language } from "../i18n-service.js";
-import { UsersRepository } from "../users/users-repository.js";
 import { autoBanSetting } from "../users/users-service.js";
 import { telegramApiScope } from "./telegram-api-service.js";
 import { text } from "./telegram-filters.js";
@@ -42,6 +39,60 @@ import { defineScene } from "./telegram-scene.js";
 const testMongo = useTestMongo();
 
 void describe("TelegramUpdateHandler", () => {
+    void it("hands the logger of the update to every Bot API call of it, also outside the session lock", async (t) => {
+        const logs = createLoggerCollector();
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            logger: { ...logs.logger, serializers: loggerRequestSerializers },
+            registerRoutes: (router) => {
+                router.command("hi", async (ctx) => {
+                    await ctx.reply("hi");
+                });
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654475 });
+        const probe = (method: string) => () => {
+            telegramApiScope.getStore()?.log?.info({ method }, "Scope probe");
+        };
+
+        bot.telegramApiService.setMyCommands.mock.mockImplementation(
+            async () => {
+                probe("setMyCommands")();
+                return { ok: true, result: true };
+            },
+        );
+        bot.telegramApiService.answerCallbackQuery.mock.mockImplementation(
+            async () => {
+                probe("answerCallbackQuery")();
+                return { ok: true, result: true };
+            },
+        );
+        await bot.allowUser(chat.id);
+        await bot.sendText(chat, "/hi");
+        await bot.sendCallback(chat, "unknown");
+
+        const probes = logs
+            .readEntries()
+            .filter(({ msg }) => msg === "Scope probe");
+
+        assert.deepEqual(
+            probes.map(({ method, updateId, userId }) => ({
+                method,
+                hasUpdate: updateId !== undefined,
+                hasUser: userId !== undefined,
+            })),
+            [
+                { method: "setMyCommands", hasUpdate: true, hasUser: true },
+                {
+                    method: "answerCallbackQuery",
+                    hasUpdate: true,
+                    hasUser: true,
+                },
+            ],
+        );
+    });
+
     void it("creates a banned user from a new Telegram user update", async (t) => {
         const { telegramBots, telegramUpdateHandler, usersRepository } =
             await buildTelegramBotServiceTestApp({
@@ -102,30 +153,20 @@ void describe("TelegramUpdateHandler", () => {
 
     void it("logs the command that handled an update and the command whose guard refused one", async (t) => {
         const logs = createLoggerCollector();
-        const { telegramBots, telegramUpdateHandler, usersRepository } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                logger: logs.logger,
-                registerRoutes: (router) => {
-                    router.command("secret", async () => undefined, {
-                        guard: (user) => user.grants.includes("vip"),
-                    });
-                },
-            });
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            logger: logs.logger,
+            registerRoutes: (router) => {
+                router.command("secret", async () => undefined, {
+                    guard: (user) => user.grants.includes("vip"),
+                });
+            },
+        });
+        const chat = buildTelegramPrivateChat({ id: 987654343 });
 
-        await createUser(usersRepository, "987654343");
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654343, "/start"),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTelegramCommandUpdate(
-                buildTelegramPrivateChat({ id: 987654343 }),
-                "/secret",
-            ),
-        );
+        await bot.sendText(chat, "/start");
+        await bot.sendText(chat, "/secret");
 
         assert.deepEqual(
             logs
@@ -233,39 +274,17 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("sends pong for an existing unbanned Telegram user", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             registerRoutes: registerPing,
         });
 
-        await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testBotId,
-            telegramId: "987654323",
-            isBanned: false,
-            languageCode: "en",
-        });
+        await bot.sendText(buildTelegramPrivateChat({ id: 987654323 }), "ping");
 
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654323,
-                    }),
-                    text: "ping",
-                },
-            }),
-        );
-
-        assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
+        assert.equal(bot.telegramApiService.sendMessage.mock.callCount(), 1);
         assert.deepEqual(
-            telegramApiService.sendMessage.mock.calls[0]?.arguments,
+            bot.telegramApiService.sendMessage.mock.calls[0]?.arguments,
             [
                 {
                     chat_id: 987654323,
@@ -284,32 +303,18 @@ void describe("TelegramUpdateHandler", () => {
                 description: "Forbidden: bot was blocked by the user",
             },
         });
-        const {
-            metrics,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             telegramApiService,
             registerRoutes: registerPing,
         });
 
-        await createUser(usersRepository, "987654324");
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({ id: 987654324 }),
-                    text: "ping",
-                },
-            }),
-        );
+        await bot.sendText(buildTelegramPrivateChat({ id: 987654324 }), "ping");
 
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
         assert.match(
-            await metrics.metrics(),
+            await bot.metrics.metrics(),
             new RegExp(
                 `^telegram_updates_total\\{type="message",result="blocked",bot="${testTelegramBotId}"\\} 1$`,
                 "m",
@@ -318,13 +323,7 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("stops an update that holds the session lock too long", async (t) => {
-        const {
-            metrics,
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             sessionStoreOptions: { lockMaxHoldMilliseconds: 100 },
@@ -333,25 +332,11 @@ void describe("TelegramUpdateHandler", () => {
             },
         });
 
-        await createUser(usersRepository, "987654325");
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({ id: 987654325 }),
-                    text: "slow",
-                },
-            }),
-        );
+        await bot.sendText(buildTelegramPrivateChat({ id: 987654325 }), "slow");
 
-        assert.deepEqual(
-            telegramApiService.sendMessage.mock.calls.map(
-                (call) => call.arguments[0].text,
-            ),
-            [telegramLocales.en.error],
-        );
+        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.error]);
         assert.match(
-            await metrics.metrics(),
+            await bot.metrics.metrics(),
             new RegExp(
                 `^telegram_updates_total\\{type="message",result="lock_hold_timeout",bot="${testTelegramBotId}"\\} 1$`,
                 "m",
@@ -394,6 +379,45 @@ void describe("TelegramUpdateHandler", () => {
         assert.equal(telegramApiService.sendMessage.mock.callCount(), 1);
     });
 
+    void it("handles the same update id of two bots in each bot", async (t) => {
+        const {
+            child,
+            childBotId,
+            telegramApiService,
+            telegramBots,
+            telegramUpdateHandler,
+        } = await buildTwoBotsTestApp({
+            testMongo,
+            t,
+            autoBan: false,
+            registerRoutes: registerPing,
+        });
+        const update = buildTelegramTextMessageUpdate({
+            update_id: 42,
+            message: {
+                chat: buildTelegramPrivateChat({ id: 987654344 }),
+                text: "ping",
+            },
+        });
+
+        await telegramUpdateHandler.handle(await telegramBots.root(), update);
+        await telegramUpdateHandler.handle(
+            await telegramBots.get(childBotId),
+            update,
+        );
+
+        assert.deepEqual(
+            telegramApiService.sendMessage.mock.calls.map(
+                (call) => call.arguments,
+            ),
+            [[{ chat_id: 987654344, text: "pong" }]],
+        );
+        assert.deepEqual(
+            child.sendMessage.mock.calls.map((call) => call.arguments),
+            [[{ chat_id: 987654344, text: "pong" }]],
+        );
+    });
+
     void it("doesn't send pong for an existing banned Telegram user", async (t) => {
         const {
             telegramApiService,
@@ -429,60 +453,30 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("stays silent instead of pong on other text messages in a private chat", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             registerRoutes: registerPing,
         });
 
-        await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testBotId,
-            telegramId: "987654325",
-            isBanned: false,
-            languageCode: "en",
-        });
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildTelegramTextMessageUpdate({
-                message: {
-                    chat: buildTelegramPrivateChat({
-                        id: 987654325,
-                    }),
-                    text: "hello",
-                },
-            }),
+        await bot.sendText(
+            buildTelegramPrivateChat({ id: 987654325 }),
+            "hello",
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), []);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("doesn't send pong when ping is marked as a command for an existing unbanned user", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             registerRoutes: registerPing,
         });
 
-        await usersRepository.findOneByTelegramIdOrCreate({
-            botId: testBotId,
-            telegramId: "987654326",
-            isBanned: false,
-            languageCode: "en",
-        });
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.allowUser(987654326);
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({
@@ -500,7 +494,7 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), []);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("skips updates without a Telegram user", async (t) => {
@@ -611,19 +605,18 @@ void describe("TelegramUpdateHandler", () => {
 
     void it("ignores updates from groups and channels", async (t) => {
         const calls: string[] = [];
-        const { telegramApiService, telegramBots, telegramUpdateHandler } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                registerRoutes: (router) => {
-                    router.command("help", async () => {
-                        calls.push("help");
-                    });
-                },
-            });
+        const bot = await buildTelegramSceneBot({
+            testMongo,
+            t,
+            registerRoutes: (router) => {
+                router.command("help", async () => {
+                    calls.push("help");
+                });
+            },
+        });
 
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 update_id: 2,
                 message: {
@@ -634,13 +627,13 @@ void describe("TelegramUpdateHandler", () => {
                 },
             }),
         );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramChannelPostUpdate({ text: "/help" }),
         );
 
         assert.deepEqual(calls, []);
-        assert.deepEqual(readSentTexts(telegramApiService), []);
+        assert.deepEqual(bot.readSentTexts(), []);
         assert.equal(
             await testMongo.mongo.collection("users").countDocuments(),
             0,
@@ -648,36 +641,25 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("stays silent on unhandled updates that are not new messages", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
         });
 
-        await createUser(usersRepository, "987654331");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.allowUser(987654331);
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramEditedMessageUpdate({
                 chat: buildTelegramPrivateChat({ id: 987654331 }),
                 text: "hello",
             }),
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), []);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("replies with an error in the user's language when a handler fails", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
             registerRoutes: (router) => {
@@ -687,10 +669,14 @@ void describe("TelegramUpdateHandler", () => {
             },
         });
 
-        await createUser(usersRepository, "987654332", "uk");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.usersRepository.findOneByTelegramIdOrCreate({
+            botId: testBotId,
+            telegramId: "987654332",
+            isBanned: false,
+            languageCode: "uk",
+        });
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654332 }),
@@ -703,9 +689,7 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.uk.error,
-        ]);
+        assert.deepEqual(bot.readSentTexts(), [telegramLocales.uk.error]);
     });
 
     void it("stores the Telegram language of a new user", async (t) => {
@@ -767,20 +751,14 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("follows a language change in Telegram", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
         });
 
-        await createUser(usersRepository, "987654335", "en");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
+        await bot.allowUser(987654335);
+        await bot.telegramUpdateHandler.handle(
+            await bot.telegramBots.root(),
             buildTelegramTextMessageUpdate({
                 message: {
                     chat: buildTelegramPrivateChat({ id: 987654335 }),
@@ -793,13 +771,13 @@ void describe("TelegramUpdateHandler", () => {
             }),
         );
 
-        const user = await usersRepository.findOneByTelegramId(
+        const user = await bot.usersRepository.findOneByTelegramId(
             testBotId,
             "987654335",
         );
 
         assert.equal(user?.languageCode, "ru");
-        assert.deepEqual(readSentTexts(telegramApiService), []);
+        assert.deepEqual(bot.readSentTexts(), []);
     });
 
     void it("keeps the stored language when Telegram sends no language", async (t) => {
@@ -809,8 +787,12 @@ void describe("TelegramUpdateHandler", () => {
                 t,
             });
 
-        await createUser(usersRepository, "987654336", "uk");
-
+        await usersRepository.findOneByTelegramIdOrCreate({
+            botId: testBotId,
+            telegramId: "987654336",
+            isBanned: false,
+            languageCode: "uk",
+        });
         await telegramUpdateHandler.handle(
             await telegramBots.root(),
             buildTelegramTextMessageUpdate({
@@ -890,240 +872,19 @@ void describe("TelegramUpdateHandler", () => {
     });
 
     void it("greets a user with access on /start", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
+        const bot = await buildTelegramSceneBot({
             testMongo,
             t,
         });
 
-        await createUser(usersRepository, "987654337");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654337, "/start"),
+        await bot.sendText(
+            buildTelegramPrivateChat({ id: 987654337 }),
+            "/start",
         );
 
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            telegramLocales.en.welcome,
-        ]);
+        assert.deepEqual(bot.readSentTexts(), [telegramLocales.en.welcome]);
     });
 });
-
-void describe("TelegramUpdateHandler deep links", () => {
-    void it("routes /start with a named payload of a banned user to a deep link that allows banned users", async (t) => {
-        const values: string[] = [];
-        const { telegramApiService, telegramBots, telegramUpdateHandler } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                registerRoutes: (router) => {
-                    router.deepLink(
-                        "invite",
-                        async (ctx, value) => {
-                            values.push(value);
-                            await ctx.reply("welcome");
-                        },
-                        { allowBanned: true },
-                    );
-                },
-            });
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654338, "/start invite_secret_A-1"),
-        );
-
-        assert.deepEqual(values, ["secret_A-1"]);
-        assert.deepEqual(readSentTexts(telegramApiService), ["welcome"]);
-    });
-
-    void it("keeps a banned user silent for a deep link without allowBanned or with an unknown name", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
-            testMongo,
-            t,
-            registerRoutes: (router) => {
-                router.deepLink("poker", async (ctx) => {
-                    await ctx.reply("poker");
-                });
-                router.deepLink(
-                    "invite",
-                    async (ctx) => {
-                        await ctx.reply("welcome");
-                    },
-                    { allowBanned: true },
-                );
-            },
-        });
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654339, "/start poker_42", 1),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654339, "/start unknown_42", 2),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654339, "/start invite", 3),
-        );
-
-        const user = await usersRepository.findOneByTelegramId(
-            testBotId,
-            "987654339",
-        );
-
-        assert.equal(user?.isBanned, true);
-        assert.deepEqual(readSentTexts(telegramApiService), []);
-    });
-
-    void it("keeps a banned user silent on /start without a payload", async (t) => {
-        const { telegramApiService, telegramBots, telegramUpdateHandler } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                registerRoutes: (router) => {
-                    router.deepLink(
-                        "invite",
-                        async (ctx) => {
-                            await ctx.reply("welcome");
-                        },
-                        { allowBanned: true },
-                    );
-                },
-            });
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654340, "/start"),
-        );
-
-        assert.deepEqual(readSentTexts(telegramApiService), []);
-    });
-
-    void it("routes each name to its own deep link and greets on an unknown name", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
-            testMongo,
-            t,
-            registerRoutes: (router) => {
-                router.deepLink("invite", async (ctx, value) => {
-                    await ctx.reply(`invite ${value}`);
-                });
-                router.deepLink("poker", async (ctx, value) => {
-                    await ctx.reply(`poker ${value}`);
-                });
-            },
-        });
-
-        await createUser(usersRepository, "987654341");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654341, "/start invite_abc", 1),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654341, "/start poker_42", 2),
-        );
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654341, "/start other_1", 3),
-        );
-
-        assert.deepEqual(readSentTexts(telegramApiService), [
-            "invite abc",
-            "poker 42",
-            telegramLocales.en.welcome,
-        ]);
-    });
-
-    void it("stays silent on a deep link whose guard refuses the user instead of the /start answer", async (t) => {
-        const {
-            telegramApiService,
-            telegramBots,
-            telegramUpdateHandler,
-            usersRepository,
-        } = await buildTelegramBotServiceTestApp({
-            testMongo,
-            t,
-            registerRoutes: (router) => {
-                router.deepLink(
-                    "vip",
-                    async (ctx, value) => {
-                        await ctx.reply(`vip ${value}`);
-                    },
-                    { guard: (user) => user.grants.includes("vip") },
-                );
-            },
-        });
-
-        await createUser(usersRepository, "987654342");
-
-        await telegramUpdateHandler.handle(
-            await telegramBots.root(),
-            buildStartUpdate(987654342, "/start vip_1", 1),
-        );
-
-        assert.deepEqual(readSentTexts(telegramApiService), []);
-    });
-
-    void it("refuses a deep link name twice or with characters outside a-z and 0-9", async (t) => {
-        await assert.rejects(
-            buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                registerRoutes: (router) => {
-                    router.deepLink("invite", async () => undefined);
-                    router.deepLink("invite", async () => undefined);
-                },
-            }),
-            /Telegram deep link "invite" is already registered/,
-        );
-        await assert.rejects(
-            buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                registerRoutes: (router) => {
-                    router.deepLink("join_poker", async () => undefined);
-                },
-            }),
-            /Telegram deep link name "join_poker" must match/,
-        );
-    });
-});
-
-function readSentTexts(telegramApiService: TelegramApiServiceMock): string[] {
-    return telegramApiService.sendMessage.mock.calls.map(
-        (call) => call.arguments[0].text,
-    );
-}
-
-async function createUser(
-    usersRepository: UsersRepository,
-    telegramId: string,
-    languageCode: Language = "en",
-): Promise<void> {
-    await usersRepository.findOneByTelegramIdOrCreate({
-        botId: testBotId,
-        telegramId,
-        isBanned: false,
-        languageCode,
-    });
-}
 
 async function waitForScopeAbort(): Promise<void> {
     const signal = telegramApiScope.getStore()?.signal;
@@ -1140,16 +901,4 @@ function registerPing(router: TelegramRouter): void {
     router.on(text("ping"), async (ctx) => {
         await ctx.reply("pong");
     });
-}
-
-function buildStartUpdate(
-    telegramId: number,
-    messageText: string,
-    updateId?: number,
-) {
-    return buildTelegramCommandUpdate(
-        buildTelegramPrivateChat({ id: telegramId }),
-        messageText,
-        { update_id: updateId },
-    );
 }

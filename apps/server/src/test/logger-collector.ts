@@ -2,6 +2,7 @@ import { Writable } from "node:stream";
 
 export interface LoggerEntry {
     botId?: string;
+    botTelegramId?: string;
     failed?: number;
     handler?: string;
     level?: number | string;
@@ -14,6 +15,7 @@ export interface LoggerEntry {
     reqId?: string;
     responseTime?: number;
     result?: string;
+    revoked?: number;
     route?: string;
     statusCode?: number;
     updateId?: number;

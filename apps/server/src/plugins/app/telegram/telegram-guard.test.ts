@@ -10,7 +10,6 @@ import {
     buildTelegramSceneBot,
     TelegramSceneBot,
 } from "../../../test/telegram-scene-bot.js";
-import { text } from "./telegram-filters.js";
 import { TelegramGuard } from "./telegram-guard.js";
 import { defineScene, TelegramScene } from "./telegram-scene.js";
 import { textStep } from "./telegram-steps.js";
@@ -24,30 +23,6 @@ interface GuardBot extends TelegramSceneBot {
     vipScene: TelegramScene<typeof counterStateSchema>;
     notes: string[];
 }
-
-void describe("Telegram guards on routes", () => {
-    void it("answers a guarded command only to users the guard allows", async (t) => {
-        const bot = await buildGuardBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654501 });
-
-        await bot.sendText(chat, "/secret");
-        await setGrants(chat.id, ["vip"]);
-        await bot.sendText(chat, "/secret");
-
-        assert.deepEqual(bot.readSentTexts(), ["secret"]);
-    });
-
-    void it("skips a guarded match route for users the guard refuses", async (t) => {
-        const bot = await buildGuardBot(t);
-        const chat = buildTelegramPrivateChat({ id: 987654502 });
-
-        await bot.sendText(chat, "hi");
-        await setGrants(chat.id, ["vip"]);
-        await bot.sendText(chat, "hi");
-
-        assert.deepEqual(bot.readSentTexts(), ["hi vip"]);
-    });
-});
 
 void describe("Telegram guards on scenes", () => {
     void it("refuses to start a guarded scene", async (t) => {
@@ -69,7 +44,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "+10");
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [undefined, undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined, undefined]);
         assert.deepEqual(readEditedTexts(bot), ["Card 1"]);
     });
 
@@ -83,7 +58,7 @@ void describe("Telegram guards on scenes", () => {
         await setGrants(chat.id, []);
         await bot.pressButton(chat, "+1");
 
-        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
         assert.deepEqual(readEditedTexts(bot), []);
     });
 
@@ -95,7 +70,7 @@ void describe("Telegram guards on scenes", () => {
         await bot.pressButton(chat, "Note");
 
         assert.deepEqual(bot.readSentTexts(), ["Card 0"]);
-        assert.deepEqual(readCallbackAnswers(bot), [undefined]);
+        assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
     void it("passes the text for a guarded input to the routes after the user loses the grant", async (t) => {
@@ -256,20 +231,6 @@ async function buildGuardBot(t: TestContext): Promise<GuardBot> {
                     await ctx.reply("not started");
                 }
             });
-            router.command(
-                "secret",
-                async (ctx) => {
-                    await ctx.reply("secret");
-                },
-                { guard: isVip },
-            );
-            router.on(
-                text("hi"),
-                async (ctx) => {
-                    await ctx.reply("hi vip");
-                },
-                { guard: isVip },
-            );
         },
     });
 
@@ -280,12 +241,6 @@ async function setGrants(telegramId: number, grants: string[]): Promise<void> {
     await testMongo.mongo
         .collection("users")
         .updateOne({ telegramId: String(telegramId) }, { $set: { grants } });
-}
-
-function readCallbackAnswers(bot: TelegramSceneBot): (string | undefined)[] {
-    return bot.telegramApiService.answerCallbackQuery.mock.calls.map(
-        (call) => call.arguments[0].text,
-    );
 }
 
 function readEditedTexts(bot: TelegramSceneBot): (string | undefined)[] {

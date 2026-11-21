@@ -61,6 +61,47 @@ void describe("TelegramApiService", () => {
         );
     });
 
+    void it("logs through the logger of its scope, and with the Telegram id of the bot outside a scope", async (t) => {
+        const logs = createLoggerCollector();
+        const forbidden = {
+            ok: false,
+            error_code: 403,
+            description: "Forbidden",
+        };
+        const { telegramApiService } = await buildApiService(
+            t,
+            [forbidden, forbidden],
+            logs,
+        );
+        const updateLog = Fastify({ logger: logs.logger }).log.child({
+            updateId: 7,
+        });
+
+        await telegramApiScope.run(
+            {
+                signal: AbortSignal.timeout(1_000),
+                priority: "interactive",
+                log: updateLog,
+            },
+            () => telegramApiService.sendMessage({ chat_id: 1, text: "hi" }),
+        );
+        await telegramApiService.sendMessage({ chat_id: 1, text: "hi" });
+
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Telegram API request failed")
+                .map(({ updateId, botTelegramId }) => ({
+                    updateId,
+                    botTelegramId,
+                })),
+            [
+                { updateId: 7, botTelegramId: undefined },
+                { updateId: undefined, botTelegramId: "123" },
+            ],
+        );
+    });
+
     void it("aborts a request that takes longer than the timeout and does not repeat it", async (t) => {
         mockFetchUntilAbort(t);
         const { rateLimiter } = await buildCacheServiceTestApp({ t });

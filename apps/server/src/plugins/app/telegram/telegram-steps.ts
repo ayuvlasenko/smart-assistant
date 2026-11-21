@@ -2,11 +2,11 @@ import { InlineKeyboardButton, Update } from "@grammyjs/types";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { Translate } from "../i18n-service.js";
-import { Page } from "../page.js";
+import { Page, PageRequest } from "../page.js";
 import { TelegramContext } from "./telegram-context.js";
 import { extractTelegramCommand } from "./telegram-extractors.js";
 import { anyOf, callbackQuery, command, message } from "./telegram-filters.js";
-import { pageButtons } from "./telegram-pagination.js";
+import { loadPage, pageButtons } from "./telegram-pagination.js";
 import {
     addDays,
     formatDate,
@@ -62,7 +62,7 @@ export interface TelegramChoiceStepOptions<
     load: (
         ctx: TelegramContext,
         input: TelegramInputControl<TPayload>,
-        page: { offset: number; limit: number },
+        request: PageRequest,
     ) => Promise<Page<TelegramChoice>>;
     pageSize?: number;
 }
@@ -202,15 +202,11 @@ export function choiceStep<TPayload>(
         input: TelegramInputControl<TPayload>,
         pageIndex: number,
     ): Promise<InlineKeyboardButton[][]> => {
-        const page = await options.load(ctx, input, {
-            offset: pageIndex * pageSize,
-            limit: pageSize,
-        });
-        const navigation = pageButtons(
-            pageIndex,
-            page.total,
-            pageSize,
-            (text, target) => input.button(text, { page: target }),
+        const page = await loadPage(pageIndex, pageSize, (request) =>
+            options.load(ctx, input, request),
+        );
+        const navigation = pageButtons(page, (text, target) =>
+            input.button(text, { page: target }),
         );
 
         return [

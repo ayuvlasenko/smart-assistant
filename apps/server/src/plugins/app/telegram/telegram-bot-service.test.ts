@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { FastifyInstance } from "fastify";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
@@ -18,9 +18,6 @@ import { resolveTelegramWebhookUrl } from "./telegram-bot-service.js";
 import { telegramWebhookSecret } from "./telegram-webhook-secret.js";
 
 const testMongo = useTestMongo();
-
-const webhookClaimSchema = Type.String();
-const webhookClaimKey = `telegram:${testTelegramBotId}:webhook:set`;
 
 void describe("TelegramBotService", () => {
     void it("builds a resource-specific webhook URL of the bot when no explicit override is set", () => {
@@ -55,14 +52,20 @@ void describe("TelegramBotService", () => {
         );
     });
 
-    void it("sets the webhook and stores the one-hour guard when the cache key is missing", async (t) => {
-        const { app, cache, telegramApiService, telegramBotService } =
+    void it("sets the webhook on start once per hour across the pods of a resource", async (t) => {
+        const { app, telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
             });
+        const otherPod = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: { RESOURCE_NAME: resourceNameOf(app) },
+        });
 
         await telegramBotService.setUpOnStart();
+        await otherPod.telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
         assert.deepEqual(
@@ -82,28 +85,71 @@ void describe("TelegramBotService", () => {
             ],
         );
         assert.equal(
-            typeof (await cache.get(webhookClaimKey, webhookClaimSchema)),
-            "string",
+            otherPod.telegramApiService.setWebhook.mock.callCount(),
+            0,
         );
     });
 
-    void it("skips setting the webhook when the one-hour guard already exists", async (t) => {
-        const { cache, telegramApiService, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-            });
-
-        await cache.set(webhookClaimKey, "other-pod", {
-            ttlMilliseconds: 3_600_000,
+    void it("sets the webhook on start again when its secret or URL changed within the hour", async (t) => {
+        const first = await buildTelegramBotServiceTestApp({ testMongo, t });
+        const resourceName = resourceNameOf(first.app);
+        const newSecret = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: {
+                RESOURCE_NAME: resourceName,
+                TELEGRAM_WEBHOOK_SECRET_TOKEN: "rotated_secret",
+            },
+        });
+        const newUrl = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: {
+                RESOURCE_NAME: resourceName,
+                TELEGRAM_WEBHOOK_URL:
+                    "https://moved.example/api/telegram/webhook",
+            },
         });
 
-        await telegramBotService.setUpOnStart();
+        await first.telegramBotService.setUpOnStart();
+        await newSecret.telegramBotService.setUpOnStart();
+        await newUrl.telegramBotService.setUpOnStart();
 
-        assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
+        assert.equal(
+            newSecret.telegramApiService.setWebhook.mock.callCount(),
+            1,
+        );
+        assert.equal(newUrl.telegramApiService.setWebhook.mock.callCount(), 1);
     });
 
-    void it("removes the guard and logs the bot when Telegram rejects webhook setup", async (t) => {
+    void it("sets the webhook on start again after a rollback to a config of the same hour", async (t) => {
+        const first = await buildTelegramBotServiceTestApp({ testMongo, t });
+        const resourceName = resourceNameOf(first.app);
+        const rotated = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: {
+                RESOURCE_NAME: resourceName,
+                TELEGRAM_WEBHOOK_SECRET_TOKEN: "rotated_secret",
+            },
+        });
+        const rolledBack = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: { RESOURCE_NAME: resourceName },
+        });
+
+        await first.telegramBotService.setUpOnStart();
+        await rotated.telegramBotService.setUpOnStart();
+        await rolledBack.telegramBotService.setUpOnStart();
+
+        assert.equal(
+            rolledBack.telegramApiService.setWebhook.mock.callCount(),
+            1,
+        );
+    });
+
+    void it("logs the bot and tries again on the next start when Telegram rejects the webhook", async (t) => {
         const logs = createLoggerCollector();
         const telegramApiService = buildTelegramApiServiceMock({
             t,
@@ -113,20 +159,17 @@ void describe("TelegramBotService", () => {
                 description: "bad webhook",
             },
         });
-        const { cache, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                telegramApiService,
-                logger: logs.logger,
-            });
+        const { telegramBotService } = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            telegramApiService,
+            logger: logs.logger,
+        });
 
         await telegramBotService.setUpOnStart();
+        await telegramBotService.setUpOnStart();
 
-        assert.equal(
-            await cache.get(webhookClaimKey, webhookClaimSchema),
-            undefined,
-        );
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
         assert.ok(
             logs
                 .readEntries()
@@ -139,24 +182,21 @@ void describe("TelegramBotService", () => {
         );
     });
 
-    void it("removes the guard when the webhook request fails", async (t) => {
+    void it("tries again on the next start when the webhook request fails", async (t) => {
         const telegramApiService = buildTelegramApiServiceMock({ t });
         telegramApiService.setWebhook.mock.mockImplementationOnce(async () => {
             throw new Error("network failure");
         });
-        const { cache, telegramBotService } =
-            await buildTelegramBotServiceTestApp({
-                testMongo,
-                t,
-                telegramApiService,
-            });
+        const { telegramBotService } = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            telegramApiService,
+        });
 
         await telegramBotService.setUpOnStart();
+        await telegramBotService.setUpOnStart();
 
-        assert.equal(
-            await cache.get(webhookClaimKey, webhookClaimSchema),
-            undefined,
-        );
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
     });
 
     void it("sets the webhooks of the other bots when one bot fails", async (t) => {
@@ -232,7 +272,7 @@ void describe("TelegramBotService", () => {
     });
 
     void it("doesn't set the webhook on start in preview", async (t) => {
-        const { cache, telegramApiService, telegramBotService } =
+        const { telegramApiService, telegramBotService } =
             await buildTelegramBotServiceTestApp({
                 testMongo,
                 t,
@@ -242,27 +282,16 @@ void describe("TelegramBotService", () => {
         await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 0);
-        assert.equal(
-            await cache.get(webhookClaimKey, webhookClaimSchema),
-            undefined,
-        );
     });
 
-    void it("sets the webhook on every direct call without touching the guard", async (t) => {
-        const {
-            app,
-            cache,
-            telegramApiService,
-            telegramBotService,
-            telegramBots,
-        } = await buildTelegramBotServiceTestApp({
-            testMongo,
-            t,
-        });
+    void it("sets the webhook on every direct call, also within the hour of a start", async (t) => {
+        const { app, telegramApiService, telegramBotService, telegramBots } =
+            await buildTelegramBotServiceTestApp({
+                testMongo,
+                t,
+            });
 
-        await cache.set(webhookClaimKey, "other-pod", {
-            ttlMilliseconds: 3_600_000,
-        });
+        await telegramBotService.setUpOnStart();
 
         const firstUrl = await telegramBotService.setWebhook(
             await telegramBots.root(),
@@ -279,11 +308,7 @@ void describe("TelegramBotService", () => {
             ),
         );
         assert.equal(secondUrl, firstUrl);
-        assert.equal(telegramApiService.setWebhook.mock.callCount(), 2);
-        assert.equal(
-            await cache.get(webhookClaimKey, webhookClaimSchema),
-            "other-pod",
-        );
+        assert.equal(telegramApiService.setWebhook.mock.callCount(), 3);
     });
 });
 
@@ -308,7 +333,7 @@ void describe("telegram plugin on listen", () => {
 
         assert.equal(telegramApiService.getMe.mock.callCount(), 0);
         assert.equal(telegramApiService.setWebhook.mock.callCount(), 1);
-        assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
+        assert.equal(telegramApiService.deleteMyCommands.mock.callCount(), 4);
     });
 
     void it("reports the skipped webhook on preview", async (t) => {
@@ -329,3 +354,7 @@ void describe("telegram plugin on listen", () => {
         assert.equal(skipEntry.module, "telegram");
     });
 });
+
+function resourceNameOf(app: FastifyInstance): string {
+    return app.getDecorator<Env>("config").RESOURCE_NAME;
+}

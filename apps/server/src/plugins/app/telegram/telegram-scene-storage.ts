@@ -3,13 +3,15 @@ import { Value } from "@sinclair/typebox/value";
 import { FastifyBaseLogger } from "fastify";
 import { createHash, randomBytes } from "node:crypto";
 import {
+    TelegramButton,
     telegramButtonsStateSchema,
     telegramConfirmationSchema,
 } from "./telegram-scene-buttons.js";
 import { telegramInputStateSchema } from "./telegram-scene-inputs.js";
 import { telegramSceneMessagesStateSchema } from "./telegram-scene-messages.js";
 import {
-    TelegramSceneScreens,
+    isValidSceneScreen,
+    openRootScreen,
     telegramScreenSchema,
 } from "./telegram-scene-screens.js";
 import { TelegramScene } from "./telegram-scene.js";
@@ -30,6 +32,8 @@ const sceneRecordSchema = Type.Object({
 
 export type TelegramSceneRecord = Static<typeof sceneRecordSchema>;
 
+export type TelegramSceneLookup = (name: string) => TelegramScene | undefined;
+
 export interface TelegramSceneRef {
     sceneName: string;
     sceneId: string;
@@ -39,6 +43,7 @@ export interface TelegramSceneInstance {
     readonly id: string;
     readonly scene: TelegramScene;
     readonly record: TelegramSceneRecord;
+    readonly unsentButtons: Map<string, TelegramButton>;
 }
 
 const focusField = "focus";
@@ -53,19 +58,16 @@ export class TelegramSceneStorage {
     private focus: { id: string | undefined } | undefined;
     private blocker: { id: string | undefined } | undefined;
     private readonly session: TelegramSession;
-    private readonly findScene: (name: string) => TelegramScene | undefined;
-    private readonly screens: TelegramSceneScreens;
+    private readonly findScene: TelegramSceneLookup;
     private readonly log: FastifyBaseLogger;
 
     constructor(
         session: TelegramSession,
-        findScene: (name: string) => TelegramScene | undefined,
-        screens: TelegramSceneScreens,
+        findScene: TelegramSceneLookup,
         log: FastifyBaseLogger,
     ) {
         this.session = session;
         this.findScene = findScene;
-        this.screens = screens;
         this.log = log;
     }
 
@@ -114,9 +116,9 @@ export class TelegramSceneStorage {
             messages: [],
             topics: [],
         };
-        const instance = { id, scene, record };
+        const instance = { id, scene, record, unsentButtons: new Map() };
 
-        this.screens.start(instance);
+        openRootScreen(instance);
         this.instances.set(id, instance);
 
         return instance;
@@ -286,9 +288,9 @@ export class TelegramSceneStorage {
         if (
             scene &&
             Value.Check(scene.state, record.state) &&
-            this.screens.isValid(scene, record.screen, record.stack)
+            isValidSceneScreen(scene, record.screen, record.stack)
         ) {
-            return { id, scene, record };
+            return { id, scene, record, unsentButtons: new Map() };
         }
 
         this.log.warn(

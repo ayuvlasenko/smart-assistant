@@ -13,7 +13,7 @@ import { InvitesService } from "../invites/invites-service.js";
 import { TelegramStartEntries } from "../telegram/telegram-start-entries.js";
 import { UserEntity } from "../users/user-entity.js";
 import { BotEntity, BotsSubjects } from "./bot-entity.js";
-import { BotsConnector } from "./bots-connector.js";
+import { BotProfile, BotsConnector } from "./bots-connector.js";
 import { BotTelegramIdTakenError } from "./bots-errors.js";
 import { BotsEvents } from "./bots-events.js";
 import { botsModule, BotsRegistry } from "./bots-registry.js";
@@ -35,6 +35,11 @@ export type BotMoveResult =
     | { status: "moved"; bot: BotEntity }
     | { status: "sameBot" }
     | { status: "alreadyAdded"; botId: string }
+    | { status: "invalidToken" }
+    | { status: "keyMissing" };
+
+type BotTokenCheck =
+    | { status: "valid"; profile: BotProfile }
     | { status: "invalidToken" }
     | { status: "keyMissing" };
 
@@ -115,16 +120,13 @@ export class BotsService {
     async add(actor: UserEntity, token: string): Promise<BotAddResult> {
         await this.access.assert(actor, "create", "Bot");
 
-        if (!this.botsRegistry.canStoreTokens) {
-            return { status: "keyMissing" };
+        const check = await this.checkToken(token);
+
+        if (check.status !== "valid") {
+            return check;
         }
 
-        const profile = await this.botsConnector.readProfile(token);
-
-        if (!profile) {
-            return { status: "invalidToken" };
-        }
-
+        const { profile } = check;
         const bot = await this.botsRepository.createIfMissing({
             telegramId: profile.telegramId,
             username: profile.username,
@@ -133,11 +135,16 @@ export class BotsService {
         });
 
         if (!bot) {
-            return this.alreadyAdded(profile.telegramId);
+            return this.alreadyAdded(
+                await this.botsRepository.findOneByTelegramId(
+                    profile.telegramId,
+                ),
+            );
         }
         await this.botsConnector.connect(bot._id);
 
-        const ownerInvite = await this.invitesService.createOwnerInvite(
+        const ownerInvite = await this.invitesService.replaceOwnerInvite(
+            actor,
             bot._id,
         );
 
@@ -147,7 +154,7 @@ export class BotsService {
         return { status: "added", bot, ownerInvite };
     }
 
-    async createOwnerInvite(
+    async replaceOwnerInvite(
         actor: UserEntity,
         botId: string,
     ): Promise<InviteEntity | null> {
@@ -157,7 +164,7 @@ export class BotsService {
             return null;
         }
 
-        return this.invitesService.createOwnerInvite(botId);
+        return this.invitesService.replaceOwnerInvite(actor, botId);
     }
 
     async toggleModule(
@@ -197,6 +204,7 @@ export class BotsService {
 
         if (
             !current ||
+            module === (current.startModule ?? null) ||
             (module !== null &&
                 !this.listStartModules(current).some(
                     ({ name }) => name === module,
@@ -232,16 +240,13 @@ export class BotsService {
         await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
-        if (!this.botsRegistry.canStoreTokens) {
-            return { status: "keyMissing" };
+        const check = await this.checkToken(token);
+
+        if (check.status !== "valid") {
+            return check;
         }
 
-        const profile = await this.botsConnector.readProfile(token);
-
-        if (!profile) {
-            return { status: "invalidToken" };
-        }
-
+        const { profile } = check;
         const bot = await this.botsRepository.replaceToken(
             botId,
             profile.telegramId,
@@ -267,28 +272,30 @@ export class BotsService {
         await this.access.assert(actor, "update", "Bot");
         this.assertNotRoot(botId);
 
-        if (!this.botsRegistry.canStoreTokens) {
-            return { status: "keyMissing" };
-        }
-
         const current = await this.botsRepository.findOneById(botId);
 
         if (!current) {
             throw new Error(`Bot ${botId} is not stored`);
         }
 
-        const profile = await this.botsConnector.readProfile(token);
+        const check = await this.checkToken(token);
 
-        if (!profile) {
-            return { status: "invalidToken" };
+        if (check.status !== "valid") {
+            return check;
         }
+
+        const { profile } = check;
 
         if (profile.telegramId === current.telegramId) {
             return { status: "sameBot" };
         }
 
-        if (await this.botsRepository.findOneByTelegramId(profile.telegramId)) {
-            return this.alreadyAdded(profile.telegramId);
+        const owner = await this.botsRepository.findOneByTelegramId(
+            profile.telegramId,
+        );
+
+        if (owner) {
+            return this.alreadyAdded(owner);
         }
 
         const previous = await this.botsConnector.find(botId);
@@ -303,7 +310,11 @@ export class BotsService {
             );
         } catch (err) {
             if (err instanceof BotTelegramIdTakenError) {
-                return this.alreadyAdded(profile.telegramId);
+                return this.alreadyAdded(
+                    await this.botsRepository.findOneByTelegramId(
+                        profile.telegramId,
+                    ),
+                );
             }
 
             throw err;
@@ -374,16 +385,27 @@ export class BotsService {
         }
     }
 
-    private async alreadyAdded(
-        telegramId: string,
-    ): Promise<{ status: "alreadyAdded"; botId: string }> {
-        const bot = await this.botsRepository.findOneByTelegramId(telegramId);
-
-        if (!bot) {
-            throw new Error(`Bot of Telegram ${telegramId} is not stored`);
+    private async checkToken(token: string): Promise<BotTokenCheck> {
+        if (!this.botsRegistry.canStoreTokens) {
+            return { status: "keyMissing" };
         }
 
-        return { status: "alreadyAdded", botId: bot._id };
+        const profile = await this.botsConnector.readProfile(token);
+
+        return profile
+            ? { status: "valid", profile }
+            : { status: "invalidToken" };
+    }
+
+    private alreadyAdded(owner: BotEntity | null): {
+        status: "alreadyAdded";
+        botId: string;
+    } {
+        if (!owner) {
+            throw new Error("The bot that took the Telegram bot is not stored");
+        }
+
+        return { status: "alreadyAdded", botId: owner._id };
     }
 
     private async emitChanged(botId: string): Promise<void> {

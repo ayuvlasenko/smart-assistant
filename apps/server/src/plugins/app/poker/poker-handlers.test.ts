@@ -5,7 +5,10 @@ import { describe, it, TestContext } from "node:test";
 import { Env } from "../../../env.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildPokerBot, PokerBot } from "../../../test/poker-bot.js";
-import { buildTelegramPrivateChat } from "../../../test/telegram-fixtures.js";
+import {
+    buildTelegramPrivateChat,
+    testBotId,
+} from "../../../test/telegram-fixtures.js";
 import { buildUserEntity } from "../../../test/user-fixtures.js";
 import { adminGrant } from "../access/access-service.js";
 import {
@@ -170,6 +173,41 @@ void describe("Poker rooms", () => {
                 label.startsWith("#6 "),
             ),
         );
+    });
+
+    void it("moves the room list to its last page when its own page empties", async (t) => {
+        const bot = await buildBot(t);
+        const creator = buildTelegramPrivateChat({ id: 987655186 });
+
+        await createRoomThroughForm(bot, creator);
+
+        const room = await readRoom();
+
+        await testMongo.mongo
+            .collection<PokerRoomEntity>("pokerRooms")
+            .insertMany(
+                Array.from({ length: 5 }, (_, index) => ({
+                    ...room,
+                    _id: new ObjectId(),
+                    token: `${room.token}${index}`,
+                })),
+            );
+        await bot.sendText(creator, "/poker");
+        await bot.pressButton(creator, "›");
+
+        const user = await bot.usersRepository.findOneByTelegramId(
+            testBotId,
+            String(creator.id),
+        );
+
+        assert.ok(user);
+        await bot.pokerRoomsService.close(user, room._id);
+        await bot.telegramChats.idle();
+
+        const labels = await bot.readButtonLabels(creator.id);
+
+        assert.ok(labels.some((label) => label.startsWith("#5 ")));
+        assert.ok(!labels.includes("‹"));
     });
 
     void it("shows the votes of other participants without their cards", async (t) => {
@@ -1029,56 +1067,14 @@ async function readRoomKeyboard(
     bot: PokerBot,
     chat: Chat.PrivateChat,
 ): Promise<KeyboardButton[][]> {
-    return (await readKeyboards(bot, chat)).at(-1) ?? [];
+    return (await bot.readKeyboards(chat.id)).at(-1) ?? [];
 }
 
 async function readListKeyboard(
     bot: PokerBot,
     chat: Chat.PrivateChat,
 ): Promise<KeyboardButton[][]> {
-    return (await readKeyboards(bot, chat)).at(0) ?? [];
-}
-
-async function readKeyboards(
-    bot: PokerBot,
-    chat: Chat.PrivateChat,
-): Promise<KeyboardButton[][][]> {
-    const keyboards = new Map<number, unknown>();
-
-    for (const call of bot.telegramApiService.sendMessage.mock.calls) {
-        const response = await call.result;
-
-        if (
-            response?.ok &&
-            call.arguments[0].chat_id === chat.id &&
-            call.arguments[0].reply_markup
-        ) {
-            keyboards.set(
-                response.result.message_id,
-                call.arguments[0].reply_markup,
-            );
-        }
-    }
-
-    for (const call of bot.telegramApiService.editMessageText.mock.calls) {
-        const args = call.arguments[0];
-
-        if (
-            args.chat_id === chat.id &&
-            args.message_id !== undefined &&
-            keyboards.has(args.message_id)
-        ) {
-            keyboards.set(args.message_id, args.reply_markup);
-        }
-    }
-
-    return [...keyboards.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(
-            ([, markup]) =>
-                (markup as { inline_keyboard?: KeyboardButton[][] } | undefined)
-                    ?.inline_keyboard ?? [],
-        );
+    return (await bot.readKeyboards(chat.id)).at(0) ?? [];
 }
 
 function revealLabel(voted: number, total: number): string {

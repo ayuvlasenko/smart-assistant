@@ -4,7 +4,7 @@ import {
     escapeTelegramHtml,
     formatTelegramHtmlBold,
 } from "../telegram/telegram-html.js";
-import { pageButtons } from "../telegram/telegram-pagination.js";
+import { loadPage, pageButtons } from "../telegram/telegram-pagination.js";
 import { TelegramMessageContent } from "../telegram/telegram-responder.js";
 import { formatPokerRoomTitle } from "./poker-format.js";
 import { PokerRoomStatus } from "./poker-room-entity.js";
@@ -48,12 +48,10 @@ async function renderRooms(
     actions: InlineKeyboardButton[][],
 ): Promise<TelegramMessageContent> {
     const { t } = ctx;
-    const offset = page * roomsPageSize;
-    const rooms = await pokerRoomsService.list(ctx.user, {
-        status,
-        skip: offset,
-        limit: roomsPageSize,
-    });
+    const rooms = await loadPage(page, roomsPageSize, (request) =>
+        pokerRoomsService.list(ctx.user, { ...request, status }),
+    );
+    const offset = rooms.index * roomsPageSize;
     const labels = rooms.items.map((room, index) =>
         t("poker:roomListItem", {
             title: `#${offset + index + 1} ${formatPokerRoomTitle(room, ctx.timeZone)}`,
@@ -87,7 +85,7 @@ async function renderRooms(
                     room._id.toHexString(),
                 ),
             ]),
-            pageButtons(page, rooms.total, roomsPageSize, (text, target) =>
+            pageButtons(rooms, (text, target) =>
                 scene.button(text, "page", target),
             ),
             ...actions,

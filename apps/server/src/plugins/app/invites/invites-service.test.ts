@@ -280,6 +280,35 @@ void describe("InvitesService activate", () => {
         );
     });
 
+    void it("keeps the invites of a bot away from the admin of another bot", async (t) => {
+        const bot = await buildBot(t);
+        const invite = await createInvite(bot, { grants: [pingGrant] });
+        const { user } = await bot.usersRepository.findOneByTelegramIdOrCreate({
+            botId: "42",
+            telegramId: "987654717",
+            isBanned: false,
+            languageCode: "en",
+        });
+        const otherAdmin = { ...user, grants: [adminGrant] };
+
+        assert.deepEqual(
+            await bot.invitesService.list(otherAdmin, { skip: 0, limit: 5 }),
+            { items: [], total: 0 },
+        );
+        assert.equal(
+            await bot.invitesService.find(otherAdmin, invite._id),
+            null,
+        );
+        await assert.rejects(
+            bot.invitesService.revoke(otherAdmin, invite._id),
+            ForbiddenError,
+        );
+        assert.equal(
+            (await bot.invitesRepository.findOneById(invite._id))?.revokedAt,
+            undefined,
+        );
+    });
+
     void it("lets only as many users in at the same time as the limit allows", async (t) => {
         const bot = await buildBot(t);
         const invite = await createInvite(bot, {

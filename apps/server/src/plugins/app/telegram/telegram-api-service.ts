@@ -22,8 +22,15 @@ export type TelegramApiClient = Pick<
 export type TelegramApiPriority = "interactive" | "background";
 
 export interface TelegramApiScope {
+    signal?: AbortSignal;
+    priority: TelegramApiPriority;
+    log?: FastifyBaseLogger;
+}
+
+interface TelegramApiCallScope {
     signal: AbortSignal;
     priority: TelegramApiPriority;
+    log: FastifyBaseLogger;
 }
 
 export const telegramApiScope = new AsyncLocalStorage<TelegramApiScope>();
@@ -49,12 +56,12 @@ export class TelegramApiService {
         rateLimiter: RateLimiter,
         requestTimeoutMilliseconds = defaultRequestTimeoutMilliseconds,
     ) {
-        this.log = log;
         this.telegramMetrics = telegramMetrics;
         this.rateLimiter = rateLimiter;
         this.requestTimeoutMilliseconds = requestTimeoutMilliseconds;
         this.baseUrl = `https://api.telegram.org/bot${botToken}`;
         this.telegramId = botToken.split(":", 1).join("");
+        this.log = log.child({ botTelegramId: this.telegramId });
     }
 
     getMe() {
@@ -141,9 +148,13 @@ export class TelegramApiService {
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const [params] = args;
         const body = params === undefined ? undefined : JSON.stringify(params);
-        const scope = telegramApiScope.getStore() ?? {
-            signal: AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
-            priority: "interactive",
+        const store = telegramApiScope.getStore();
+        const scope: TelegramApiCallScope = {
+            signal:
+                store?.signal ??
+                AbortSignal.timeout(unscopedCallTimeoutMilliseconds),
+            priority: store?.priority ?? "interactive",
+            log: store?.log ?? this.log,
         };
         const buckets = telegramRateLimitBuckets(
             this.telegramId,
@@ -159,7 +170,7 @@ export class TelegramApiService {
             let result: ApiResponse<TelegramMethodResult<TMethod>>;
 
             try {
-                result = await this.send<TMethod>(method, body, scope.signal);
+                result = await this.send<TMethod>(method, body, scope);
             } catch (err) {
                 const retryDelayMilliseconds =
                     repeatDelaysMilliseconds[repeats];
@@ -184,7 +195,7 @@ export class TelegramApiService {
                 method,
                 buckets,
                 result.parameters?.retry_after ?? defaultRetryAfterSeconds,
-                scope.signal,
+                scope,
             );
         }
     }
@@ -192,7 +203,7 @@ export class TelegramApiService {
     private async waitForSlot(
         method: TelegramMethod,
         buckets: RateLimitBucket[],
-        { signal, priority }: TelegramApiScope,
+        { signal, priority, log }: TelegramApiCallScope,
     ): Promise<void> {
         let waitMilliseconds = 0;
 
@@ -215,7 +226,7 @@ export class TelegramApiService {
             priority === "interactive" &&
             waitMilliseconds >= slowWaitMilliseconds
         ) {
-            this.log.warn(
+            log.warn(
                 { method, waitSeconds: waitMilliseconds / 1000 },
                 "Telegram rate limit wait was slow",
             );
@@ -225,7 +236,7 @@ export class TelegramApiService {
     private async send<TMethod extends TelegramMethod>(
         method: TMethod,
         body: string | undefined,
-        signal: AbortSignal,
+        { signal, log }: TelegramApiCallScope,
     ): Promise<ApiResponse<TelegramMethodResult<TMethod>>> {
         const stopRequest = this.telegramMetrics.startApiRequest(
             this.telegramId,
@@ -249,7 +260,7 @@ export class TelegramApiService {
             const failure = signal.aborted ? "aborted" : "network_error";
 
             stopRequest(failure);
-            this.log.warn(
+            log.warn(
                 { method, result: failure, err },
                 "Telegram API request got no answer",
             );
@@ -260,7 +271,7 @@ export class TelegramApiService {
 
         if (!result) {
             stopRequest("bad_answer", response.status);
-            this.log.warn(
+            log.warn(
                 { method, result: "bad_answer", statusCode: response.status },
                 "Telegram API answer is not a Bot API response",
             );
@@ -278,7 +289,7 @@ export class TelegramApiService {
             result.error_code === 429 ? "rate_limited" : "error",
             result.error_code,
         );
-        this.log.warn(
+        log.warn(
             {
                 method,
                 errorCode: result.error_code,
@@ -295,14 +306,14 @@ export class TelegramApiService {
         method: TelegramMethod,
         buckets: RateLimitBucket[],
         retryAfterSeconds: number,
-        signal: AbortSignal,
+        { signal, log }: TelegramApiCallScope,
     ): Promise<void> {
         const delayMilliseconds = retryAfterSeconds * 1000;
 
         this.telegramMetrics.recordRetryAfter(method, retryAfterSeconds);
 
         if (buckets.length > 0) {
-            this.log.warn(
+            log.warn(
                 {
                     method,
                     retryAfter: retryAfterSeconds,

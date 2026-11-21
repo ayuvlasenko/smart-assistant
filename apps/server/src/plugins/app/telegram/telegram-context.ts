@@ -11,13 +11,11 @@ import {
     toInlineKeyboardMarkup,
 } from "./telegram-responder.js";
 import { TelegramMessageMarkup } from "./telegram-scene-buttons.js";
-import { TelegramSession } from "./telegram-session.js";
 
 export interface TelegramContextOptions<TUpdate extends Update | undefined> {
     bot: TelegramBot;
     update: TUpdate;
     user: UserEntity;
-    session: TelegramSession;
     log: FastifyBaseLogger;
     translatorOf: (user: UserEntity) => Translate;
     timeZone: string;
@@ -42,8 +40,7 @@ export class TelegramContext<
     readonly update: TUpdate;
     readonly log: FastifyBaseLogger;
     readonly timeZone: string;
-    readonly session: TelegramSession;
-    readonly events = new Emittery<TelegramContextEvents>();
+    private readonly events = new Emittery<TelegramContextEvents>();
     private readonly responder: TelegramResponder;
     private readonly translatorOf: (user: UserEntity) => Translate;
     private currentUser: UserEntity;
@@ -54,7 +51,6 @@ export class TelegramContext<
         this.update = options.update;
         this.log = options.log;
         this.timeZone = options.timeZone;
-        this.session = options.session;
         this.responder = options.responder;
         this.translatorOf = options.translatorOf;
         this.currentUser = options.user;
@@ -67,6 +63,10 @@ export class TelegramContext<
 
     get t(): Translate {
         return this.translate;
+    }
+
+    get messageEvents(): Pick<Emittery<TelegramContextEvents>, "on"> {
+        return this.events;
     }
 
     refreshUser(user: UserEntity): void {

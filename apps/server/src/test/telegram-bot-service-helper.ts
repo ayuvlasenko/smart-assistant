@@ -5,6 +5,7 @@ import Fastify, {
 } from "fastify";
 import fp from "fastify-plugin";
 import { Redis } from "ioredis";
+import { ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
 import { TestContext } from "node:test";
 import { options as appOptions } from "../app.js";
@@ -27,6 +28,7 @@ import metricsPlugin, {
     MetricsService,
 } from "../plugins/app/metrics-service.js";
 import rateLimiterPlugin from "../plugins/app/rate-limiter.js";
+import { SettingEntity } from "../plugins/app/settings/setting-entity.js";
 import settingsRepositoryPlugin from "../plugins/app/settings/settings-repository.js";
 import settingsServicePlugin, {
     SettingsService,
@@ -63,7 +65,9 @@ import telegramUpdateHandlerPlugin, {
 import usersRepositoryPlugin, {
     UsersRepository,
 } from "../plugins/app/users/users-repository.js";
-import usersServicePlugin from "../plugins/app/users/users-service.js";
+import usersServicePlugin, {
+    autoBanSetting,
+} from "../plugins/app/users/users-service.js";
 import emitteryPlugin from "../plugins/external/emittery.js";
 import envPlugin, {
     autoConfig as envAutoConfig,
@@ -88,6 +92,7 @@ export interface BuildTelegramBotServiceTestAppOptions {
     telegramApiService?: TelegramApiServiceMock;
     telegramApiFactory?: TelegramApiFactory;
     modules?: string[];
+    autoBan?: boolean;
     environment?: Env["ENVIRONMENT"];
     env?: Record<string, string>;
     sessionStoreOptions?: TelegramSessionStoreOptions;
@@ -122,6 +127,7 @@ export async function buildTelegramBotServiceTestApp({
     telegramApiService = buildTelegramApiServiceMock({ t }),
     telegramApiFactory,
     modules = ["poker", "ping"],
+    autoBan = true,
     environment = "production",
     env = {},
     sessionStoreOptions,
@@ -229,6 +235,7 @@ export async function buildTelegramBotServiceTestApp({
     const botsRegistry = app.getDecorator<BotsRegistry>("botsRegistry");
     const botsRepository = app.getDecorator<BotsRepository>("botsRepository");
     await setTestBotModules(app, botsRegistry.rootId, modules);
+    await setTestBotAutoBan(app, botsRegistry.rootId, autoBan);
 
     return {
         app,
@@ -278,6 +285,8 @@ export async function buildTwoBotsTestApp(
         throw new Error("Bot 42 is already stored");
     }
 
+    await setTestBotAutoBan(app.app, bot._id, options.autoBan ?? true);
+
     return { ...app, child, childBotId: bot._id };
 }
 
@@ -289,6 +298,23 @@ export async function setTestBotModules(
     await readMongoDb(app)
         .collection<BotEntity>("bots")
         .updateOne({ _id: botId }, { $set: { modules } });
+}
+
+export async function setTestBotAutoBan(
+    app: FastifyInstance,
+    botId: string,
+    autoBan: boolean,
+): Promise<void> {
+    await readMongoDb(app)
+        .collection<SettingEntity>("settings")
+        .updateOne(
+            { botId, name: autoBanSetting.name },
+            {
+                $set: { value: autoBan, updatedAt: new Date() },
+                $setOnInsert: { version: 0, updatedBy: new ObjectId() },
+            },
+            { upsert: true },
+        );
 }
 
 function withoutLocalSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
