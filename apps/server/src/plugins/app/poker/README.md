@@ -73,7 +73,7 @@ The decks are in `poker-decks.ts`. A deck has no `?` or `☕` card: every card i
 ```json
 {
     "_id": "6710a3…",
-    "botId": "8123456789",
+    "botId": "root",
     "version": 17,
     "token": "2V0ICkuAaR3tX2xuOiiHow",
     "createdBy": "66f1c2…",
@@ -117,20 +117,20 @@ A change names the round the user saw, never the round of a fresh load. Every ro
 3. `PokerRoomsRepository.save` writes the fields with the filter `version: 17` and increments `version`. The first write matches.
 4. The second write matches nothing. The service reads the room again, `startPokerRound` finds round 4 and returns `null`. The service returns `null` and emits nothing, and the press only redraws the screen of the user.
 
-A title sent for round 3 after round 4 started returns `null` in the same way, and so does a press on a message that the redraw has not reached yet.
+A title sent for round 3 after round 4 started returns `null` in the same way, and so does a press on a message that the redraw has not reached yet. A change to the value the room already has returns `null` too, such as two participants who press `➕` of auto reveal at once, so the second press writes, logs and redraws nothing.
 
 Every change expects an open room and the user among its participants; `PokerRoomsService` checks both before it calls the function of the change:
 
-| Change      | Function                 | Expects                                      | Writes                                                                                                    |
-| ----------- | ------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Vote        | `votePokerRound`         | the round of the button is `voting`, a voter | the card in `round.votes`, or no vote for the same card                                                   |
-| Reveal      | `revealPokerRound`       | the round of the button is `voting`          | `round.status: "revealed"`, `round.revealedAt`                                                            |
-| Next round  | `startPokerRound`        | the round of the button is `revealed`        | `round` appended to `rounds`, a new `round`                                                               |
-| Round title | `renamePokerRound`       | the round of the button is the current one   | `round.title`, or none                                                                                    |
-| Auto reveal | `changePokerAutoReveal`  | nothing more                                 | `autoReveal`                                                                                              |
-| Role        | `changePokerRole`        | the other user is a participant              | the `role`; for an observer, no vote in a `voting` round                                                  |
-| Remove      | `removePokerParticipant` | the other user is a participant              | the participant moved to `removedParticipants`, no vote in a `voting` round; `closedAt` when nobody stays |
-| Close       | `closePokerRoom`         | nothing more                                 | `closedAt`                                                                                                |
+| Change      | Function                 | Expects                                                   | Writes                                                                                                    |
+| ----------- | ------------------------ | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Vote        | `votePokerRound`         | the round of the button is `voting`, a voter              | the card in `round.votes`, or no vote for the same card                                                   |
+| Reveal      | `revealPokerRound`       | the round of the button is `voting`                       | `round.status: "revealed"`, `round.revealedAt`                                                            |
+| Next round  | `startPokerRound`        | the round of the button is `revealed`                     | `round` appended to `rounds`, a new `round`                                                               |
+| Round title | `renamePokerRound`       | the round of the button is the current one, another title | `round.title`, or none                                                                                    |
+| Auto reveal | `changePokerAutoReveal`  | another setting than the room has                         | `autoReveal`                                                                                              |
+| Role        | `changePokerRole`        | the other user is a participant with another role         | the `role`; for an observer, no vote in a `voting` round                                                  |
+| Remove      | `removePokerParticipant` | the other user is a participant                           | the participant moved to `removedParticipants`, no vote in a `voting` round; `closedAt` when nobody stays |
+| Close       | `closePokerRoom`         | nothing more                                              | `closedAt`                                                                                                |
 
 Before the write, the service runs `revealPokerRoundIfDue` on the changed room and adds the reveal to the same write, see [Who counts in a round](#who-counts-in-a-round). Every write also sets `lastActivityAt` and `updatedAt` and increments `version`.
 
@@ -151,7 +151,7 @@ Before the write, the service runs `revealPokerRoundIfDue` on the changed room a
 
 1. The deep link `poker` calls `PokerRoomsService.join` with the token. The guard of the link is `use PokerRoom`, so a user without a poker grant gets no answer.
 2. The service loads the room by the bot of the user and the token, so a link of another bot gives `notFound` too. No room gives `notFound`; a user who is already a participant gets `alreadyJoined`; a [closed room](#closed-rooms) gives `closed`; a room with as many participants as the setting `poker.maxParticipants` gives `full`.
-3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`.
+3. It picks a random emoji that no participant has, from a pool of 40 in `poker-participant-emojis.ts`. It also skips the emojis of the removed participants, which the history still shows, and takes one of them only when no other emoji is free.
 4. It writes `participants` with the new participant through `PokerRoomsRepository.save`. A match gives `joined` and emits `poker.roomChanged`.
 5. A conflict goes back to step 2. After 20 attempts the service throws.
 
@@ -259,7 +259,7 @@ A step that keeps the setting, `➖` on off or `➕` on everyone, has no button.
 
 **Walk-through.** A participant votes in a room of three.
 
-1. The button handler loads the room, calls `PokerRoomsService.vote`, and the update stores the vote.
+1. The button handler calls `PokerRoomsService.vote` with the id of the room from the scene state. The service loads the room and stores the vote.
 2. The service emits `poker.roomChanged`. The handlers plugin publishes `poker.room:<roomId>`.
 3. The engine of the voter draws the screen of the voter at the end of the update.
 4. The background run takes the session lock of each of the other two participants, loads the room again and edits their screens.
@@ -295,7 +295,7 @@ A [removed participant](#leaving-a-room) keeps the label, so the history names e
 
 A label is plain text. Names and titles come from users, so every screen passes them through `escapeTelegramHtml` before it puts them into the HTML of the message.
 
-The emoji is unique in a room of up to 40 participants, so it tells them apart also when the names and the usernames do not. A room above 40, which needs a higher `poker.maxParticipants`, repeats emojis, see [Joining a room](#joining-a-room).
+The emoji is unique among the current and the removed participants of a room while they are at most 40, so it tells them apart also when the names and the usernames do not. A room above 40, which needs a higher `poker.maxParticipants`, repeats emojis, see [Joining a room](#joining-a-room).
 
 ## Files
 

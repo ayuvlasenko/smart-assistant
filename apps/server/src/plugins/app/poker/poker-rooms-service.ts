@@ -165,7 +165,7 @@ export class PokerRoomsService {
                 room,
                 addPokerParticipant(
                     room,
-                    buildPokerParticipant(room.participants, actor._id, now),
+                    buildPokerParticipant(room, actor._id, now),
                 ),
                 { now, change: "joined" },
             );
@@ -277,8 +277,8 @@ export class PokerRoomsService {
         roomId: ObjectId,
         autoReveal: PokerAutoReveal,
     ): Promise<PokerRoomEntity | null> {
-        return this.change(actor, roomId, "autoRevealChanged", () =>
-            changePokerAutoReveal(autoReveal),
+        return this.change(actor, roomId, "autoRevealChanged", (room) =>
+            changePokerAutoReveal(room, autoReveal),
         );
     }
 
