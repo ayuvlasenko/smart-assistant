@@ -18,6 +18,6 @@ spec:
       resource:
         name: cpu
         target:
-          type: Utilization
-          averageUtilization: {{ .Values.server.replicas.production.cpuUtilization }}
+          type: AverageValue
+          averageValue: {{ .Values.server.replicas.production.cpuAverageValue | quote }}
 {{- end }}
