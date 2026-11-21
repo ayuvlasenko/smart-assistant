@@ -12,6 +12,7 @@ import { telegramApiScope } from "./telegram-api-service.js";
 import { TelegramBot, TelegramBots } from "./telegram-bots.js";
 import { TelegramContext } from "./telegram-context.js";
 import { TelegramDeliveryPermits } from "./telegram-delivery-permits.js";
+import { isBlockedByUser } from "./telegram-errors.js";
 import { telegramLocales } from "./telegram-locales.js";
 import { TelegramDeliveryKind, TelegramMetrics } from "./telegram-metrics.js";
 import { telegramDeliveryLimit } from "./telegram-rate-limits.js";
@@ -258,7 +259,11 @@ export class TelegramChats {
         for (const [index, result] of results.entries()) {
             const recipient = recipients[index];
 
-            if (result.status === "rejected" && recipient !== undefined) {
+            if (
+                result.status === "rejected" &&
+                recipient !== undefined &&
+                !isBlockedByUser(result.reason)
+            ) {
                 reportFailure(result.reason, recipient);
             }
         }
@@ -330,12 +335,17 @@ export class TelegramChats {
             return;
         }
 
+        const reasons: unknown[] = results
+            .filter((result) => result.status === "rejected")
+            .map(({ reason }): unknown => reason);
+        const blocked = reasons.filter(isBlockedByUser).length;
+
         this.log.info(
             {
                 ...fields,
                 recipients: results.length,
-                failed: results.filter(({ status }) => status === "rejected")
-                    .length,
+                failed: reasons.length - blocked,
+                blocked,
                 durationMs: Math.round(performance.now() - startedAt),
             },
             message,

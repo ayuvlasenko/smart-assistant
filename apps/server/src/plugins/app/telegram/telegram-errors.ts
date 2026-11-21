@@ -33,6 +33,10 @@ export class TelegramApiError extends Error {
     }
 }
 
+export function isBlockedByUser(err: unknown): boolean {
+    return err instanceof TelegramApiError && err.errorCode === 403;
+}
+
 export function unwrapTelegramResponse<TResult>(
     method: string,
     response: ApiResponse<TResult>,

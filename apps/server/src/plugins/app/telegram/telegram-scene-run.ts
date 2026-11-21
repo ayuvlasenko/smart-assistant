@@ -190,6 +190,24 @@ export class TelegramSceneRun {
         }
     }
 
+    dropTouched(): void {
+        const dropped = [...this.touched.keys()].filter((instance) =>
+            this.storage.has(instance),
+        );
+
+        for (const instance of dropped) {
+            this.storage.remove(instance);
+            this.telegramMetrics.recordSceneEvent(
+                instance.scene.name,
+                "dropped",
+            );
+            this.ctx.log.info(
+                { scene: instance.scene.name, sceneId: instance.id },
+                "Telegram scene dropped, the user blocked the bot",
+            );
+        }
+    }
+
     private touch(
         instance: TelegramSceneInstance,
         { reshow = false }: { reshow?: boolean } = {},
