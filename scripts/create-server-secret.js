@@ -46,12 +46,15 @@ function validateEnvVars() {
     }
 }
 
-export function buildCommand(secretName, dryRun) {
-    const envVars = [
+function listSecretEnvVars() {
+    return [
         ...REQUIRED_ENV_VARS,
         ...OPTIONAL_ENV_VARS.filter((v) => process.env[v]),
     ];
-    const literals = envVars
+}
+
+export function buildCommand(secretName, dryRun) {
+    const literals = listSecretEnvVars()
         .map((v) => quoteShellArgument(`--from-literal=${v}=${process.env[v]}`))
         .join(" \\\n          ");
 
@@ -64,6 +67,25 @@ export function buildCommand(secretName, dryRun) {
 
 export function quoteShellArgument(value) {
     return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export function buildReadKeysCommand(secretName) {
+    return `kubectl get secret ${quoteShellArgument(secretName)} -n ${NAMESPACE} -o json --ignore-not-found`;
+}
+
+export function readSecretKeys(secretName, exec = execSync) {
+    const output = exec(buildReadKeysCommand(secretName), {
+        encoding: "utf-8",
+        shell: "/bin/bash",
+    }).trim();
+
+    return output ? Object.keys(JSON.parse(output).data ?? {}) : [];
+}
+
+export function findDroppedKeys(secretKeys) {
+    const envVars = listSecretEnvVars();
+
+    return secretKeys.filter((key) => !envVars.includes(key));
 }
 
 export function buildNamespaceCommand() {
@@ -99,10 +121,21 @@ export function validateSecretName(secretName) {
 export function applySecret({
     secretName,
     dryRun,
+    dropMissing = false,
     exec = execSync,
     log = console.log,
 }) {
     ensureNamespaceExists({ dryRun, exec, log });
+
+    const dropped = dryRun
+        ? []
+        : findDroppedKeys(readSecretKeys(secretName, exec));
+
+    if (dropped.length && !dropMissing) {
+        throw new Error(
+            `Secret "${secretName}" holds ${dropped.join(", ")}, which the environment does not set. Export them, or pass --drop-missing to remove them from the secret.`,
+        );
+    }
 
     const command = buildCommand(secretName, dryRun);
 
@@ -167,6 +200,7 @@ function getPrNumber() {
 async function main() {
     const args = process.argv.slice(2);
     const dryRun = args.includes("--dry-run");
+    const dropMissing = args.includes("--drop-missing");
 
     validateEnvVars();
 
@@ -226,6 +260,7 @@ async function main() {
         applySecret({
             secretName,
             dryRun,
+            dropMissing,
         });
     } catch (error) {
         console.error("Failed to apply secret:", error.message);
