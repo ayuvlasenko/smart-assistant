@@ -70,7 +70,7 @@ export interface TelegramSceneControl<
     ): Promise<void>;
     back(): Promise<void>;
     reset(): Promise<void>;
-    ask(name: keyof TInputs & string): Promise<void>;
+    ask(name: keyof TInputs & string): Promise<boolean>;
     end(options?: { messages?: TelegramSceneMessagesRelease }): Promise<void>;
     handOver<TStateSchema extends TObject>(
         scene: TelegramScene<TStateSchema>,
