@@ -484,7 +484,7 @@ The FAQ of Telegram gives the rate of a chat but not the size of its burst. In a
 1. `sceneEngine.start(ctx, scene, state)` checks the guard of the scene and builds the id. With a `key`, the id is the first 12 characters of `sha256("<scene name>:<key>")` in base64url, so the same key always gives the same id. Without a `key`, the id is 8 random bytes.
 2. When a record with this id already exists, `start` does not create a second one. It shows the running scene again: its messages move to the bottom of the chat, and the state and the screen stay as they are.
 3. Otherwise the engine creates the record and runs the `start` hook of the scene.
-4. `withScenes` creates one `TelegramSceneRun` for the update. The run marks an instance as touched when it builds the scene object of the instance for a handler, a step or a render, so every start, press, answer to an input, `/cancel` and delivery is saved and drawn. A redraw, a reshow and a dropped input change the record without a scene object, and mark the instance with `touch` themselves.
+4. `withScenes` creates one `TelegramSceneRun` for the update. The run marks an instance as touched when it builds the scene object of the instance for a handler, a step or a render, so every start, press, answer to an input, `/cancel` and delivery is saved and drawn. A redraw, a reshow, a dropped input and the hint for an unexpected message need the instance saved or drawn without a scene object, and mark it with `touch` themselves.
 5. After the update, the engine draws the current screen of the touched instances, but only when the handler succeeded. When a command or a deep link started or showed a scene in this update, the engine then deletes the message of the command. It saves the touched instances always.
 6. `save` writes the record with a TTL of `min(ttl, startedAt + maxAge - now)`. So `ttl` is the idle time after the last touch, and `maxAge` is the limit from the start. When that value reaches 0, `save` removes the record.
 
@@ -610,7 +610,7 @@ Once it sent a new message, it sends every later position again too, and deletes
 ```json
 {
     "name": "maxUses",
-    "step": "value",
+    "step": "maxUses",
     "history": [],
     "payload": {},
     "messageIds": [901, 902]
@@ -621,9 +621,9 @@ Once it sent a new message, it sends every later position again too, and deletes
 
 1. A handler calls `scene.ask("maxUses")`. The engine checks the guard of the scene and of the input, and that no other scene holds the focus. Then it writes `input` and runs `enter` of the first step, which usually sends the question.
 2. The router hands every update to `TelegramSceneEngine.handle` before the routes. For a message, it loads the instance from `focus`.
-3. When the current step `accepts` the update, the step runs `handle` and returns a transition: `next`, `stay`, `goto`, `back`, `cancel` or `complete`. A transition can carry a `patch` for the payload, and `back` follows `history`.
+3. When the current step `accepts` the update, the step runs `handle` and returns a transition: `next`, `stay`, `goto`, `back`, `cancel` or `complete`. A transition can carry a `patch` for the payload, and `back` follows `history`. `cancel` can carry a `notice`, which the engine sends with `ctx.notify` after the cleanup, so `cleanup: true` does not delete it; `choiceStep` cancels this way when there is nothing to choose.
 4. After the last step, or on `complete`, the engine decodes the payload with its schema, removes `input` and calls `complete` of the input.
-5. A text message that the step does not accept gets the `hint` of the step. A command is never input text: `message("text")` skips commands, so `/cancel` and every other command still reach the routes.
+5. A message that the step does not accept, such as a photo for a text step, gets the `hint` of the step, so while an answer waits, an `on` route for messages never runs. A command is never input text: `message("text")` skips commands, so `/cancel` and every other command still reach the routes.
 
 **Edge cases.**
 

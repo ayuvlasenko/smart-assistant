@@ -18,7 +18,7 @@ export type TelegramTransition<TPayload> =
     | { type: "stay"; patch?: Partial<TPayload> }
     | { type: "goto"; step: string; patch?: Partial<TPayload> }
     | { type: "back" }
-    | { type: "cancel"; silent?: boolean }
+    | { type: "cancel"; silent?: boolean; notice?: Translated }
     | { type: "complete"; patch?: Partial<TPayload> };
 
 export type TelegramSceneButtonSchemas = Record<string, TSchema>;
@@ -112,6 +112,8 @@ export type TelegramStepFactory<TPayload> = <TUpdate extends Update>(
 ) => TelegramStep<TPayload>;
 
 export type TelegramSceneTitle = (t: Translate) => string;
+
+type Translated = (t: Translate) => string;
 
 export type TelegramSceneBlocking =
     | { readonly blocking: true; readonly title: TelegramSceneTitle }
@@ -381,8 +383,12 @@ export function back<TPayload>(): TelegramTransition<TPayload> {
 
 export function cancel<TPayload>({
     silent = false,
-}: { silent?: boolean } = {}): TelegramTransition<TPayload> {
-    return { type: "cancel", silent };
+    notice,
+}: {
+    silent?: boolean;
+    notice?: Translated;
+} = {}): TelegramTransition<TPayload> {
+    return { type: "cancel", silent, notice };
 }
 
 export function complete<TPayload>(

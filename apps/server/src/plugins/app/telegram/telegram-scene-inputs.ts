@@ -299,6 +299,11 @@ export class TelegramSceneInputs {
                 await this.cancel(ctx, scene, instance, {
                     silent: transition.silent,
                 });
+
+                if (transition.notice) {
+                    await ctx.notify(transition.notice(ctx.t));
+                }
+
                 return;
             case "complete":
                 return this.complete(ctx, scene, instance, active);
