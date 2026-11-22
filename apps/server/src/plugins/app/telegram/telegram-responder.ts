@@ -120,6 +120,15 @@ export class TelegramResponder {
             return true;
         }
 
+        if (result.error_code === 403) {
+            throw new TelegramApiError(
+                content.kind === "media"
+                    ? "editMessageMedia"
+                    : "editMessageText",
+                result,
+            );
+        }
+
         this.log.warn(
             { description: result.description },
             "Failed to edit telegram message",

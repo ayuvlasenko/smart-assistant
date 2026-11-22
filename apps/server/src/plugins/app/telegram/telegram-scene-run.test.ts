@@ -576,6 +576,37 @@ void describe("TelegramSceneRun hand over", () => {
         assert.deepEqual(await bot.readMessageTexts(chat.id), ["menu"]);
     });
 
+    void it("keeps the scene and its messages when the start hook of the next scene can't ask", async (t) => {
+        const handOvers: boolean[] = [];
+        const bot = await buildHandOverBot(t, handOvers);
+        const chat = buildTelegramPrivateChat({ id: 987657103 });
+
+        await bot.sendText(chat, "/lobby");
+        await bot.pressButton(chat, "Name");
+        await bot.sendText(chat, "/menu");
+        await bot.pressButton(chat, "Quiz");
+
+        assert.deepEqual(handOvers, [false]);
+        assert.equal(
+            bot.readAnswerTexts().at(-1),
+            telegramLocales.en.inputBusy,
+        );
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "lobby",
+            "Name?",
+            "menu",
+        ]);
+
+        await bot.pressButton(chat, "Open A");
+
+        assert.deepEqual(handOvers, [false, true]);
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            "lobby",
+            "Name?",
+            "Item a",
+        ]);
+    });
+
     void it("refuses to hand the messages over to the same scene", async (t) => {
         const bot = await buildHandOverBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654486 });
@@ -663,6 +694,31 @@ void describe("TelegramSceneRun command messages", () => {
         assert.deepEqual(readDeletedMessageIds(bot), [
             wizard.message?.message_id,
         ]);
+    });
+
+    void it("keeps the command and drops the new scene when its start hook can't ask", async (t) => {
+        const bot = await buildCounterBot(testMongo, t);
+        const chat = buildTelegramPrivateChat({ id: 987657101 });
+
+        const first = await bot.sendText(chat, "/profile");
+        await bot.sendText(chat, "/profile");
+
+        assert.equal(bot.readSentTexts().at(-1), telegramLocales.en.inputBusy);
+        assert.deepEqual(readDeletedMessageIds(bot), [
+            first.message?.message_id,
+        ]);
+        assert.match(
+            await bot.metrics.metrics(),
+            /^telegram_scene_events_total\{scene="profile",event="end"\} 1$/m,
+        );
+
+        await bot.sendText(chat, "/cancel");
+        await bot.sendText(chat, "/profile");
+
+        assert.equal(
+            bot.readSentTexts().at(-1),
+            "Your name? Send /cancel to stop.",
+        );
     });
 
     void it("keeps the command that the guard of the scene refuses", async (t) => {
@@ -757,39 +813,14 @@ async function buildHandOverBot(
             },
         },
     });
-    const surveyScene = defineScene({
-        name: "survey",
-        title: () => "Survey",
+    const surveyScene = defineAnswerScene("Survey", {
         blocking: true,
-        state: Type.Object({}),
-        key: () => "survey",
-        ttl: 60_000,
-        start: (ctx, scene) => scene.ask("answer"),
-        root: { name: "survey", params: {} },
-        screens: {
-            survey: {
-                params: Type.Object({}),
-                render: async () => [{ kind: "text", text: "Survey" }],
-            },
-        },
-        inputs: {
-            answer: {
-                payload: Type.Object({ answer: Type.String() }),
-                steps: (step) => [
-                    step("answer", message("text"), {
-                        enter: async (ctx) => {
-                            await ctx.reply("Answer?");
-                        },
-                        handle: async (ctx) =>
-                            complete({ answer: ctx.update.message.text }),
-                    }),
-                ],
-                complete: async () => undefined,
-            },
-        },
+        title: () => "Survey",
     });
-    const targets = { itemScene, surveyScene, handOvers };
+    const quizScene = defineAnswerScene("Quiz", {});
+    const targets = { itemScene, surveyScene, quizScene, handOvers };
     const menuScene = defineMenuScene("menu", targets, {}, { isKeyed: true });
+    const lobbyScene = defineMenuScene("lobby", targets, {}, { isKeyed: true });
     const wizardScene = defineMenuScene(
         "wizard",
         targets,
@@ -816,6 +847,8 @@ async function buildHandOverBot(
         registerRoutes: (router, sceneEngine) => {
             router.scene(itemScene);
             router.scene(menuScene);
+            router.scene(lobbyScene);
+            router.scene(quizScene);
             router.scene(wizardScene);
             router.scene(setupScene);
             router.scene(surveyScene);
@@ -825,6 +858,9 @@ async function buildHandOverBot(
             );
             router.command("menu", (ctx) =>
                 sceneEngine.start(ctx, menuScene, {}),
+            );
+            router.command("lobby", (ctx) =>
+                sceneEngine.start(ctx, lobbyScene, {}),
             );
             router.command("wizard", (ctx) =>
                 sceneEngine.start(ctx, wizardScene, {}),
@@ -839,15 +875,50 @@ async function buildHandOverBot(
     });
 }
 
+function defineAnswerScene(title: string, blocking: TelegramSceneBlocking) {
+    return defineScene({
+        name: title.toLowerCase(),
+        ...blocking,
+        state: Type.Object({}),
+        key: () => title.toLowerCase(),
+        ttl: 60_000,
+        start: (ctx, scene) => scene.ask("answer"),
+        root: { name: "answer", params: {} },
+        screens: {
+            answer: {
+                params: Type.Object({}),
+                render: async () => [{ kind: "text", text: title }],
+            },
+        },
+        inputs: {
+            answer: {
+                payload: Type.Object({ answer: Type.String() }),
+                steps: (step) => [
+                    step("answer", message("text"), {
+                        enter: async (ctx) => {
+                            await ctx.reply("Answer?");
+                        },
+                        handle: async (ctx) =>
+                            complete({ answer: ctx.update.message.text }),
+                    }),
+                ],
+                complete: async () => undefined,
+            },
+        },
+    });
+}
+
 function defineMenuScene(
     name: string,
     {
         itemScene,
         surveyScene,
+        quizScene,
         handOvers,
     }: {
         itemScene: TelegramScene<TObject<{ itemId: TString }>>;
         surveyScene: TelegramScene;
+        quizScene: TelegramScene;
         handOvers: boolean[];
     },
     blocking: TelegramSceneBlocking,
@@ -876,6 +947,7 @@ function defineMenuScene(
                                 scene.button("Survey", "survey", null),
                                 scene.button("Self", "self", null),
                             ],
+                            [scene.button("Quiz", "quiz", null)],
                         ],
                     },
                 ],
@@ -896,6 +968,12 @@ function defineMenuScene(
                 value: Type.Null(),
                 handle: async (ctx, scene) => {
                     handOvers.push(await scene.handOver(surveyScene, {}));
+                },
+            },
+            quiz: {
+                value: Type.Null(),
+                handle: async (ctx, scene) => {
+                    handOvers.push(await scene.handOver(quizScene, {}));
                 },
             },
             self: {

@@ -177,7 +177,12 @@ export class SettingsService {
         value: unknown,
     ): Promise<void> {
         this.log.info(
-            { setting: setting.name, value, userId: actor._id },
+            {
+                setting: setting.name,
+                value,
+                botId: actor.botId,
+                userId: actor._id,
+            },
             "Setting changed",
         );
         await this.eventEmitter.emit("settings.settingChanged", {

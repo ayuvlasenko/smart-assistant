@@ -28,6 +28,17 @@ void describe("env", () => {
         assert.equal(config.TIME_ZONE, "Europe/Kyiv");
     });
 
+    void it("refuses to start with a root token that is no bot token", async () => {
+        await assert.rejects(
+            loadEnv({ ...process.env, TELEGRAM_BOT_TOKEN: "" }),
+            /TELEGRAM_BOT_TOKEN must match pattern/,
+        );
+        await assert.rejects(
+            loadEnv({ ...process.env, TELEGRAM_BOT_TOKEN: "not-a-token" }),
+            /TELEGRAM_BOT_TOKEN must match pattern/,
+        );
+    });
+
     void it("refuses to start with a time zone that Intl does not know", async () => {
         await assert.rejects(
             loadEnv({ ...process.env, TIME_ZONE: "Mars/Base" }),

@@ -81,26 +81,22 @@ export class TelegramCommandMenus {
     }
 
     async refresh(bot: TelegramBot): Promise<void> {
-        const lock = await this.lockService.acquire(
-            `telegram:${bot.telegramId}:commands:lock`,
-            botMenuLockOptions,
+        await this.withBotMenuLock(bot, (current, menus) =>
+            this.setBotMenus(current, menus),
         );
-
-        try {
-            await this.setBotMenus(
-                (await this.telegramBots.find(bot.id)) ?? bot,
-            );
-        } finally {
-            await lock[Symbol.asyncDispose]();
-        }
     }
 
     async syncBot(bot: TelegramBot): Promise<void> {
-        const hash = await this.cache.get(botMenuKeyOf(bot), Type.String());
+        await this.withBotMenuLock(bot, async (current, menus) => {
+            const hash = await this.cache.get(
+                botMenuKeyOf(current),
+                Type.String(),
+            );
 
-        if (hash !== hashMenus(bot, await this.buildBotMenus(bot))) {
-            await this.refresh(bot);
-        }
+            if (hash !== hashMenus(current, menus)) {
+                await this.setBotMenus(current, menus);
+            }
+        });
     }
 
     async syncBotById(botId: string): Promise<void> {
@@ -198,9 +194,31 @@ export class TelegramCommandMenus {
         );
     }
 
-    private async setBotMenus(bot: TelegramBot): Promise<void> {
-        const menus = await this.buildBotMenus(bot);
+    private async withBotMenuLock(
+        bot: TelegramBot,
+        update: (
+            current: TelegramBot,
+            menus: TelegramBotMenu[],
+        ) => Promise<void>,
+    ): Promise<void> {
+        const lock = await this.lockService.acquire(
+            `telegram:${bot.telegramId}:commands:lock`,
+            botMenuLockOptions,
+        );
 
+        try {
+            const current = (await this.telegramBots.find(bot.id)) ?? bot;
+
+            await update(current, await this.buildBotMenus(current));
+        } finally {
+            await lock[Symbol.asyncDispose]();
+        }
+    }
+
+    private async setBotMenus(
+        bot: TelegramBot,
+        menus: TelegramBotMenu[],
+    ): Promise<void> {
         await this.cache.delete(botMenuKeyOf(bot));
 
         for (const { languageCode, commands } of menus) {

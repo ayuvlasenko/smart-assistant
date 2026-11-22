@@ -20,7 +20,7 @@ import { TelegramChats } from "./telegram-chats.js";
 import { TelegramCommandMenus } from "./telegram-command-menus.js";
 import {
     BannedTelegramUserError,
-    TelegramApiError,
+    isBlockedByUser,
     UnhandledTelegramUpdateError,
 } from "./telegram-errors.js";
 import {
@@ -236,7 +236,7 @@ export class TelegramUpdateHandler {
             return "unhandled";
         }
 
-        if (err instanceof TelegramApiError && err.errorCode === 403) {
+        if (isBlockedByUser(err)) {
             return "blocked";
         }
 

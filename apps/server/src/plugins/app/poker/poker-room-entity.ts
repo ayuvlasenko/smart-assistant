@@ -99,7 +99,7 @@ export function findPokerParticipant(
 }
 
 export function listKnownPokerParticipants(
-    room: PokerRoomEntity,
+    room: Pick<PokerRoomEntity, "participants" | "removedParticipants">,
 ): PokerParticipant[] {
     return [...room.participants, ...(room.removedParticipants ?? [])];
 }

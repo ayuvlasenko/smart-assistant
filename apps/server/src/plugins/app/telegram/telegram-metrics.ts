@@ -24,6 +24,7 @@ export type TelegramSceneEvent =
     | "ask"
     | "delivered"
     | "delivery_failed"
+    | "dropped"
     | "next"
     | "stay"
     | "goto"

@@ -25,10 +25,12 @@ export interface BotsSubjects {
 
 export const newRootBotId = "root";
 
+export const botTokenPattern = "^\\d{1,20}:[\\w-]{30,60}$";
+
 export function telegramIdOfToken(token: string): string {
     return token.split(":", 1).join("");
 }
 
 export function isBotToken(text: string): boolean {
-    return /^\d{1,20}:[\w-]{30,60}$/.test(text);
+    return new RegExp(botTokenPattern).test(text);
 }

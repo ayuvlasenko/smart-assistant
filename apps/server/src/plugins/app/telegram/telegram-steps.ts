@@ -227,8 +227,10 @@ export function choiceStep<TPayload>(
                     return next();
                 }
 
-                await ctx.reply(ctx.t("telegram:nothingToChoose"));
-                return cancel({ silent: true });
+                return cancel({
+                    silent: true,
+                    notice: (t) => t("telegram:nothingToChoose"),
+                });
             }
 
             await ctx.reply(options.prompt(ctx.t), {

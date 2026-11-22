@@ -122,6 +122,23 @@ void describe("TelegramBotService", () => {
         assert.equal(newUrl.telegramApiService.setWebhook.mock.callCount(), 1);
     });
 
+    void it("sets the webhook on start again after the webhook was deleted within the hour", async (t) => {
+        const first = await buildTelegramBotServiceTestApp({ testMongo, t });
+        const next = await buildTelegramBotServiceTestApp({
+            testMongo,
+            t,
+            env: { RESOURCE_NAME: resourceNameOf(first.app) },
+        });
+
+        await first.telegramBotService.setUpOnStart();
+        await first.telegramBotService.deleteWebhook(
+            await first.telegramBots.root(),
+        );
+        await next.telegramBotService.setUpOnStart();
+
+        assert.equal(next.telegramApiService.setWebhook.mock.callCount(), 1);
+    });
+
     void it("sets the webhook on start again after a rollback to a config of the same hour", async (t) => {
         const first = await buildTelegramBotServiceTestApp({ testMongo, t });
         const resourceName = resourceNameOf(first.app);

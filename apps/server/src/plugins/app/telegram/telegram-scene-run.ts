@@ -48,6 +48,8 @@ export class TelegramSceneRun {
         { reshow: boolean }
     >();
     private commandMessageId?: number;
+    private readonly refusedAsks = new Set<TelegramSceneInstance>();
+    private handOverSource?: TelegramSceneInstance;
     private readonly findScene: TelegramSceneLookup;
     private readonly telegramMetrics: TelegramMetrics;
     private readonly inputs: TelegramSceneInputs;
@@ -84,8 +86,8 @@ export class TelegramSceneRun {
 
         if (existing) {
             this.touch(existing, { reshow: true });
-        } else {
-            await this.create(scene, id, state);
+        } else if (!(await this.create(scene, id, state))) {
+            return false;
         }
 
         this.deleteCommandAfterRender();
@@ -187,6 +189,24 @@ export class TelegramSceneRun {
     save(): void {
         for (const instance of this.touched.keys()) {
             this.storage.save(instance);
+        }
+    }
+
+    dropTouched(): void {
+        const dropped = [...this.touched.keys()].filter((instance) =>
+            this.storage.has(instance),
+        );
+
+        for (const instance of dropped) {
+            this.storage.remove(instance);
+            this.telegramMetrics.recordSceneEvent(
+                instance.scene.name,
+                "dropped",
+            );
+            this.ctx.log.info(
+                { scene: instance.scene.name, sceneId: instance.id },
+                "Telegram scene dropped, the user blocked the bot",
+            );
         }
     }
 
@@ -334,7 +354,7 @@ export class TelegramSceneRun {
         scene: TelegramScene,
         id: string,
         state: SceneState,
-    ): Promise<TelegramSceneInstance> {
+    ): Promise<TelegramSceneInstance | undefined> {
         const instance = this.storage.create(id, scene, state);
 
         this.telegramMetrics.recordSceneEvent(scene.name, "start");
@@ -344,6 +364,11 @@ export class TelegramSceneRun {
         );
 
         await scene.start(this.ctx, this.control(instance));
+
+        if (this.refusedAsks.has(instance)) {
+            await this.end(instance, "delete");
+            return undefined;
+        }
 
         return instance;
     }
@@ -369,19 +394,37 @@ export class TelegramSceneRun {
             return false;
         }
 
+        const target =
+            (await this.storage.load(id)) ??
+            (await this.createHandedOver(scene, id, state, source));
+
+        if (!target) {
+            return false;
+        }
+
         await this.inputs.cancel(this.ctx, this.control(source), source, {
             silent: true,
         });
         await this.end(source, "keep", id);
-
-        const target =
-            (await this.storage.load(id)) ??
-            (await this.create(scene, id, state));
-
         this.touch(target);
         await handOverSceneMessages(this.ctx, source, target);
 
         return true;
+    }
+
+    private async createHandedOver(
+        scene: TelegramScene,
+        id: string,
+        state: SceneState,
+        source: TelegramSceneInstance,
+    ): Promise<TelegramSceneInstance | undefined> {
+        this.handOverSource = source;
+
+        try {
+            return await this.create(scene, id, state);
+        } finally {
+            this.handOverSource = undefined;
+        }
     }
 
     private async instanceIdFor(
@@ -522,23 +565,10 @@ export class TelegramSceneRun {
     private async ask(
         instance: TelegramSceneInstance,
         name: string,
-    ): Promise<void> {
-        const { user } = this.ctx;
-
-        if (
-            !(await isAllowed(instance.scene.guard, user)) ||
-            !(await isAllowed(instance.scene.inputs[name]?.guard, user))
-        ) {
-            this.recordForbidden(instance.scene);
-            return;
-        }
-
-        if (
-            !(await this.admit(instance.scene, [instance.id], {
-                checkFocus: true,
-            }))
-        ) {
-            return;
+    ): Promise<boolean> {
+        if (!(await this.admitAsk(instance, name))) {
+            this.refusedAsks.add(instance);
+            return false;
         }
 
         await this.inputs.start(
@@ -546,6 +576,29 @@ export class TelegramSceneRun {
             this.control(instance),
             instance,
             name,
+        );
+
+        return true;
+    }
+
+    private async admitAsk(
+        instance: TelegramSceneInstance,
+        name: string,
+    ): Promise<boolean> {
+        const { user } = this.ctx;
+
+        if (
+            !(await isAllowed(instance.scene.guard, user)) ||
+            !(await isAllowed(instance.scene.inputs[name]?.guard, user))
+        ) {
+            this.recordForbidden(instance.scene);
+            return false;
+        }
+
+        return this.admit(
+            instance.scene,
+            [instance.id, this.handOverSource?.id],
+            { checkFocus: true },
         );
     }
 

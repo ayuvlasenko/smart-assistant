@@ -2,6 +2,7 @@ import { Update } from "@grammyjs/types";
 import { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { TelegramContext } from "./telegram-context.js";
+import { isBlockedByUser } from "./telegram-errors.js";
 import { TelegramMetrics } from "./telegram-metrics.js";
 import { TelegramSceneInputs } from "./telegram-scene-inputs.js";
 import { TelegramScenePresses } from "./telegram-scene-presses.js";
@@ -116,6 +117,12 @@ export class TelegramSceneEngine {
             await run.render();
 
             return result;
+        } catch (err) {
+            if (isBlockedByUser(err)) {
+                run.dropTouched();
+            }
+
+            throw err;
         } finally {
             stopRecording();
             run.save();

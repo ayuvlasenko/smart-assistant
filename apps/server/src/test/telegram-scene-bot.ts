@@ -1,12 +1,17 @@
 import {
+    ApiResponse,
     Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Message,
     Update,
 } from "@grammyjs/types";
 import { type StaticDecode, type TSchema } from "@sinclair/typebox";
 import { Redis } from "ioredis";
-import { TelegramApiServiceMock } from "./telegram-api-service-mock.js";
+import {
+    buildTelegramApiServiceMock,
+    TelegramApiServiceMock,
+} from "./telegram-api-service-mock.js";
 import {
     buildTelegramBotServiceTestApp,
     BuildTelegramBotServiceTestAppOptions,
@@ -57,15 +62,16 @@ const userMessageIdOffset = 1_000_000;
 export async function buildTelegramSceneBot(
     options: BuildTelegramBotServiceTestAppOptions,
 ): Promise<TelegramSceneBot> {
-    const testApp = await buildTelegramBotServiceTestApp(options);
-    const {
-        app,
-        cache,
-        telegramApiService,
-        telegramBots,
-        telegramUpdateHandler,
-        usersRepository,
-    } = testApp;
+    const telegramApiService =
+        options.telegramApiService ??
+        buildTelegramApiServiceMock({ t: options.t });
+    const apiCalls: TestApiCall[] = [];
+    const testApp = await buildTelegramBotServiceTestApp({
+        ...options,
+        telegramApiService: recordApiCalls(telegramApiService, apiCalls),
+    });
+    const { app, cache, telegramBots, telegramUpdateHandler, usersRepository } =
+        testApp;
     const valkey = app.getDecorator<Redis>("valkey");
     const allowedUserIds = new Set<number>();
 
@@ -95,6 +101,7 @@ export async function buildTelegramSceneBot(
 
     return {
         ...testApp,
+        telegramApiService,
         allowUser,
         sendText: async (chat, text) => {
             await allowUser(chat.id);
@@ -106,7 +113,7 @@ export async function buildTelegramSceneBot(
         },
         pressButton: async (chat, label) => {
             const [messageId, button] = findLatestButton(
-                await readChat(telegramApiService, chat.id),
+                await readChat(apiCalls, chat.id),
                 label,
             );
 
@@ -144,17 +151,15 @@ export async function buildTelegramSceneBot(
                 (call) => call.arguments[0].text,
             ),
         readMessageTexts: async (chatId) =>
-            (await readChat(telegramApiService, chatId))
+            (await readChat(apiCalls, chatId))
                 .map(({ text }) => text)
                 .filter((text) => text !== undefined),
         readButtonLabels: async (chatId) =>
-            (await readChat(telegramApiService, chatId)).flatMap(
-                ({ keyboard }) => keyboard.flat().map(({ text }) => text),
+            (await readChat(apiCalls, chatId)).flatMap(({ keyboard }) =>
+                keyboard.flat().map(({ text }) => text),
             ),
         readKeyboards: async (chatId) =>
-            (await readChat(telegramApiService, chatId)).map(
-                ({ keyboard }) => keyboard,
-            ),
+            (await readChat(apiCalls, chatId)).map(({ keyboard }) => keyboard),
         readAnswerTexts: () =>
             telegramApiService.answerCallbackQuery.mock.calls.map(
                 (call) => call.arguments[0].text,
@@ -248,33 +253,59 @@ interface TestChatMessage {
     keyboard: InlineKeyboardButton[][];
 }
 
-type TestChatChange = (
-    messageId: number,
-    update: Partial<TestChatMessage>,
-) => void;
+interface TestApiCall {
+    method: string;
+    params: TestApiCallParams;
+    result: Promise<ApiResponse<unknown>>;
+}
+
+interface TestApiCallParams {
+    chat_id?: number | string;
+    message_id?: number;
+    message_ids?: number[];
+    text?: unknown;
+    reply_markup?: unknown;
+}
+
+function recordApiCalls(
+    client: TelegramApiServiceMock,
+    calls: TestApiCall[],
+): TelegramApiServiceMock {
+    return new Proxy(client, {
+        get(target, method, receiver) {
+            const value: unknown = Reflect.get(target, method, receiver);
+
+            if (typeof value !== "function" || typeof method !== "string") {
+                return value;
+            }
+
+            return (...args: [TestApiCallParams?]) => {
+                const result = (
+                    value as (
+                        ...params: [TestApiCallParams?]
+                    ) => Promise<ApiResponse<unknown>>
+                ).apply(target, args);
+
+                calls.push({ method, params: args[0] ?? {}, result });
+
+                return result;
+            };
+        },
+    });
+}
 
 async function readChat(
-    telegramApiService: TelegramApiServiceMock,
+    calls: TestApiCall[],
     chatId: number,
 ): Promise<TestChatMessage[]> {
     const messages = new Map<number, TestChatMessage>();
-    const change: TestChatChange = (messageId, update) => {
-        messages.set(messageId, {
-            messageId,
-            keyboard: [],
-            ...messages.get(messageId),
-            ...update,
-        });
-    };
 
-    await readSentMessages(telegramApiService, chatId, change);
-    await readEditedMessages(telegramApiService, chatId, change);
+    for (const { method, params, result } of calls) {
+        const response = await result;
 
-    for (const messageId of await readRemovedMessageIds(
-        telegramApiService,
-        chatId,
-    )) {
-        messages.delete(messageId);
+        if (response.ok && params.chat_id === chatId) {
+            applyApiCall(messages, method, params, response.result);
+        }
     }
 
     return [...messages.values()].sort(
@@ -282,63 +313,40 @@ async function readChat(
     );
 }
 
-async function readSentMessages(
-    telegramApiService: TelegramApiServiceMock,
-    chatId: number,
-    change: TestChatChange,
-): Promise<void> {
-    for (const call of telegramApiService.sendMessage.mock.calls) {
-        const response = await call.result;
-        const args = call.arguments[0];
+function applyApiCall(
+    messages: Map<number, TestChatMessage>,
+    method: string,
+    params: TestApiCallParams,
+    result: unknown,
+): void {
+    if (method.startsWith("send")) {
+        const { message_id: messageId } = result as Message;
 
-        if (response?.ok && args.chat_id === chatId) {
-            change(response.result.message_id, {
-                text: stripTags(args.text),
-                keyboard: inlineKeyboardOf(args.reply_markup),
-            });
-        }
-    }
+        messages.set(messageId, {
+            messageId,
+            ...textOf(params),
+            keyboard: inlineKeyboardOf(params.reply_markup),
+        });
+    } else if (method.startsWith("edit") && params.message_id !== undefined) {
+        const messageId = params.message_id;
 
-    for (const call of [
-        ...telegramApiService.sendRichMessage.mock.calls,
-        ...telegramApiService.sendPhoto.mock.calls,
-    ]) {
-        const response = await call.result;
-
-        if (response?.ok && call.arguments[0].chat_id === chatId) {
-            change(response.result.message_id, {
-                keyboard: inlineKeyboardOf(call.arguments[0].reply_markup),
-            });
+        messages.set(messageId, {
+            messageId,
+            ...messages.get(messageId),
+            ...textOf(params),
+            keyboard: inlineKeyboardOf(params.reply_markup),
+        });
+    } else if (method === "deleteMessage" && params.message_id !== undefined) {
+        messages.delete(params.message_id);
+    } else if (method === "deleteMessages") {
+        for (const messageId of params.message_ids ?? []) {
+            messages.delete(messageId);
         }
     }
 }
 
-async function readEditedMessages(
-    telegramApiService: TelegramApiServiceMock,
-    chatId: number,
-    change: TestChatChange,
-): Promise<void> {
-    for (const call of [
-        ...telegramApiService.editMessageText.mock.calls,
-        ...telegramApiService.editMessageMedia.mock.calls,
-        ...telegramApiService.editMessageReplyMarkup.mock.calls,
-    ]) {
-        const response = await call.result;
-        const args = call.arguments[0];
-
-        if (
-            response?.ok &&
-            args.chat_id === chatId &&
-            args.message_id !== undefined
-        ) {
-            change(args.message_id, {
-                ...("text" in args && typeof args.text === "string"
-                    ? { text: stripTags(args.text) }
-                    : {}),
-                keyboard: inlineKeyboardOf(args.reply_markup),
-            });
-        }
-    }
+function textOf({ text }: TestApiCallParams): { text?: string } {
+    return typeof text === "string" ? { text: stripTags(text) } : {};
 }
 
 function inlineKeyboardOf(markup: unknown): InlineKeyboardButton[][] {
@@ -353,27 +361,6 @@ function stripTags(html: string): string {
 
 function dropTag(part: string): string {
     return part.slice(part.indexOf(">") + 1);
-}
-
-async function readRemovedMessageIds(
-    telegramApiService: TelegramApiServiceMock,
-    chatId: number,
-): Promise<number[]> {
-    const removed: number[] = [];
-
-    for (const call of telegramApiService.deleteMessage.mock.calls) {
-        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
-            removed.push(call.arguments[0].message_id);
-        }
-    }
-
-    for (const call of telegramApiService.deleteMessages.mock.calls) {
-        if ((await call.result)?.ok && call.arguments[0].chat_id === chatId) {
-            removed.push(...call.arguments[0].message_ids);
-        }
-    }
-
-    return removed;
 }
 
 function findLatestButton(

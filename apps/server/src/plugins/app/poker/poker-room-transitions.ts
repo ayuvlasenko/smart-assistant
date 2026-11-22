@@ -5,6 +5,7 @@ import { pickPokerParticipantEmoji } from "./poker-participant-emojis.js";
 import {
     findPokerParticipant,
     isPokerAutoRevealDue,
+    listKnownPokerParticipants,
     PokerAutoReveal,
     PokerParticipant,
     PokerParticipantRole,
@@ -64,22 +65,25 @@ export function openPokerRoom(
         ...(title === undefined ? {} : { title }),
         autoReveal: autoReveal ? { missingVotes: 0 } : null,
         lastActivityAt: now,
-        participants: [buildPokerParticipant([], opening.createdBy, now)],
+        participants: [
+            buildPokerParticipant({ participants: [] }, opening.createdBy, now),
+        ],
         round: { number: 1, status: "voting", votes: {}, startedAt: now },
         rounds: [],
     };
 }
 
 export function buildPokerParticipant(
-    participants: PokerParticipant[],
+    room: Pick<PokerRoomEntity, "participants" | "removedParticipants">,
     userId: ObjectId,
     now: Date,
 ): PokerParticipant {
     return {
         userId,
-        emoji: pickPokerParticipantEmoji(
-            participants.map(({ emoji }) => emoji),
-        ),
+        emoji: pickPokerParticipantEmoji([
+            listKnownPokerParticipants(room).map(({ emoji }) => emoji),
+            room.participants.map(({ emoji }) => emoji),
+        ]),
         role: "voter",
         joinedAt: now,
     };
@@ -158,6 +162,10 @@ export function renamePokerRound(
         return null;
     }
 
+    if (room.round.title === title) {
+        return null;
+    }
+
     const renamed = { ...room.round, title };
 
     if (title === undefined) {
@@ -171,7 +179,9 @@ export function changePokerRole(
     room: PokerRoomEntity,
     change: PokerRoleChange,
 ): PokerRoomPatch | null {
-    if (!findPokerParticipant(room, change.userId)) {
+    const changed = findPokerParticipant(room, change.userId);
+
+    if (!changed || changed.role === change.role) {
         return null;
     }
 
@@ -186,9 +196,12 @@ export function changePokerRole(
 }
 
 export function changePokerAutoReveal(
+    room: PokerRoomEntity,
     autoReveal: PokerAutoReveal,
-): PokerRoomPatch {
-    return { autoReveal };
+): PokerRoomPatch | null {
+    return room.autoReveal?.missingVotes === autoReveal?.missingVotes
+        ? null
+        : { autoReveal };
 }
 
 export function closePokerRoom(now: Date): PokerRoomPatch {

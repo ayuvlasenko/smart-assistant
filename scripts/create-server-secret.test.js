@@ -5,6 +5,7 @@ import {
     applySecret,
     buildCommand,
     buildNamespaceCommand,
+    buildReadKeysCommand,
     ensureNamespaceExists,
     quoteShellArgument,
     validateSecretName,
@@ -15,7 +16,12 @@ function withEnv(vars, fn) {
 
     for (const [key, value] of Object.entries(vars)) {
         previous.set(key, process.env[key]);
-        process.env[key] = value;
+
+        if (value === undefined) {
+            delete process.env[key];
+        } else {
+            process.env[key] = value;
+        }
     }
 
     try {
@@ -101,45 +107,109 @@ void describe("validateSecretName", () => {
     });
 });
 
+const requiredEnv = {
+    DATABASE_URL: "mongodb://localhost:27017/test",
+    DOMAIN: "https://smart-assistant.bambom.org",
+    LOG_LEVEL: "info",
+    S3_ACCESS_KEY_ID: "key",
+    S3_SECRET_ACCESS_KEY: "secret",
+    S3_REGION: "us-east-1",
+    S3_BUCKET: "smart-assistant",
+    S3_ENDPOINT: "https://s3.bambom.org",
+    TELEGRAM_BOT_TOKEN: "token",
+    TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret-token",
+    VALKEY_URL: "redis://default:valkey-secret@valkey:6379",
+};
+
+function storedSecret(keys) {
+    return JSON.stringify({
+        data: Object.fromEntries(keys.map((key) => [key, "c2VjcmV0"])),
+    });
+}
+
 void describe("applySecret", () => {
+    void it("refuses to drop a key of the stored secret that the environment does not set", () => {
+        const commands = [];
+
+        withEnv({ ...requiredEnv, BOTS_ENCRYPTION_KEY: undefined }, () => {
+            assert.throws(
+                () =>
+                    applySecret({
+                        secretName: "server-secrets-main",
+                        dryRun: false,
+                        exec: (command) => {
+                            commands.push(command);
+
+                            return command ===
+                                buildReadKeysCommand("server-secrets-main")
+                                ? storedSecret([
+                                      ...Object.keys(requiredEnv),
+                                      "BOTS_ENCRYPTION_KEY",
+                                  ])
+                                : "";
+                        },
+                        log: () => undefined,
+                    }),
+                /holds BOTS_ENCRYPTION_KEY/,
+            );
+        });
+
+        assert.deepEqual(commands, [
+            buildNamespaceCommand(),
+            buildReadKeysCommand("server-secrets-main"),
+        ]);
+    });
+
+    void it("drops the missing keys when asked to", () => {
+        const commands = [];
+
+        withEnv({ ...requiredEnv, BOTS_ENCRYPTION_KEY: undefined }, () => {
+            applySecret({
+                secretName: "server-secrets-main",
+                dryRun: false,
+                dropMissing: true,
+                exec: (command) => {
+                    commands.push(command);
+
+                    return command ===
+                        buildReadKeysCommand("server-secrets-main")
+                        ? storedSecret(["BOTS_ENCRYPTION_KEY"])
+                        : "";
+                },
+                log: () => undefined,
+            });
+        });
+
+        assert.equal(commands.length, 3);
+    });
+
     void it("ensures the namespace only when applying a validated secret", () => {
         const commands = [];
         let secretCommand;
 
-        withEnv(
-            {
-                DATABASE_URL: "mongodb://localhost:27017/test",
-                DOMAIN: "https://smart-assistant.bambom.org",
-                LOG_LEVEL: "info",
-                S3_ACCESS_KEY_ID: "key",
-                S3_SECRET_ACCESS_KEY: "secret",
-                S3_REGION: "us-east-1",
-                S3_BUCKET: "smart-assistant",
-                S3_ENDPOINT: "https://s3.bambom.org",
-                TELEGRAM_BOT_TOKEN: "token",
-                TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret-token",
-                VALKEY_URL: "redis://default:valkey-secret@valkey:6379",
-            },
-            () => {
-                applySecret({
-                    secretName: "server-secrets-main",
-                    dryRun: false,
-                    exec: (command) => {
-                        commands.push(command);
-                        return "";
-                    },
-                    log: () => undefined,
-                });
+        withEnv(requiredEnv, () => {
+            applySecret({
+                secretName: "server-secrets-main",
+                dryRun: false,
+                exec: (command) => {
+                    commands.push(command);
+                    return "";
+                },
+                log: () => undefined,
+            });
 
-                secretCommand = buildCommand("server-secrets-main", false);
-                assert.match(
-                    secretCommand,
-                    /'--from-literal=VALKEY_URL=redis:\/\/default:valkey-secret@valkey:6379'/,
-                );
-            },
-        );
+            secretCommand = buildCommand("server-secrets-main", false);
+            assert.match(
+                secretCommand,
+                /'--from-literal=VALKEY_URL=redis:\/\/default:valkey-secret@valkey:6379'/,
+            );
+        });
 
-        assert.deepEqual(commands, [buildNamespaceCommand(), secretCommand]);
+        assert.deepEqual(commands, [
+            buildNamespaceCommand(),
+            buildReadKeysCommand("server-secrets-main"),
+            secretCommand,
+        ]);
     });
 });
 

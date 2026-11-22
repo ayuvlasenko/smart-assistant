@@ -372,6 +372,73 @@ void describe("TelegramChats", () => {
         );
     });
 
+    void it("drops the scenes of a watcher who blocked the bot and stops publishing to them", async (t) => {
+        const logs = createLoggerCollector();
+        const boards: TestBoards = { a: 0, b: 0 };
+        const bot = await buildBoardBot(t, boards, { logger: logs.logger });
+        const ada = buildTelegramPrivateChat({ id: 987654471 });
+        const bob = buildTelegramPrivateChat({ id: 987654472 });
+        const forbidden = {
+            ok: false as const,
+            error_code: 403,
+            description: "Forbidden: bot was blocked by the user",
+        };
+
+        await bot.sendText(ada, "/board");
+        await bot.sendText(bob, "/board");
+        bot.telegramApiService.editMessageText.mock.mockImplementation(
+            async ({ chat_id }) => {
+                if (chat_id === ada.id) {
+                    return forbidden;
+                }
+
+                return { ok: true, result: true };
+            },
+        );
+        bot.telegramApiService.sendMessage.mock.resetCalls();
+        boards.a = 1;
+        bot.telegramChats.publish(testBotId, ["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(await readWatchers(bot, "board:a"), [bob.id]);
+        assert.equal(bot.telegramApiService.sendMessage.mock.callCount(), 0);
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) =>
+                    [
+                        "Failed to publish a scene update",
+                        "Failed to edit telegram message",
+                    ].includes(msg ?? ""),
+                ),
+            [],
+        );
+        assert.deepEqual(
+            logs
+                .readEntries()
+                .filter(({ msg }) => msg === "Scene update published")
+                .map(({ recipients, failed, blocked }) => ({
+                    recipients,
+                    failed,
+                    blocked,
+                })),
+            [{ recipients: 2, failed: 0, blocked: 1 }],
+        );
+        assert.match(
+            await bot.metrics.metrics(),
+            /^telegram_scene_events_total\{scene="board",event="dropped"\} 1$/m,
+        );
+
+        bot.telegramApiService.editMessageText.mock.resetCalls();
+        boards.a = 2;
+        bot.telegramChats.publish(testBotId, ["board:a"]);
+        await bot.telegramChats.idle();
+
+        assert.deepEqual(readEditedTexts(bot), [
+            { chat: bob.id, text: "Board a: 2" },
+        ]);
+    });
+
     void it("doesn't redraw a watcher of another bot with the same Telegram id", async (t) => {
         const board = { count: 0 };
         const boardScene = defineScene({

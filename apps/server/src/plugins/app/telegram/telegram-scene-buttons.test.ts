@@ -18,7 +18,7 @@ void describe("TelegramSceneButtons", () => {
         assert.deepEqual(bot.readAnswerTexts(), [undefined]);
     });
 
-    void it("keeps the buttons of every message of a scene", async (t) => {
+    void it("keeps the button of an older scene working after newer scenes start", async (t) => {
         const bot = await buildGreetBot(testMongo, t);
         const chat = buildTelegramPrivateChat({ id: 987654382 });
 

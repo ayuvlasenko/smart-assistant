@@ -486,7 +486,7 @@ export function buildTelegramTextMessage(
     };
 }
 
-export function buildTelegramChannelTextMessage(
+function buildTelegramChannelTextMessage(
     overrides: Partial<TelegramChannelTextMessage> = {},
 ): TelegramChannelTextMessage {
     const {
@@ -514,7 +514,7 @@ export function buildTelegramChannelTextMessage(
     };
 }
 
-export function buildTelegramBusinessTextMessage(
+function buildTelegramBusinessTextMessage(
     overrides: Partial<TelegramBusinessTextMessage> = {},
 ): TelegramBusinessTextMessage {
     const {
@@ -578,7 +578,7 @@ export function buildTelegramWebhookHeaders(
     };
 }
 
-export function buildTelegramBotUserFromGetMe(
+function buildTelegramBotUserFromGetMe(
     overrides: Partial<UserFromGetMe> = {},
 ): UserFromGetMe {
     return {
@@ -622,7 +622,7 @@ export function buildTelegramSupergroupChat(
     };
 }
 
-export function buildTelegramChannelChat(
+function buildTelegramChannelChat(
     overrides: Partial<Chat.ChannelChat> = {},
 ): Chat.ChannelChat {
     return {
@@ -633,7 +633,7 @@ export function buildTelegramChannelChat(
     };
 }
 
-export function buildTelegramPoll(overrides: Partial<Poll> = {}): Poll {
+function buildTelegramPoll(overrides: Partial<Poll> = {}): Poll {
     return {
         id: "poll-1",
         question: "What is your favorite bot response?",
@@ -655,7 +655,7 @@ export function buildTelegramPoll(overrides: Partial<Poll> = {}): Poll {
     };
 }
 
-export function buildTelegramShippingAddress(
+function buildTelegramShippingAddress(
     overrides: Partial<ShippingAddress> = {},
 ): ShippingAddress {
     return {
@@ -690,7 +690,7 @@ export function buildTelegramUser(overrides: Partial<User> = {}): User {
     };
 }
 
-export function buildTelegramBotUser(overrides: Partial<User> = {}): User {
+function buildTelegramBotUser(overrides: Partial<User> = {}): User {
     return buildTelegramUser({
         id: 999,
         is_bot: true,
@@ -700,7 +700,7 @@ export function buildTelegramBotUser(overrides: Partial<User> = {}): User {
     });
 }
 
-export function buildTelegramChatMemberUpdated(
+function buildTelegramChatMemberUpdated(
     overrides: Partial<ChatMemberUpdated> = {},
 ): ChatMemberUpdated {
     const member =

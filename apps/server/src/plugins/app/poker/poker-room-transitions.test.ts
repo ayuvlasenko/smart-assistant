@@ -92,12 +92,40 @@ void describe("buildPokerParticipant", () => {
             .map((emoji) => buildParticipant({ emoji }));
         const userId = new ObjectId();
 
-        assert.deepEqual(buildPokerParticipant(taken, userId, start), {
-            userId,
-            emoji: free,
-            role: "voter",
-            joinedAt: start,
-        });
+        assert.deepEqual(
+            buildPokerParticipant({ participants: taken }, userId, start),
+            { userId, emoji: free, role: "voter", joinedAt: start },
+        );
+    });
+
+    void it("keeps the emoji of a removed participant away from a newcomer", () => {
+        const [free, removed] = pokerParticipantEmojis;
+        const room = {
+            participants: pokerParticipantEmojis
+                .filter((emoji) => emoji !== free && emoji !== removed)
+                .map((emoji) => buildParticipant({ emoji })),
+            removedParticipants: [buildParticipant({ emoji: removed })],
+        };
+
+        assert.equal(
+            buildPokerParticipant(room, new ObjectId(), start).emoji,
+            free,
+        );
+    });
+
+    void it("gives a newcomer the emoji of a removed participant when no other is free", () => {
+        const [removed] = pokerParticipantEmojis;
+        const room = {
+            participants: pokerParticipantEmojis
+                .filter((emoji) => emoji !== removed)
+                .map((emoji) => buildParticipant({ emoji })),
+            removedParticipants: [buildParticipant({ emoji: removed })],
+        };
+
+        assert.equal(
+            buildPokerParticipant(room, new ObjectId(), start).emoji,
+            removed,
+        );
     });
 });
 
@@ -300,7 +328,10 @@ void describe("revealPokerRoundIfDue", () => {
                 votes: { [key(first)]: "3", [key(second)]: "5" },
             }),
         });
-        const changed = apply(room, changePokerAutoReveal({ missingVotes: 1 }));
+        const changed = apply(
+            room,
+            changePokerAutoReveal(room, { missingVotes: 1 }),
+        );
 
         assert.deepEqual(revealPokerRoundIfDue(room, later), {});
         assert.equal(
@@ -500,6 +531,19 @@ void describe("renamePokerRound", () => {
         assert.equal("title" in round, false);
     });
 
+    void it("ignores the title the round already has", () => {
+        const named = buildRoom({ round: buildRound({ title: "PROJ-1" }) });
+
+        assert.equal(
+            renamePokerRound(named, { round: 1, title: "PROJ-1" }),
+            null,
+        );
+        assert.equal(
+            renamePokerRound(buildRoom(), { round: 1, title: undefined }),
+            null,
+        );
+    });
+
     void it("ignores a title for a round that is over", () => {
         const room = buildRoom({ round: buildRound({ number: 2 }) });
 
@@ -568,6 +612,16 @@ void describe("changePokerRole", () => {
         );
     });
 
+    void it("ignores the role the participant already has", () => {
+        const voter = buildParticipant();
+        const room = buildRoom({ participants: [voter] });
+
+        assert.equal(
+            changePokerRole(room, { userId: voter.userId, role: "voter" }),
+            null,
+        );
+    });
+
     void it("ignores a user outside the room", () => {
         const room = buildRoom({ participants: [buildParticipant()] });
 
@@ -576,6 +630,33 @@ void describe("changePokerRole", () => {
                 userId: new ObjectId(),
                 role: "observer",
             }),
+            null,
+        );
+    });
+});
+
+void describe("changePokerAutoReveal", () => {
+    void it("sets a new target and turns auto reveal off", () => {
+        const room = buildRoom({ autoReveal: { missingVotes: 0 } });
+
+        assert.deepEqual(changePokerAutoReveal(room, { missingVotes: 1 }), {
+            autoReveal: { missingVotes: 1 },
+        });
+        assert.deepEqual(changePokerAutoReveal(room, null), {
+            autoReveal: null,
+        });
+    });
+
+    void it("ignores the target the room already has", () => {
+        assert.equal(
+            changePokerAutoReveal(
+                buildRoom({ autoReveal: { missingVotes: 1 } }),
+                { missingVotes: 1 },
+            ),
+            null,
+        );
+        assert.equal(
+            changePokerAutoReveal(buildRoom({ autoReveal: null }), null),
             null,
         );
     });

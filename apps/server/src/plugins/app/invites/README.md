@@ -58,7 +58,7 @@ The activation is one atomic update: the filter checks the status and that the u
 
 After `activated` and `alreadyActivated` the handler gives the context the user with the new grants through `ctx.refreshUser` and opens [the start module](../telegram/README.md#the-start-module) of the bot, so a user who came by a link lands in the feature the bot is for. A bot without a start module, or grants that do not open it, leave only the reply.
 
-A user who is already in the bot can open a link too: the invite adds its grants to the grants the user has. Grants only grow through invites; removing one is a change in MongoDB for now. `alreadyActivated` gives the grants again only while the invite still works, so revoking or letting an invite expire stops its old users from getting their grants back through it.
+A user who is already in the bot can open a link too: the invite adds its grants to the grants the user has. Grants only grow through invites; removing one is a change in MongoDB for now. `alreadyActivated` gives the grants again only while the invite still works, so revoking or letting an invite expire stops its old users from getting their grants back through it. So a grant removed in MongoDB, or a ban set there, stays only when every invite that the user activated with that grant is revoked or expired: a full invite with `maxUses: 1` and no expiry, such as the default invite, works for its user forever.
 
 ## Bootstrap
 

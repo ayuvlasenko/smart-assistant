@@ -231,6 +231,17 @@ void describe("Telegram steps", () => {
         ]);
     });
 
+    void it("keeps the notice that there is nothing to choose when the input cleans up", async (t) => {
+        const bot = await buildOrderBot(t);
+        const chat = buildTelegramPrivateChat({ id: 987654379 });
+
+        await bot.sendText(chat, "/empty_cleanup");
+
+        assert.deepEqual(await bot.readMessageTexts(chat.id), [
+            telegramLocales.en.nothingToChoose,
+        ]);
+    });
+
     void it("starts a scene from a custom update filter", async (t) => {
         const bot = await buildOrderBot(t);
         const chat = buildTelegramPrivateChat({ id: 987654378 });
@@ -316,14 +327,36 @@ function registerOrderScenes(
             },
         },
     });
-    const emptyScene = defineScene({
-        name: "empty",
+    const emptyScene = buildEmptyChoiceScene("empty", false);
+    const isOrderRequest = (
+        update: Update,
+    ): update is TelegramTextMessageUpdate =>
+        message("text")(update) &&
+        update.message.text.toLowerCase().includes("order");
+
+    const emptyCleanupScene = buildEmptyChoiceScene("emptyCleanup", true);
+
+    router.scene(orderScene);
+    router.scene(emptyScene);
+    router.scene(emptyCleanupScene);
+    router.command("order", (ctx) => sceneEngine.start(ctx, orderScene, {}));
+    router.command("empty", (ctx) => sceneEngine.start(ctx, emptyScene, {}));
+    router.command("empty_cleanup", (ctx) =>
+        sceneEngine.start(ctx, emptyCleanupScene, {}),
+    );
+    router.on(isOrderRequest, (ctx) => sceneEngine.start(ctx, orderScene, {}));
+}
+
+function buildEmptyChoiceScene(name: string, cleanup: boolean) {
+    return defineScene({
+        name,
         state: Type.Object({}),
         ttl: 60_000,
         start: (ctx, scene) => scene.ask("color"),
         inputs: {
             color: {
                 payload: Type.Object({ color: Type.String() }),
+                cleanup,
                 steps: (step) => [
                     choiceStep(step, {
                         name: "color",
@@ -336,17 +369,6 @@ function registerOrderScenes(
             },
         },
     });
-    const isOrderRequest = (
-        update: Update,
-    ): update is TelegramTextMessageUpdate =>
-        message("text")(update) &&
-        update.message.text.toLowerCase().includes("order");
-
-    router.scene(orderScene);
-    router.scene(emptyScene);
-    router.command("order", (ctx) => sceneEngine.start(ctx, orderScene, {}));
-    router.command("empty", (ctx) => sceneEngine.start(ctx, emptyScene, {}));
-    router.on(isOrderRequest, (ctx) => sceneEngine.start(ctx, orderScene, {}));
 }
 
 async function reachStep(

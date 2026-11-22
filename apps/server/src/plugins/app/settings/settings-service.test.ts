@@ -66,16 +66,23 @@ void describe("SettingsService", () => {
         assert.deepEqual(await reader.read(colours, testBotId), ["blue"]);
     });
 
-    void it("toggles against the stored value, whichever pod takes the press", async (t) => {
+    void it("toggles against the stored value, also when two pods take presses at once", async (t) => {
         const first = await buildSettings(t);
         const stale = await buildSettings(t);
 
-        await first.toggleChoice(admin, colours, "red");
-        await stale.toggleChoice(admin, colours, "blue");
-        await first.toggle(admin, flag);
-        await stale.toggle(admin, flag);
+        await Promise.all([
+            first.toggleChoice(admin, colours, "red"),
+            stale.toggleChoice(admin, colours, "blue"),
+            ...Array.from({ length: 5 }, () => [
+                first.toggle(admin, flag),
+                stale.toggle(admin, flag),
+            ]).flat(),
+        ]);
 
-        assert.deepEqual(await stale.read(colours, testBotId), ["red", "blue"]);
+        assert.deepEqual(
+            new Set(await stale.read(colours, testBotId)),
+            new Set(["red", "blue"]),
+        );
         assert.equal(await stale.read(flag, testBotId), true);
 
         await stale.toggleChoice(admin, colours, "red");

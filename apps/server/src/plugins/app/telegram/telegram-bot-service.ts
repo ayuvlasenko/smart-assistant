@@ -123,6 +123,7 @@ export class TelegramBotService {
     }
 
     async deleteWebhook(bot: TelegramBot): Promise<void> {
+        await this.cache.delete(webhookKeyOf(bot));
         unwrapTelegramResponse("deleteWebhook", await bot.api.deleteWebhook());
 
         this.log.info({ botId: bot.id }, "Telegram webhook deleted");

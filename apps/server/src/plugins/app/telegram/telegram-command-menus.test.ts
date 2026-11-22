@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { setTimeout } from "node:timers/promises";
+import { Env } from "../../../env.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
 import { useTestMongo } from "../../../test/mongo.js";
 import { buildTelegramApiServiceMock } from "../../../test/telegram-api-service-mock.js";
@@ -124,6 +125,32 @@ void describe("TelegramCommandMenus chat menus", () => {
         await telegramBotService.setUpOnStart();
 
         assert.equal(telegramApiService.setMyCommands.mock.callCount(), 4);
+    });
+
+    void it("sets the menus of the bot once when two pods start together", async (t) => {
+        const first = await buildTelegramBotServiceTestApp(
+            buildMenuAppOptions(t),
+        );
+        const second = await buildTelegramBotServiceTestApp({
+            ...buildMenuAppOptions(t),
+            env: {
+                RESOURCE_NAME:
+                    first.app.getDecorator<Env>("config").RESOURCE_NAME,
+            },
+        });
+
+        await Promise.all([
+            first.telegramCommandMenus.syncBot(await first.telegramBots.root()),
+            second.telegramCommandMenus.syncBot(
+                await second.telegramBots.root(),
+            ),
+        ]);
+
+        assert.equal(
+            first.telegramApiService.setMyCommands.mock.callCount() +
+                second.telegramApiService.setMyCommands.mock.callCount(),
+            4,
+        );
     });
 
     void it("sets every menu of the bot again after a refresh that failed in the middle", async (t) => {

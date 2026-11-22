@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { Env } from "../../../env.js";
 import { REQUEST_ID_HEADER } from "../../../logger-request.js";
 import { resolveTelegramWebhookUrl } from "../../../plugins/app/telegram/telegram-bot-service.js";
+import { TelegramBots } from "../../../plugins/app/telegram/telegram-bots.js";
 import { text } from "../../../plugins/app/telegram/telegram-filters.js";
-import { TelegramUpdateHandler } from "../../../plugins/app/telegram/telegram-update-handler.js";
 import { telegramWebhookSecret } from "../../../plugins/app/telegram/telegram-webhook-secret.js";
 import { buildTestApp } from "../../../test/helper.js";
 import { createLoggerCollector } from "../../../test/logger-collector.js";
@@ -193,40 +193,36 @@ void describe("POST /api/telegram/webhook", () => {
         assert.equal(body.statusCode, 400);
     });
 
-    void it("returns 200 and logs the error with the request id when update handling throws", async (t) => {
+    void it("answers 500 when the bot can't be read, so Telegram sends the update again", async (t) => {
         const logs = createLoggerCollector();
         const { app } = await buildTestApp({
             logger: logs.logger,
             t,
         });
-        const telegramUpdateHandler = app.getDecorator<TelegramUpdateHandler>(
-            "telegramUpdateHandler",
-        );
 
-        t.mock.method(telegramUpdateHandler, "handle", async () => {
-            throw new Error("Telegram update failed");
-        });
+        t.mock.method(
+            app.getDecorator<TelegramBots>("telegramBots"),
+            "findByTelegramId",
+            async () => {
+                throw new Error("MongoDB is not connected");
+            },
+        );
 
         const response = await app.inject({
             method: "POST",
             url: testTelegramWebhookPath,
             headers: buildTelegramWebhookHeaders(),
-            body: buildTelegramTextMessageUpdate({
-                message: {
-                    text: "ping",
-                },
-            }),
+            body: buildTelegramTextMessageUpdate(),
         });
 
         const responseRequestId = response.headers[REQUEST_ID_HEADER];
-        const updateErrorLog = logs
+        const errorLog = logs
             .readEntries()
-            .find((entry) => entry.msg === "Failed to handle Telegram update");
+            .find((entry) => entry.msg === "Unhandled error occurred");
 
-        assert.equal(response.statusCode, 200);
+        assert.equal(response.statusCode, 500);
         assert.ok(typeof responseRequestId === "string");
-        assert.ok(updateErrorLog);
-        assert.equal(updateErrorLog.reqId, responseRequestId);
+        assert.equal(errorLog?.reqId, responseRequestId);
     });
 
     void it("writes service logs with the request id during a real webhook request", async (t) => {
